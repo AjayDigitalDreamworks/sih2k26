@@ -1,0 +1,23 @@
+{
+  "results": {
+    "landslide": {
+      "accuracy": 0.825,
+      "f1": 0.8215
+    },
+    "flood": {
+      "accuracy": 0.8263,
+      "f1": 0.8233
+    },
+    "road_block": {
+      "accuracy": 0.7937,
+      "f1": 0.7777
+    },
+    "severity": {
+      "mae": 7.954,
+      "rmse": 10.53,
+      "r2": 0.881
+    }
+  },
+  "trained_at": "2026-09-02T13:40:12.307184",
+  "n_samples": 4000
+}

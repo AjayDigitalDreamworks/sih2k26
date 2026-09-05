@@ -1,0 +1,104 @@
+{
+  "risk": {
+    "mae": 2.614,
+    "rmse": 3.302,
+    "r2": 0.9402,
+    "level_accuracy": 0.938,
+    "f1_score": 0.938,
+    "feature_importance": {
+      "road_condition": 0.3212,
+      "landslide_probability": 0.237,
+      "historical_disruptions": 0.1677,
+      "bridge_condition": 0.1232,
+      "rainfall_24h_mm": 0.0351,
+      "flood_risk_level": 0.0342,
+      "congestion_level": 0.0315,
+      "river_proximity": 0.0161,
+      "slope_risk": 0.01,
+      "road_distance_km": 0.0081,
+      "elevation_m": 0.008,
+      "month": 0.0079
+    },
+    "trained_at": "2026-09-02T13:40:04.998412",
+    "n_samples": 5000
+  },
+  "disruption": {
+    "results": {
+      "landslide": {
+        "accuracy": 0.825,
+        "f1": 0.8215
+      },
+      "flood": {
+        "accuracy": 0.8263,
+        "f1": 0.8233
+      },
+      "road_block": {
+        "accuracy": 0.7937,
+        "f1": 0.7777
+      },
+      "severity": {
+        "mae": 7.954,
+        "rmse": 10.53,
+        "r2": 0.881
+      }
+    },
+    "trained_at": "2026-09-02T13:40:12.307184",
+    "n_samples": 4000
+  },
+  "route_optimization": {
+    "results": {
+      "delay": {
+        "mae": 19.2,
+        "rmse": 39.32,
+        "r2": 0.9931
+      },
+      "safety": {
+        "mae": 2.64,
+        "r2": 0.9505
+      },
+      "rank": {
+        "accuracy": 1.0,
+        "f1": 1.0
+      },
+      "rank_classes": [
+        1,
+        2,
+        3
+      ]
+    },
+    "trained_at": "2026-09-02T13:40:19.677775",
+    "n_samples": 3000,
+    "features": [
+      "distance_km",
+      "road_condition",
+      "bridge_condition",
+      "avg_slope_risk",
+      "avg_elevation_m",
+      "rainfall_24h_mm",
+      "temp_celsius",
+      "congestion_level",
+      "flood_risk_level",
+      "landslide_probability",
+      "priority",
+      "month",
+      "commodity_encoded"
+    ]
+  },
+  "incident_cnn": {
+    "classes": [
+      "normal_road",
+      "pothole",
+      "landslide_debris",
+      "flood_damage",
+      "fallen_tree",
+      "accident",
+      "road_crack",
+      "erosion"
+    ],
+    "n_classes": 8,
+    "img_size": 128,
+    "model_architecture": "IncidentCNN",
+    "status": "placeholder - PyTorch not installed",
+    "trained_at": "2026-09-02T13:40:19.698400"
+  }
+}

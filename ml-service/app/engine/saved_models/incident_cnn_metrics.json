@@ -1,0 +1,17 @@
+{
+  "classes": [
+    "normal_road",
+    "pothole",
+    "landslide_debris",
+    "flood_damage",
+    "fallen_tree",
+    "accident",
+    "road_crack",
+    "erosion"
+  ],
+  "n_classes": 8,
+  "img_size": 128,
+  "device": "cpu",
+  "trained_at": "2026-09-03T15:46:00.231197",
+  "n_samples": 800
+}

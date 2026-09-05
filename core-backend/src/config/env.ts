@@ -1,0 +1,23 @@
+import dotenv from 'dotenv';
+import path from 'path';
+dotenv.config();
+// Also pick up real integration keys (IMD/Google Flood/TomTom/Mappls/Bhuvan)
+// that live in the repo-root .env when running from core-backend/.
+dotenv.config({ path: path.resolve(process.cwd(), '../.env') });
+
+export const env = {
+  port: parseInt(process.env.PORT || '5000', 10),
+  nodeEnv: process.env.NODE_ENV || 'development',
+  postgresUri: process.env.POSTGRES_URI || '',
+  mongoUri: process.env.MONGO_URI || '',
+  redisUrl: process.env.REDIS_URL || '',
+  upstashRedisUrl: process.env.UPSTASH_REDIS_REST_URL || '',
+  upstashRedisToken: process.env.UPSTASH_REDIS_REST_TOKEN || '',
+  jwtAccessSecret: process.env.JWT_ACCESS_SECRET || 'fallback_access_secret',
+  jwtRefreshSecret: process.env.JWT_REFRESH_SECRET || 'fallback_another_secret',
+  jwtAccessExpires: process.env.JWT_ACCESS_EXPIRES || '15m',
+  jwtRefreshExpires: process.env.JWT_REFRESH_EXPIRES || '7d',
+  mlServiceUrl: process.env.ML_SERVICE_URL || 'http://localhost:8000',
+  frontendUrl: process.env.FRONTEND_URL || 'http://localhost:3000',
+  coreBackendInternalKey: process.env.CORE_BACKEND_INTERNAL_KEY || '',
+};

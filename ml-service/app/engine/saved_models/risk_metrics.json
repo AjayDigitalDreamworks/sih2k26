@@ -1,0 +1,23 @@
+{
+  "mae": 2.614,
+  "rmse": 3.302,
+  "r2": 0.9402,
+  "level_accuracy": 0.938,
+  "f1_score": 0.938,
+  "feature_importance": {
+    "road_condition": 0.3212,
+    "landslide_probability": 0.237,
+    "historical_disruptions": 0.1677,
+    "bridge_condition": 0.1232,
+    "rainfall_24h_mm": 0.0351,
+    "flood_risk_level": 0.0342,
+    "congestion_level": 0.0315,
+    "river_proximity": 0.0161,
+    "slope_risk": 0.01,
+    "road_distance_km": 0.0081,
+    "elevation_m": 0.008,
+    "month": 0.0079
+  },
+  "trained_at": "2026-09-02T13:40:04.998412",
+  "n_samples": 5000
+}

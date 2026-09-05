@@ -1,0 +1,17 @@
+{
+  "name": "raahi-platform",
+  "version": "1.0.0",
+  "description": "Raahi — AI-Powered Logistics Intelligence Platform for Northeast India",
+  "private": true,
+  "scripts": {
+    "start": "concurrently --names \"ML,BACKEND,FRONTEND\" --prefix-colors \"yellow,magenta,cyan\" \"npm run start:ml\" \"npm run start:backend\" \"npm run start:frontend\"",
+    "start:ml": "cd ml-service && python -m uvicorn app.main:app --reload --port 8000",
+    "start:backend": "cd core-backend && npm run dev",
+    "start:frontend": "cd frontend && npm run dev",
+    "build": "cd core-backend && npm run build && cd ../frontend && npm run build",
+    "seed": "cd core-backend && npm run seed"
+  },
+  "devDependencies": {
+    "concurrently": "^9.1.0"
+  }
+}

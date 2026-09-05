@@ -1,0 +1,39 @@
+{
+  "results": {
+    "delay": {
+      "mae": 19.2,
+      "rmse": 39.32,
+      "r2": 0.9931
+    },
+    "safety": {
+      "mae": 2.64,
+      "r2": 0.9505
+    },
+    "rank": {
+      "accuracy": 1.0,
+      "f1": 1.0
+    },
+    "rank_classes": [
+      1,
+      2,
+      3
+    ]
+  },
+  "trained_at": "2026-09-02T13:40:19.677775",
+  "n_samples": 3000,
+  "features": [
+    "distance_km",
+    "road_condition",
+    "bridge_condition",
+    "avg_slope_risk",
+    "avg_elevation_m",
+    "rainfall_24h_mm",
+    "temp_celsius",
+    "congestion_level",
+    "flood_risk_level",
+    "landslide_probability",
+    "priority",
+    "month",
+    "commodity_encoded"
+  ]
+}
