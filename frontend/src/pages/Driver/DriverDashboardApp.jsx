@@ -32,6 +32,7 @@ import DriverLiveMap from '@/components/driver/DriverLiveMap';
 import DriverReportForm from '@/components/driver/DriverReportForm';
 import DriverHistory from '@/components/driver/DriverHistory';
 import ApiClient from '@/lib/api';
+import { subscribeToDynamicReroute } from '@/lib/socket';
 import { toast } from 'sonner';
 
 const TABS = [
@@ -66,6 +67,7 @@ export default function DriverDashboardApp() {
   const [trail, setTrail] = useState([]);
   const [live, setLive] = useState(null);
   const [liveError, setLiveError] = useState(null);
+  const [reroutedNotice, setReroutedNotice] = useState(null);
 
   const isDriver = user?.backendRole === 'driver';
   const vehicle = t.ctx?.vehicle;
@@ -75,16 +77,33 @@ export default function DriverDashboardApp() {
     ? t.lastUploadAgeSec
     : t.trackingLive ? 0 : null;
 
-  // Live map data: corridor geometry from GIS + verified GPS trail
+  // Live map data: real-time road route with alert-avoidance, or GIS fallback
   const loadRoute = useCallback(async () => {
-    if (!trip?.route_id) {
+    if (!trip?.route_id && !vehicle?.id) {
       setRouteCoords(null);
       return;
     }
+    // 1. Try alert-aware live road route first
+    if (vehicle?.id) {
+      try {
+        const liveRes = await ApiClient.getLiveRoute(vehicle.id);
+        const d = liveRes?.data || {};
+        if (d.hasRoute && Array.isArray(d.geometry) && d.geometry.length > 1) {
+          setRouteCoords(d.geometry);
+          if (d.rerouted) {
+            setReroutedNotice(d.rerouteReason || 'Dynamic safe detour active');
+          }
+          return;
+        }
+      } catch {
+        // Fallback to GIS routes below
+      }
+    }
+    // 2. Fallback to GIS corridor geometries
     try {
       const res = await ApiClient.getGisRoutes();
       const feats = res?.success ? res.data?.features || [] : [];
-      const feat = feats.find((f) => f.properties?.id === trip.route_id) ||
+      const feat = feats.find((f) => f.properties?.id === trip?.route_id) ||
         feats.find(
           (f) =>
             (f.properties?.name || '').toLowerCase().includes(
@@ -97,7 +116,7 @@ export default function DriverDashboardApp() {
     } catch {
       // GIS unavailable — map will show GPS trail only
     }
-  }, [trip?.route_id, vehicle?.current_route]);
+  }, [trip?.route_id, vehicle?.id, vehicle?.current_route]);
 
   const loadTrail = useCallback(async () => {
     if (!vehicle?.id) {
@@ -152,6 +171,20 @@ export default function DriverDashboardApp() {
       setTrail([]);
     }
   }, [trip?.id, vehicle?.id, loadRoute, loadTrail, t.lastCompleted]);
+
+  // Real-time dynamic reroute push listener for in-transit hazards
+  useEffect(() => {
+    const unsub = subscribeToDynamicReroute((data) => {
+      if (!data || !data.vehicleId) return;
+      if (data.vehicleId === vehicle?.id && Array.isArray(data.geometry) && data.geometry.length > 1) {
+        setRouteCoords(data.geometry);
+        const reason = data.rerouteReason || 'Dynamic safe bypass active';
+        setReroutedNotice(reason);
+        toast.warning(`⚠️ Reroute: ${reason}`, { duration: 6000 });
+      }
+    });
+    return () => unsub();
+  }, [vehicle?.id]);
 
   // Refresh context shortly after start/stop
   useEffect(() => {
@@ -330,6 +363,7 @@ export default function DriverDashboardApp() {
                 onStart={handleStart}
                 onStop={handleStop}
                 onOpenSos={() => setSosModalOpen(true)}
+                reroutedNotice={reroutedNotice}
               />
             )}
 
@@ -474,6 +508,7 @@ function TrackingView({
   onStart,
   onStop,
   onOpenSos,
+  reroutedNotice,
 }) {
   return (
     <div className="space-y-3.5">
@@ -622,6 +657,15 @@ function TrackingView({
             </span>
           )}
         </div>
+
+        {reroutedNotice && (
+          <div className="px-3.5 py-2.5 bg-amber-500/10 border-b border-amber-500/20 flex items-center gap-2.5 text-xs text-amber-800 animate-pulse">
+            <TriangleAlert className="w-4 h-4 text-amber-600 shrink-0" />
+            <div className="flex-1 leading-snug">
+              <span className="font-bold text-amber-900">Dynamic Reroute Active:</span> {reroutedNotice}
+            </div>
+          </div>
+        )}
 
         <div className="relative">
           <DriverLiveMap marker={marker} route={routeCoords} trail={trail} height={280} />

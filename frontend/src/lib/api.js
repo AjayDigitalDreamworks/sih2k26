@@ -237,7 +237,18 @@ class ApiClient {
   }
 
   static getTransporterDrivers() {
-    return this.request('/transporter/drivers');
+    return this.request('/transporter/drivers').then((res) => {
+      if (res?.success && Array.isArray(res.data) && res.data.length > 0) return res;
+      return this.request('/admin/drivers');
+    });
+  }
+
+  static getAdminDrivers() {
+    return this.request('/admin/drivers');
+  }
+
+  static getDrivers() {
+    return this.getTransporterDrivers();
   }
 
   static getTransporterDeliveries() {
@@ -424,11 +435,30 @@ class ApiClient {
   }
 
   // Real road-network route planner (OSRM geometry, safest/shortest, live per-leg conditions)
-  static planRoute(payload) {
-    return this.request('/integrations/route/plan', {
-      method: 'POST',
-      body: JSON.stringify(payload),
-    });
+  static async planRoute(payload) {
+    try {
+      const res = await this.request('/integrations/route/plan', {
+        method: 'POST',
+        body: JSON.stringify(payload),
+      });
+      if (res && (res.success || res.data?.success || res.data?.recommended)) {
+        return res;
+      }
+    } catch (_) {}
+
+    // Resilient direct fallback to ML service (port 8010)
+    try {
+      const mlUrl = import.meta.env.VITE_ML_SERVICE_URL || 'http://localhost:8010';
+      const r = await fetch(`${mlUrl}/route/plan`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(payload),
+      });
+      const data = await r.json();
+      return { success: true, data };
+    } catch (err) {
+      return { success: false, message: err?.message || 'Route planner unreachable' };
+    }
   }
 
   // Live route from a vehicle's real GPS fix to its active trip destination

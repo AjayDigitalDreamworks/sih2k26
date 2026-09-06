@@ -3,13 +3,42 @@ import { CheckCircle2, Download, AlertTriangle, Loader2 } from 'lucide-react';
 import ApiClient from '@/lib/api';
 import { useApp } from '@/contexts/AppContext';
 
-export const RouteInsightsCard = ({ routes, onExport }) => {
+export const RouteInsightsCard = ({ routes, plan, activeRouteId = 'safest', onExport }) => {
   const app = useApp();
   const openModal = app?.openModal;
   const [insights, setInsights] = useState([]);
   const [loaded, setLoaded] = useState(false);
 
   useEffect(() => {
+    // If dynamic plan is provided, generate insights for the active route
+    if (plan && (plan.recommended || plan.alternatives)) {
+      const activeRoute = (plan.alternatives || []).find((a) => a.id === activeRouteId) || plan.recommended;
+      const list = [];
+      const dist = activeRoute?.totalDistanceKm || activeRoute?.distanceKm || '--';
+      const risk = activeRoute?.riskScore ?? '--';
+      const level = activeRoute?.riskLevel || 'low';
+
+      list.push(`Active Route: ${activeRoute?.name || 'Selected path'} (${dist} km, safety risk: ${risk}/100 · ${level}).`);
+      list.push(`Geometry follows the real OpenStreetMap road network via ${plan.routingProvider === 'osrm' ? 'OSRM' : 'live routing service'}.`);
+
+      if (plan.alerts && plan.alerts.length > 0) {
+        list.push(`${plan.alerts.length} safety alert${plan.alerts.length > 1 ? 's' : ''} monitored: ${plan.alerts[0].title}.`);
+      } else {
+        list.push('No critical weather disruptions or road blockages reported along this path.');
+      }
+
+      if (plan.alternatives && plan.alternatives.length > 1) {
+        const other = plan.alternatives.find((a) => a.id !== activeRouteId);
+        if (other) {
+          list.push(`Alternative ${other.name} (${other.totalDistanceKm || other.distanceKm} km, risk ${other.riskScore}) available for instant switching.`);
+        }
+      }
+
+      setInsights(list);
+      setLoaded(true);
+      return;
+    }
+
     let mounted = true;
     const load = async () => {
       try {
@@ -54,7 +83,7 @@ export const RouteInsightsCard = ({ routes, onExport }) => {
     return () => {
       mounted = false;
     };
-  }, [routes]);
+  }, [routes, plan, activeRouteId]);
 
   return (
     <div className="card" style={{ display: 'flex', flexDirection: 'column', justifyContent: 'space-between' }}>

@@ -17,6 +17,7 @@ import { sendSuccess, sendError } from '../../utils/response';
 import { notifyRiskRecalculation } from '../../utils/mlRiskTrigger';
 import { env } from '../../config/env';
 import { uploadImageToCloudinary } from '../../utils/cloudinary';
+import { TrackingService } from '../tracking/tracking.service';
 import bcrypt from 'bcrypt';
 
 export class AdminController {
@@ -209,6 +210,18 @@ export class AdminController {
     }
   }
 
+  static async getDrivers(req: Request, res: Response) {
+    try {
+      const drivers = await Driver.findAll({
+        include: [{ model: Vehicle, as: 'vehicle' }],
+        order: [['name', 'ASC']],
+      });
+      return sendSuccess(res, drivers, 'Drivers retrieved');
+    } catch (err: any) {
+      return sendError(res, err.message);
+    }
+  }
+
   // 6. Alerts CRUD
   static async getAlerts(req: Request, res: Response) {
     try {
@@ -234,6 +247,7 @@ export class AdminController {
       });
       // New disruption on the network → refresh corridor risk immediately.
       notifyRiskRecalculation(`alert created: ${id} (${alert.severity})`);
+      TrackingService.evaluateDynamicReroutesForAlert(alert).catch(() => {});
       return sendSuccess(res, alert, 'Alert created and broadcasted', 201);
     } catch (err: any) {
       return sendError(res, err.message);

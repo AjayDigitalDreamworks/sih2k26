@@ -14,7 +14,7 @@ import {
   CheckCircle2,
   Clock,
 } from 'lucide-react';
-import { MapContainer, Polyline, Marker, Popup } from 'react-leaflet';
+import { MapContainer, Polyline, Marker, Popup, useMap } from 'react-leaflet';
 import { MapZoomControls } from '../../components/admin/common/MapZoomControls';
 import { ResilientTileLayer } from '../../components/admin/common/ResilientTileLayer';
 import L from 'leaflet';
@@ -23,6 +23,42 @@ import TransporterSidebar from '../../components/transporter/TransporterSidebar'
 import TransporterHeader from '../../components/transporter/TransporterHeader';
 import ApiClient from '../../lib/api';
 import { DISTRICTS, districtById, districtLabel } from '../../data/geoMaster';
+
+function MapViewportSync({ points, originD, destD, focusedPoint }) {
+  const map = useMap();
+  const lastFocusRef = useRef(null);
+
+  useEffect(() => {
+    if (focusedPoint && focusedPoint !== lastFocusRef.current) {
+      lastFocusRef.current = focusedPoint;
+      try {
+        map.flyTo(focusedPoint, 14, { duration: 0.9 });
+      } catch (_) {}
+      return;
+    }
+    if (points && points.length > 1) {
+      try {
+        const bounds = L.latLngBounds(points);
+        if (bounds.isValid()) {
+          map.fitBounds(bounds, { padding: [35, 35], maxZoom: 15 });
+          return;
+        }
+      } catch (_) {}
+    }
+    if (originD && destD) {
+      try {
+        const bounds = L.latLngBounds([
+          [originD.lat, originD.lng],
+          [destD.lat, destD.lng],
+        ]);
+        if (bounds.isValid()) {
+          map.fitBounds(bounds, { padding: [35, 35], maxZoom: 15 });
+        }
+      } catch (_) {}
+    }
+  }, [points, originD, destD, focusedPoint, map]);
+  return null;
+}
 
 const dotIcon = (color) =>
   L.divIcon({
@@ -41,8 +77,10 @@ export default function RoutePlanningPage() {
   const [drivers, setDrivers] = useState([]);
   const [trips, setTrips] = useState([]);
 
-  const [originId, setOriginId] = useState('kamrup');
-  const [destId, setDestId] = useState('sonitpur');
+  const [originId, setOriginId] = useState('dabua_chowk');
+  const [destId, setDestId] = useState('aravali_college');
+  const [focusedPoint, setFocusedPoint] = useState(null);
+  const [activeRouteId, setActiveRouteId] = useState('safest');
   const [commodity, setCommodity] = useState('general');
   const [weightKg, setWeightKg] = useState('');
   const [vehicleId, setVehicleId] = useState('');
@@ -90,9 +128,19 @@ export default function RoutePlanningPage() {
   const originD = districtById(originId);
   const destD = districtById(destId);
 
-  // Real road geometry (OSRM via ML planner) for the selected pair - debounced so
-  // it only fires after the user settles on origin/destination. The polyline follows
-  // actual national highways, never a straight centroid line.
+  const handleOriginChange = (newOrigin) => {
+    setOriginId(newOrigin);
+    const d = districtById(newOrigin);
+    if (d) setFocusedPoint([d.lat, d.lng]);
+  };
+
+  const handleDestChange = (newDest) => {
+    setDestId(newDest);
+    const d = districtById(newDest);
+    if (d) setFocusedPoint([d.lat, d.lng]);
+  };
+
+  // Real road geometry (OSRM via ML planner) for the selected pair - debounced with 150ms
   const [roadPlan, setRoadPlan] = useState(null);
   const [roadLoading, setRoadLoading] = useState(false);
   const roadSeq = useRef(0);
@@ -107,18 +155,24 @@ export default function RoutePlanningPage() {
       try {
         const res = await ApiClient.planRoute({ originDistrictId: originId, destDistrictId: destId, prefer: 'safest' });
         if (mySeq !== roadSeq.current) return;
-        if (res?.success && res.data?.success) setRoadPlan(res.data);
-        else setRoadPlan(null);
+        if (res?.success && (res.data?.success || res.data?.recommended)) {
+          setRoadPlan(res.data);
+          setActiveRouteId(res.data.preferred || res.data.alternatives?.[0]?.id || 'safest');
+        } else {
+          setRoadPlan(null);
+        }
       } catch (e) {
         if (mySeq === roadSeq.current) setRoadPlan(null);
       } finally {
         if (mySeq === roadSeq.current) setRoadLoading(false);
       }
-    }, 600);
+    }, 150);
     return () => clearTimeout(t);
   }, [originId, destId]);
-  const roadLegs = roadPlan?.recommended?.legs || [];
-  const roadPoints = roadPlan?.recommended?.geometry || [];
+
+  const activeRoadRoute = (roadPlan?.alternatives || []).find((a) => a.id === activeRouteId) || roadPlan?.recommended || null;
+  const roadLegs = activeRoadRoute?.legs || [];
+  const roadPoints = activeRoadRoute?.geometry || [];
 
   const handlePlan = async (e) => {
     e.preventDefault();
@@ -211,13 +265,13 @@ export default function RoutePlanningPage() {
                 <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                   <div>
                     <label className="block text-xs font-bold text-slate-700 mb-1">Origin District</label>
-                    <select value={originId} onChange={(e) => setOriginId(e.target.value)} className={inputCls}>
+                    <select value={originId} onChange={(e) => handleOriginChange(e.target.value)} className={inputCls}>
                       {DISTRICTS.map((d) => <option key={d.id} value={d.id}>{d.label}</option>)}
                     </select>
                   </div>
                   <div>
                     <label className="block text-xs font-bold text-slate-700 mb-1">Destination District</label>
-                    <select value={destId} onChange={(e) => setDestId(e.target.value)} className={inputCls}>
+                    <select value={destId} onChange={(e) => handleDestChange(e.target.value)} className={inputCls}>
                       {DISTRICTS.map((d) => <option key={d.id} value={d.id}>{d.label}</option>)}
                     </select>
                   </div>
@@ -365,17 +419,73 @@ export default function RoutePlanningPage() {
                     {originD?.label} → {destD?.label}
                   </span>
                 </div>
+
+                {roadPlan?.alternatives && roadPlan.alternatives.length > 1 && (
+                  <div className="flex items-center gap-1.5 mb-3 flex-wrap">
+                    <span className="text-[10px] font-black text-slate-500 uppercase">Routes:</span>
+                    {roadPlan.alternatives.map((alt) => {
+                      const isSelected = alt.id === activeRouteId;
+                      return (
+                        <button
+                          key={alt.id}
+                          type="button"
+                          onClick={() => setActiveRouteId(alt.id)}
+                          className={`px-2.5 py-1 rounded-lg text-xs font-bold transition-all cursor-pointer ${
+                            isSelected
+                              ? 'bg-emerald-600 text-white shadow-xs'
+                              : 'bg-slate-100 text-slate-700 hover:bg-slate-200 border border-slate-200'
+                          }`}
+                        >
+                          {alt.name} ({alt.totalDistanceKm || alt.distanceKm} km · risk {alt.riskScore})
+                        </button>
+                      );
+                    })}
+                  </div>
+                )}
+
                 <div className="relative w-full h-[380px] sm:h-[430px] rounded-xl overflow-hidden border border-slate-200/80 z-0">
-                  <MapContainer center={[26.1, 92.6]} zoom={7} zoomControl={false} scrollWheelZoom className="w-full h-full">
+                  <MapContainer center={originD ? [originD.lat, originD.lng] : [28.3842, 77.2878]} zoom={12} zoomControl={false} scrollWheelZoom className="w-full h-full">
                     <ResilientTileLayer attribution='&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a>' url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png" />
                     <MapZoomControls position="top-right" compact />
+                    <MapViewportSync points={roadPoints} originD={originD} destD={destD} focusedPoint={focusedPoint} />
+
+                    {/* Alternative Routes (dashed line, clickable) */}
+                    {roadPlan?.alternatives &&
+                      roadPlan.alternatives
+                        .filter((a) => a.id !== activeRouteId && a.geometry && a.geometry.length > 1)
+                        .map((alt) => (
+                          <Polyline
+                            key={'trans-alt-' + alt.id}
+                            positions={alt.geometry}
+                            pathOptions={{ color: '#64748B', weight: 3.5, opacity: 0.75, dashArray: '6, 5' }}
+                            eventHandlers={{ click: () => setActiveRouteId(alt.id) }}
+                          >
+                            <Popup>
+                              <div className="text-xs">
+                                <strong>{alt.name}</strong>
+                                <p className="text-[10px] text-slate-500">
+                                  {alt.totalDistanceKm || alt.distanceKm} km | Risk {alt.riskScore}/100
+                                </p>
+                                <button
+                                  type="button"
+                                  onClick={() => setActiveRouteId(alt.id)}
+                                  className="mt-1 px-2.5 py-1 bg-emerald-600 text-white rounded-md text-[10px] font-bold cursor-pointer"
+                                >
+                                  Activate Route
+                                </button>
+                              </div>
+                            </Popup>
+                          </Polyline>
+                        ))}
+
+                    {/* Active Route */}
                     {roadPoints.length > 1 && (
-                      <Polyline positions={roadPoints} pathOptions={{ color: '#0D7A48', weight: 4, opacity: 0.95, lineCap: 'round', lineJoin: 'round' }}>
+                      <Polyline positions={roadPoints} pathOptions={{ color: '#0D7A48', weight: 4.5, opacity: 0.95, lineCap: 'round', lineJoin: 'round' }}>
                         <Popup>
                           <div className="text-xs">
-                            <strong>Real road route (OSRM)</strong>
+                            <strong>{activeRoadRoute?.name || 'Real road route (OSRM)'}</strong>
                             <p className="text-[10px] text-slate-500">
-                              {roadPlan?.recommended?.totalDistanceKm} km | risk {roadPlan?.recommended?.riskScore}/100 ({roadPlan?.recommended?.riskLevel})
+                              {activeRoadRoute?.totalDistanceKm || activeRoadRoute?.distanceKm} km | risk {activeRoadRoute?.riskScore}/100 ({activeRoadRoute?.riskLevel})
                               {' | '}{roadLegs.length} road segment{roadLegs.length === 1 ? '' : 's'}
                             </p>
                           </div>

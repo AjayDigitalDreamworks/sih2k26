@@ -1,6 +1,6 @@
 """
 NER Route Optimizer — covers all seeded districts with realistic inter-district distances.
-Distances based on actual NH corridor lengths for North East India.
+Distances based on actual NH corridor lengths for North East India, plus local Faridabad road networks.
 """
 
 from typing import Dict, Any, List, Optional
@@ -97,6 +97,27 @@ NER_DISTANCES: Dict[str, Dict[str, float]] = {
         "dima_hasao": 200.0,
         "west_tripura": 380.0,
     },
+    # Faridabad (Haryana) hubs
+    "ajay_digital_dreamworks": {
+        "dabua_chowk": 1.2,
+        "dabua_colony": 0.5,
+        "aravali_college": 17.5,
+    },
+    "dabua_chowk": {
+        "ajay_digital_dreamworks": 1.2,
+        "dabua_colony": 0.9,
+        "aravali_college": 15.8,
+    },
+    "dabua_colony": {
+        "ajay_digital_dreamworks": 0.5,
+        "dabua_chowk": 0.9,
+        "aravali_college": 16.5,
+    },
+    "aravali_college": {
+        "ajay_digital_dreamworks": 17.5,
+        "dabua_chowk": 15.8,
+        "dabua_colony": 16.5,
+    },
 }
 
 # Known risk factors per route segment (from seed data)
@@ -107,6 +128,13 @@ SEGMENT_RISK: Dict[str, Dict[str, Any]] = {
     ("dimapur", "imphal_west"): {"slope_risk": 85, "road_condition": "blocked", "nh": "NH-2"},
     ("kamrup", "papum_pare"): {"slope_risk": 25, "road_condition": "good", "nh": "NH-27/NH-415"},
     ("dima_hasao", "cachar"): {"slope_risk": 65, "road_condition": "damaged", "nh": "NH-6"},
+    # Faridabad hubs
+    ("ajay_digital_dreamworks", "aravali_college"): {"slope_risk": 5, "road_condition": "good", "nh": "Faridabad Bypass / Jasana Rd"},
+    ("dabua_chowk", "aravali_college"): {"slope_risk": 5, "road_condition": "good", "nh": "BPTP / Jasana Rd"},
+    ("dabua_colony", "aravali_college"): {"slope_risk": 5, "road_condition": "good", "nh": "Sohna Rd / Jasana Rd"},
+    ("ajay_digital_dreamworks", "dabua_chowk"): {"slope_risk": 5, "road_condition": "good", "nh": "Dabua Main Rd"},
+    ("dabua_colony", "dabua_chowk"): {"slope_risk": 5, "road_condition": "good", "nh": "Sohna Rd / Dabua Rd"},
+    ("ajay_digital_dreamworks", "dabua_colony"): {"slope_risk": 5, "road_condition": "good", "nh": "Dabua Colony Rd"},
 }
 
 
@@ -145,6 +173,13 @@ ROAD_NETWORK = [
     {"from": "papum_pare", "to": "sonitpur", "distance_km": 280, "nh": "NH-415/NH-37", "road_condition": "good", "bridge_condition": "operational"},
     {"from": "papum_pare", "to": "dimapur", "distance_km": 230, "nh": "NH-415/NH-2", "road_condition": "damaged", "bridge_condition": "operational"},
     {"from": "west_tripura", "to": "aizawl", "distance_km": 380, "nh": "NH-8/NH-306", "road_condition": "damaged", "bridge_condition": "damaged"},
+    # Faridabad hubs
+    {"from": "ajay_digital_dreamworks", "to": "aravali_college", "distance_km": 17.5, "nh": "Faridabad Bypass / Jasana Rd", "road_condition": "good", "bridge_condition": "operational"},
+    {"from": "dabua_chowk", "to": "aravali_college", "distance_km": 15.8, "nh": "BPTP / Jasana Rd", "road_condition": "good", "bridge_condition": "operational"},
+    {"from": "dabua_colony", "to": "aravali_college", "distance_km": 16.5, "nh": "Sohna Rd / Jasana Rd", "road_condition": "good", "bridge_condition": "operational"},
+    {"from": "ajay_digital_dreamworks", "to": "dabua_chowk", "distance_km": 1.2, "nh": "Dabua Main Rd", "road_condition": "good", "bridge_condition": "operational"},
+    {"from": "dabua_colony", "to": "dabua_chowk", "distance_km": 0.9, "nh": "Sohna Rd / Dabua Rd", "road_condition": "good", "bridge_condition": "operational"},
+    {"from": "ajay_digital_dreamworks", "to": "dabua_colony", "distance_km": 0.5, "nh": "Dabua Colony Rd", "road_condition": "good", "bridge_condition": "operational"},
 ]
 
 

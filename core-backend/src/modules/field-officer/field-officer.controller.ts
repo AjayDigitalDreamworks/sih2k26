@@ -21,6 +21,7 @@ import {
   Alert as MongoAlert,
   AuditLog,
 } from '../../models/mongo';
+import { TrackingService } from '../tracking/tracking.service';
 
 const EVIDENCE_DIR = path.join(__dirname, '../../../uploads/field-evidence');
 if (!fs.existsSync(EVIDENCE_DIR)) {
@@ -460,7 +461,7 @@ export class FieldOfficerController {
       } else if (isRoadImpassable) {
         // Create emergency Alert in MongoDB so transporters and drivers receive it immediately
         try {
-          await MongoAlert.create({
+          const newAlert = await MongoAlert.create({
             id: `ALT-VER-${Date.now()}`,
             title: `CRITICAL: ${task.title} (Field Verified)`,
             type: task.issue_type.toLowerCase(),
@@ -473,6 +474,7 @@ export class FieldOfficerController {
             channel: 'app',
             status: 'active',
           });
+          TrackingService.evaluateDynamicReroutesForAlert(newAlert).catch(() => {});
         } catch {}
       }
 

@@ -124,7 +124,20 @@ export class TransporterController {
       const routeRisk = mlPlan?.recommended?.riskScore || 25;
 
       if (!route) {
-        const routeId = `R-${originDistrictId.slice(0, 3).toUpperCase()}-${destDistrictId.slice(0, 3).toUpperCase()}`;
+        const oCode = originDistrictId.replace(/[^a-zA-Z0-9]/g, '').slice(0, 10).toUpperCase();
+        const dCode = destDistrictId.replace(/[^a-zA-Z0-9]/g, '').slice(0, 10).toUpperCase();
+        const routeId = `R-${oCode}-${dCode}`.slice(0, 50);
+
+        const oLng = mlPlan?.origin?.lng || 77.2878;
+        const oLat = mlPlan?.origin?.lat || 28.3842;
+        const dLng = mlPlan?.destination?.lng || 77.4125;
+        const dLat = mlPlan?.destination?.lat || 28.4006;
+        const rawCoords = mlPlan?.recommended?.legs?.[0]?.geometry?.coordinates;
+        const routeCoords = Array.isArray(rawCoords) && rawCoords.length > 1
+          ? rawCoords
+          : [[oLng, oLat], [dLng, dLat]];
+        const routeGeom = JSON.stringify({ type: 'LineString', coordinates: routeCoords });
+
         route = await Route.create({
           id: routeId,
           name: `${originName} → ${destName}`,
@@ -133,7 +146,8 @@ export class TransporterController {
           distance_km: routeDistance,
           avg_travel_hours: routeTravelHours,
           current_risk_score: routeRisk,
-          status: routeRisk > 70 ? 'blocked' : routeRisk > 50 ? 'at_risk' : 'open',
+          status: routeRisk > 70 ? 'blocked' : routeRisk > 50 ? 'at_risk' : 'good',
+          geom: routeGeom,
         });
       }
 
@@ -221,7 +235,10 @@ export class TransporterController {
         if (!route) {
           const originName = req.body.originDistrictId.replace(/_/g, ' ').replace(/\b\w/g, (c: string) => c.toUpperCase());
           const destName = req.body.destDistrictId.replace(/_/g, ' ').replace(/\b\w/g, (c: string) => c.toUpperCase());
-          const routeId = `R-${req.body.originDistrictId.slice(0, 3).toUpperCase()}-${req.body.destDistrictId.slice(0, 3).toUpperCase()}`;
+          const routeGeom = JSON.stringify({
+            type: 'LineString',
+            coordinates: [[77.2878, 28.3842], [77.4125, 28.4006]],
+          });
           route = await Route.create({
             id: routeId,
             name: `${originName} → ${destName}`,
@@ -230,7 +247,8 @@ export class TransporterController {
             distance_km: req.body.distanceKm || 175,
             avg_travel_hours: req.body.estimatedHours || 4,
             current_risk_score: 25,
-            status: 'open',
+            status: 'good',
+            geom: routeGeom,
           });
         }
       }
@@ -239,15 +257,20 @@ export class TransporterController {
       }
 
       // Vehicle + driver verification
+      const isTransporterOnly = req.user?.role === 'transporter' && transporterId;
       const vehicle = req.body.vehicleId
-        ? await Vehicle.findOne({ where: { id: req.body.vehicleId, transporter_id: transporterId } })
+        ? await Vehicle.findOne({
+            where: isTransporterOnly ? { id: req.body.vehicleId, transporter_id: transporterId } : { id: req.body.vehicleId },
+          })
         : null;
-      if (!vehicle) return sendError(res, 'Vehicle not found in your fleet — select a real vehicle', 400);
+      if (!vehicle) return sendError(res, 'Vehicle not found in fleet — select a real vehicle', 400);
 
       const driver = req.body.driverId
-        ? await Driver.findOne({ where: { id: req.body.driverId, transporter_id: transporterId } })
+        ? await Driver.findOne({
+            where: isTransporterOnly ? { id: req.body.driverId, transporter_id: transporterId } : { id: req.body.driverId },
+          })
         : null;
-      if (!driver) return sendError(res, 'Driver not found in your fleet — select a real driver', 400);
+      if (!driver) return sendError(res, 'Driver not found in fleet — select a real driver', 400);
 
       if (driver.vehicle_id && driver.vehicle_id !== vehicle.id) {
         return sendError(res, `Driver ${driver.name} is already assigned to vehicle ${driver.vehicle_id}`, 409);
@@ -322,13 +345,19 @@ export class TransporterController {
     }
   }
 
-  // 3. Vehicles CRUD (Transporter Scoped)
+  // 3. Vehicles CRUD (Transporter & Admin Scoped)
   static async getVehicles(req: Request, res: Response) {
     try {
-      const transporterId = req.user?.transporterId || 'transporter_01';
+      const role = req.user?.role;
+      const transporterId = req.user?.transporterId;
+      const where: any = {};
+      if (role === 'transporter' && transporterId) {
+        where.transporter_id = transporterId;
+      }
       const vehicles = await Vehicle.findAll({
-        where: { transporter_id: transporterId },
+        where,
         include: [{ model: Driver, as: 'driver' }],
+        order: [['id', 'ASC']],
       });
       return sendSuccess(res, vehicles, 'Fleet vehicles retrieved');
     } catch (err: any) {
@@ -434,13 +463,19 @@ export class TransporterController {
     }
   }
 
-  // 4. Drivers CRUD (Transporter Scoped)
+  // 4. Drivers CRUD (Transporter & Admin Scoped)
   static async getDrivers(req: Request, res: Response) {
     try {
-      const transporterId = req.user?.transporterId || 'transporter_01';
+      const role = req.user?.role;
+      const transporterId = req.user?.transporterId;
+      const where: any = {};
+      if (role === 'transporter' && transporterId) {
+        where.transporter_id = transporterId;
+      }
       const drivers = await Driver.findAll({
-        where: { transporter_id: transporterId },
+        where,
         include: [{ model: Vehicle, as: 'vehicle' }],
+        order: [['name', 'ASC']],
       });
       return sendSuccess(res, drivers, 'Drivers retrieved');
     } catch (err: any) {

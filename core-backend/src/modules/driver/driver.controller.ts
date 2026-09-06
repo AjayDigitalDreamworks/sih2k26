@@ -232,6 +232,7 @@ export class DriverController {
             io.to('admin:all').emit('alert.created', autoAlert);
             io.to('admin:all').emit('alert:broadcast', autoAlert);
           }
+          TrackingService.evaluateDynamicReroutesForAlert(autoAlert).catch(() => {});
         } catch (alertErr) {
           console.warn('[DRIVER-REPORT] Auto alert creation notice:', alertErr);
         }
@@ -315,6 +316,7 @@ export class DriverController {
             io.to('admin:all').emit('alert.created', autoAlert);
             io.to('admin:all').emit('alert:broadcast', autoAlert);
           }
+          TrackingService.evaluateDynamicReroutesForAlert(autoAlert).catch(() => {});
         } catch (alertErr) {
           console.warn('[DRIVER-ROAD] Auto alert creation notice:', alertErr);
         }

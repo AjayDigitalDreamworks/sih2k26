@@ -99,6 +99,11 @@ class APIConfig:
         "aizawl": {"name": "Aizawl", "lat": 23.7271, "lng": 92.7176, "imd_id": "42393"},
         "papum_pare": {"name": "Itanagar", "lat": 27.0844, "lng": 93.6053, "imd_id": "42305"},
         "west_tripura": {"name": "Agartala", "lat": 23.8315, "lng": 91.2868, "imd_id": "42395"},
+        # Faridabad, Haryana hubs
+        "ajay_digital_dreamworks": {"name": "Ajay Digital Dreamworks", "lat": 28.3820, "lng": 77.2800, "state": "Haryana", "imd_id": "42182"},
+        "dabua_chowk": {"name": "Dabua Chowk", "lat": 28.3842, "lng": 77.2878, "state": "Haryana", "imd_id": "42182"},
+        "dabua_colony": {"name": "Dabua Colony", "lat": 28.3838, "lng": 77.2817, "state": "Haryana", "imd_id": "42182"},
+        "aravali_college": {"name": "Aravali College of Engineering & Management", "lat": 28.4006, "lng": 77.4125, "state": "Haryana", "imd_id": "42182"},
     }
 
     # --- Known NH Route Waypoints (for TomTom routing) ---

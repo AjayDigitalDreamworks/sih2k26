@@ -13,6 +13,11 @@ export const DISTRICTS = [
   { id: 'aizawl', name: 'Aizawl', city: 'Aizawl', label: 'Aizawl', state: 'Mizoram', lat: 23.7271, lng: 92.7176 },
   { id: 'papum_pare', name: 'Papum Pare', city: 'Itanagar', label: 'Papum Pare (Itanagar)', state: 'Arunachal Pradesh', lat: 27.0844, lng: 93.6053 },
   { id: 'west_tripura', name: 'West Tripura', city: 'Agartala', label: 'West Tripura (Agartala)', state: 'Tripura', lat: 23.8315, lng: 91.2868 },
+  // Faridabad (Haryana) hubs
+  { id: 'ajay_digital_dreamworks', name: 'Ajay Digital Dreamworks', city: 'Faridabad', label: 'Ajay Digital Dreamworks (Dabua, Faridabad)', state: 'Haryana', lat: 28.3820, lng: 77.2800 },
+  { id: 'dabua_chowk', name: 'Dabua Chowk', city: 'Faridabad', label: 'Dabua Chowk (NIT Faridabad)', state: 'Haryana', lat: 28.3842, lng: 77.2878 },
+  { id: 'dabua_colony', name: 'Dabua Colony', city: 'Faridabad', label: 'Dabua Colony (NIT Faridabad)', state: 'Haryana', lat: 28.3838, lng: 77.2817 },
+  { id: 'aravali_college', name: 'Aravali College of Engineering & Management', city: 'Faridabad', label: 'Aravali College of Engg & Mgmt (Jasana, Faridabad)', state: 'Haryana', lat: 28.4006, lng: 77.4125 },
 ];
 
 export const districtById = (id) => DISTRICTS.find((d) => d.id === id) || null;
@@ -34,4 +39,8 @@ export const CORRIDORS = [
   { id: 'R-03', name: 'Silchar → Aizawl', originDistrictId: 'cachar', destDistrictId: 'aizawl', highway: 'NH-306' },
   { id: 'R-04', name: 'Dimapur → Imphal', originDistrictId: 'dimapur', destDistrictId: 'imphal_west', highway: 'NH-2' },
   { id: 'R-05', name: 'Guwahati → Itanagar', originDistrictId: 'kamrup', destDistrictId: 'papum_pare', highway: 'NH-27 / NH-415' },
+  { id: 'R-FBD-01', name: 'Ajay Digital Dreamworks → Aravali College', originDistrictId: 'ajay_digital_dreamworks', destDistrictId: 'aravali_college', highway: 'Faridabad Bypass / Jasana Rd' },
+  { id: 'R-FBD-02', name: 'Dabua Chowk → Aravali College', originDistrictId: 'dabua_chowk', destDistrictId: 'aravali_college', highway: 'BPTP / Jasana Rd' },
+  { id: 'R-FBD-03', name: 'Dabua Colony → Dabua Chowk', originDistrictId: 'dabua_colony', destDistrictId: 'dabua_chowk', highway: 'Sohna Rd / Dabua Rd' },
+  { id: 'R-FBD-04', name: 'Ajay Digital Dreamworks → Dabua Chowk', originDistrictId: 'ajay_digital_dreamworks', destDistrictId: 'dabua_chowk', highway: 'Dabua Main Rd' },
 ];

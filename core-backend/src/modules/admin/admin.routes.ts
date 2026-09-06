@@ -26,9 +26,10 @@ router.get('/routes', AdminController.getRoutes);
 router.get('/routes/:id/risk', AdminController.getRouteRisk);
 router.get('/routes/:id/alternates', AdminController.getRouteAlternates);
 
-// 4. Vehicles
+// 4. Vehicles & Drivers
 router.get('/vehicles', AdminController.getVehicles);
 router.get('/vehicles/:id', AdminController.getVehicleById);
+router.get('/drivers', AdminController.getDrivers);
 
 // 5. Alerts
 router.get('/alerts', AdminController.getAlerts);

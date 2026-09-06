@@ -92,7 +92,10 @@ export default function DriverLiveMap({ marker, route, trail, height = 280 }) {
   const [map, setMap] = useState(null);
 
   const routeLatLngs = Array.isArray(route)
-    ? route.filter((c) => Array.isArray(c) && c.length >= 2 && Number.isFinite(c[0]) && Number.isFinite(c[1])).map((c) => [c[1], c[0]])
+    ? route.filter((c) => Array.isArray(c) && c.length >= 2 && Number.isFinite(c[0]) && Number.isFinite(c[1])).map((c) => {
+        if (c[0] > 70 && c[1] < 40) return [c[1], c[0]];
+        return [c[0], c[1]];
+      })
     : [];
   const trailLatLngs = Array.isArray(trail) && trail.length > 1
     ? trail.filter((p) => p && Number.isFinite(p.lat) && Number.isFinite(p.lng)).map((p) => [p.lat, p.lng])

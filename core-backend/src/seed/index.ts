@@ -179,8 +179,12 @@ export async function runSeed() {
     { id: 'aizawl', name: 'Aizawl', state: 'Mizoram', connectivity_status: 'partial', connectivity_score: 64, population: 400309, geom: createDistrictPolygon(23.7271, 92.7176, 25), centroid_lat: 23.7271, centroid_lng: 92.7176 },
     { id: 'papum_pare', name: 'Papum Pare (Itanagar)', state: 'Arunachal Pradesh', connectivity_status: 'accessible', connectivity_score: 78, population: 176573, geom: createDistrictPolygon(27.0844, 93.6053, 30), centroid_lat: 27.0844, centroid_lng: 93.6053 },
     { id: 'west_tripura', name: 'West Tripura (Agartala)', state: 'Tripura', connectivity_status: 'accessible', connectivity_score: 86, population: 918200, geom: createDistrictPolygon(23.8315, 91.2868, 20), centroid_lat: 23.8315, centroid_lng: 91.2868 },
+    { id: 'ajay_digital_dreamworks', name: 'Ajay Digital Dreamworks (Faridabad)', state: 'Haryana', connectivity_status: 'accessible', connectivity_score: 95, population: 50000, geom: createDistrictPolygon(28.3820, 77.2800, 10), centroid_lat: 28.3820, centroid_lng: 77.2800 },
+    { id: 'dabua_chowk', name: 'Dabua Chowk (Faridabad)', state: 'Haryana', connectivity_status: 'accessible', connectivity_score: 95, population: 75000, geom: createDistrictPolygon(28.3842, 77.2878, 10), centroid_lat: 28.3842, centroid_lng: 77.2878 },
+    { id: 'dabua_colony', name: 'Dabua Colony (Faridabad)', state: 'Haryana', connectivity_status: 'accessible', connectivity_score: 95, population: 60000, geom: createDistrictPolygon(28.3838, 77.2817, 10), centroid_lat: 28.3838, centroid_lng: 77.2817 },
+    { id: 'aravali_college', name: 'Aravali College of Engg & Mgmt (Jasana, Faridabad)', state: 'Haryana', connectivity_status: 'accessible', connectivity_score: 95, population: 20000, geom: createDistrictPolygon(28.4006, 77.4125, 10), centroid_lat: 28.4006, centroid_lng: 77.4125 },
   ] as any);
-  console.log('✅ 12 districts seeded (with PostGIS polygons).');
+  console.log('✅ 16 districts seeded (with PostGIS polygons).');
 
   // ─── ROADS (6 national highways) ──────────────────────────────────
   await Road.bulkCreate([

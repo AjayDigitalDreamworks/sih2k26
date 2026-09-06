@@ -7,7 +7,7 @@ import { useApp } from '@/contexts/AppContext';
 import { MapZoomControls } from '@/components/admin/common/MapZoomControls';
 import { ResilientTileLayer } from '@/components/admin/common/ResilientTileLayer';
 import { RiskHeatLayer } from '@/components/admin/common/RiskHeatLayer';
-import { getSocket, subscribeToEmergency, subscribeToEmergencyCancelled } from '@/lib/socket';
+import { getSocket, subscribeToEmergency, subscribeToEmergencyCancelled, subscribeToDynamicReroute } from '@/lib/socket';
 import ApiClient from '@/lib/api';
 import { useVehicleTracking } from '@/hooks/useVehicleTracking';
 
@@ -197,6 +197,17 @@ export const FleetTrackingMap = ({ selectedVehicleId, onSelectVehicle }) => {
     load();
     const iv = setInterval(load, 90000);
     return () => { alive = false; clearInterval(iv); };
+  }, [selectedVehicleId]);
+
+  // Real-time Dynamic Reroute socket listener
+  useEffect(() => {
+    const unsub = subscribeToDynamicReroute((data) => {
+      if (!data || !data.vehicleId) return;
+      if (data.vehicleId === selectedVehicleId) {
+        setLiveRoute(data);
+      }
+    });
+    return () => unsub();
   }, [selectedVehicleId]);
 
   const liveRouteGeom = liveRoute?.hasRoute && (liveRoute.geometry || []).length > 1 ? liveRoute.geometry : null;
@@ -616,6 +627,15 @@ export const FleetTrackingMap = ({ selectedVehicleId, onSelectVehicle }) => {
                 {liveRoute?.trip?.id && <div>Trip {liveRoute.trip.id} · {liveRoute.trip.status}</div>}
                 {liveRoute?.gpsStart && <div style={{ fontSize: 9, color: '#059669' }}>starts at live GPS position</div>}
               </div>
+              {liveRoute?.rerouted && (
+                <div style={{ display: 'flex', gap: 4, alignItems: 'flex-start', marginTop: 4, padding: '4px 6px', borderRadius: 4, background: '#FEF3C7', border: '1px solid #FCD34D', fontSize: 10, color: '#92400E' }}>
+                  <AlertTriangle size={11} style={{ flexShrink: 0, marginTop: 1, color: '#D97706' }} />
+                  <div>
+                    <b style={{ display: 'block', color: '#B45309' }}>Dynamic Reroute Active</b>
+                    <span>{liveRoute.rerouteReason || 'Bypassing hazard on safest alternate corridor'}</span>
+                  </div>
+                </div>
+              )}
               {(liveRoute?.alerts || []).slice(0, 2).map((a, i) => (
                 <div key={i} style={{ display: 'flex', gap: 4, alignItems: 'flex-start', marginTop: 4, padding: '4px 6px', borderRadius: 4, background: '#FEF2F2', border: '1px solid #FECACA', fontSize: 10, color: '#991B1B' }}>
                   <AlertTriangle size={11} style={{ flexShrink: 0, marginTop: 1 }} />

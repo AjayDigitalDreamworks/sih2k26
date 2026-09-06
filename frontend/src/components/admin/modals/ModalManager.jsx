@@ -1,6 +1,7 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { Modal } from '../common/Modal';
 import { useApp } from '@/contexts/AppContext';
+import ApiClient from '@/lib/api';
 import {
   Truck,
   AlertTriangle,
@@ -29,6 +30,24 @@ export const ModalManager = () => {
   const [vModel, setVModel] = useState('Tata 407');
   const [vDriver, setVDriver] = useState('');
   const [vRoute, setVRoute] = useState('Guwahati → Tezpur');
+  const [availableDrivers, setAvailableDrivers] = useState([]);
+
+  useEffect(() => {
+    if (activeModal === 'addVehicle') {
+      let alive = true;
+      ApiClient.getDrivers()
+        .then((res) => {
+          if (alive && res?.success && Array.isArray(res.data)) {
+            setAvailableDrivers(res.data);
+            if (!vDriver && res.data.length > 0) {
+              setVDriver(res.data[0].name || res.data[0].id);
+            }
+          }
+        })
+        .catch(() => {});
+      return () => { alive = false; };
+    }
+  }, [activeModal]);
 
   // Create Alert Form State
   const [aTitle, setATitle] = useState('');
@@ -49,11 +68,12 @@ export const ModalManager = () => {
   const handleAddVehicleSubmit = async (e) => {
     e.preventDefault();
     if (!vId.trim()) return;
-    // Real registration via the fleet API — no fabricated live telemetry.
-    // A new vehicle starts idle/OFFLINE until a real GPS fix arrives.
+    const selectedD = availableDrivers.find(d => d.name === vDriver || d.id === vDriver);
     const created = await addVehicle({
       id: vId.trim().toUpperCase(),
       model: vModel,
+      driver: selectedD?.name || vDriver || null,
+      assigned_driver_id: selectedD?.id || null,
       current_route: vRoute.trim() || null,
     });
     if (created) {
@@ -185,14 +205,21 @@ export const ModalManager = () => {
 
               <div>
                 <label className="query-field-label">Assigned Driver</label>
-                <input
-                  type="text"
-                  placeholder="Driver Full Name"
+                <select
                   value={vDriver}
                   onChange={(e) => setVDriver(e.target.value)}
                   style={{ width: '100%', marginTop: 4 }}
-                  required
-                />
+                >
+                  <option value="">No driver (unassigned)</option>
+                  {availableDrivers.length === 0 && (
+                    <option value="" disabled>No drivers onboarded</option>
+                  )}
+                  {availableDrivers.map((d) => (
+                    <option key={d.id} value={d.name}>
+                      {d.name} {d.vehicle_id ? `(assigned to ${d.vehicle_id})` : '(idle)'}
+                    </option>
+                  ))}
+                </select>
               </div>
             </div>
 

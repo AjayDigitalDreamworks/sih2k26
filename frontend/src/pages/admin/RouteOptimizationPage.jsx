@@ -11,6 +11,17 @@ import { useApp } from '@/contexts/AppContext';
 
 export const RouteOptimizationPage = ({ onExport }) => {
   const { weather } = useApp();
+  const [currentPlan, setCurrentPlan] = React.useState(null);
+  const [activeRouteId, setActiveRouteId] = React.useState('safest');
+
+  const handlePlanChange = React.useCallback((plan) => {
+    setCurrentPlan(plan);
+    if (plan?.preferred) {
+      setActiveRouteId(plan.preferred);
+    } else if (plan?.alternatives?.[0]?.id) {
+      setActiveRouteId(plan.alternatives[0].id);
+    }
+  }, []);
 
   return (
     <div className="route-optimization-page">
@@ -45,21 +56,46 @@ export const RouteOptimizationPage = ({ onExport }) => {
 
       {/* Main Map & Route Sequence Timeline Section */}
       <div className="grid-2" style={{ gridTemplateColumns: '1.8fr 1.2fr', marginBottom: '24px', alignItems: 'start' }}>
-        <RoutePlannerMap />
-        <RouteSequenceTimeline />
+        <RoutePlannerMap
+          plan={currentPlan}
+          onPlanChange={handlePlanChange}
+          activeRouteId={activeRouteId}
+          onSelectRoute={setActiveRouteId}
+        />
+        <RouteSequenceTimeline
+          plan={currentPlan}
+          activeRouteId={activeRouteId}
+        />
       </div>
 
       {/* Analytics Triad: Distance Comparison, Cost Breakdown, Efficiency Gauge */}
       <div className="grid-3" style={{ marginBottom: '24px' }}>
-        <DistanceComparisonChart />
-        <CostBreakdownChart />
-        <RouteEfficiencyGauge />
+        <DistanceComparisonChart
+          plan={currentPlan}
+          activeRouteId={activeRouteId}
+        />
+        <CostBreakdownChart
+          plan={currentPlan}
+          activeRouteId={activeRouteId}
+        />
+        <RouteEfficiencyGauge
+          plan={currentPlan}
+          activeRouteId={activeRouteId}
+        />
       </div>
 
       {/* Bottom Row: Alternative Routes & Route Insights */}
       <div className="grid-2" style={{ gridTemplateColumns: '1.8fr 1.2fr', marginBottom: '24px' }}>
-        <AlternativeRoutesTable />
-        <RouteInsightsCard onExport={onExport} />
+        <AlternativeRoutesTable
+          plan={currentPlan}
+          activeRouteId={activeRouteId}
+          onSelectRoute={setActiveRouteId}
+        />
+        <RouteInsightsCard
+          plan={currentPlan}
+          activeRouteId={activeRouteId}
+          onExport={onExport}
+        />
       </div>
     </div>
   );

@@ -6,7 +6,7 @@ import { Plus, Minus, Target, MapPin, CloudRain, ChevronDown, Crosshair } from '
 import { ResilientTileLayer } from '../admin/common/ResilientTileLayer';
 import { RiskHeatLayer } from '../admin/common/RiskHeatLayer';
 import ApiClient from '../../lib/api';
-import { subscribeToVehiclePositions, subscribeToEmergency, subscribeToEmergencyCancelled } from '../../lib/socket';
+import { subscribeToVehiclePositions, subscribeToEmergency, subscribeToEmergencyCancelled, subscribeToDynamicReroute } from '../../lib/socket';
 import { DISTRICTS } from '../../data/geoMaster';
 import { VehicleMarker } from '../admin/common/VehicleMarker';
 import RainRadarOverlay from '../admin/common/RainRadarOverlay';
@@ -341,6 +341,9 @@ export default function LiveTrackingMap({ embedded = false, selectedId, onSelect
             etaAt: d.etaAt ?? null,
             etaLabel: d.etaLabel ?? null,
             trafficDelayMinutes: d.trafficDelayMinutes ?? 0,
+            rerouted: Boolean(d.rerouted),
+            rerouteReason: d.rerouteReason || null,
+            rerouteAlert: d.rerouteAlert || null,
           };
           liveRouteCache.set(key, { at: Date.now(), data: entry });
           if (!cancelled) setLiveRoutes((p) => ({ ...p, [key]: entry }));
@@ -352,6 +355,32 @@ export default function LiveTrackingMap({ embedded = false, selectedId, onSelect
     return () => { cancelled = true; clearInterval(iv); };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [trackable.length]);
+
+  // Real-time Dynamic Reroute socket subscription (auto-updates when mid-transit hazard arises)
+  useEffect(() => {
+    const unsub = subscribeToDynamicReroute((data) => {
+      if (!data || !data.vehicleId) return;
+      if (Array.isArray(data.geometry) && data.geometry.length > 1) {
+        const entry = {
+          coords: data.geometry,
+          destName: data.destinationName || '',
+          routeName: data.routeName || 'Dynamic Safe Bypass',
+          score: data.riskScore ?? null,
+          level: data.riskLevel ?? null,
+          distanceKm: data.totalDistanceKm ?? null,
+          legs: Array.isArray(data.legs) ? data.legs : [],
+          etaMinutes: data.etaMinutes ?? null,
+          etaAt: data.etaAt ?? null,
+          rerouted: true,
+          rerouteReason: data.rerouteReason || null,
+          rerouteAlert: data.rerouteAlert || null,
+        };
+        liveRouteCache.set(data.vehicleId, { at: Date.now(), data: entry });
+        setLiveRoutes((p) => ({ ...p, [data.vehicleId]: entry }));
+      }
+    });
+    return () => unsub();
+  }, []);
 
   // Live traffic (TomTom) along each live route
   useEffect(() => {
@@ -481,6 +510,14 @@ export default function LiveTrackingMap({ embedded = false, selectedId, onSelect
                   <Popup>
                     <div className="text-xs min-w-[220px] max-w-[300px]">
                       <div className="font-black text-slate-900">{r.routeName || `${vid} live route`}</div>
+                      {r.rerouted && (
+                        <div className="mt-1 px-2 py-0.5 rounded bg-amber-100 text-amber-800 text-[10px] font-bold flex items-center gap-1 border border-amber-300">
+                          <span>⚠️ Dynamic Reroute: Safe Bypass Active</span>
+                        </div>
+                      )}
+                      {r.rerouteReason && (
+                        <p className="text-[10px] text-amber-700 font-semibold mt-0.5">{r.rerouteReason}</p>
+                      )}
                       {r.destName && <p className="text-[10px] text-slate-600 font-semibold">→ {r.destName}</p>}
                       <p className="text-[10px] text-slate-500 mt-1">
                         Risk: <b style={{ color }}>{r.score != null ? `${r.score}/100 (${String(r.level || '').toUpperCase()})` : r.level ? String(r.level).toUpperCase() : '—'}</b>
@@ -641,6 +678,11 @@ export default function LiveTrackingMap({ embedded = false, selectedId, onSelect
           {Object.keys(sosMap).length > 0 && (
             <span className="px-2.5 py-1 rounded-full text-[10px] font-bold shadow-xs bg-red-600 text-white border border-red-400 animate-pulse">
               🚨 {Object.keys(sosMap).length} SOS ACTIVE
+            </span>
+          )}
+          {Object.values(liveRoutes).some((r) => r?.rerouted) && (
+            <span className="px-2.5 py-1 rounded-full text-[10px] font-bold shadow-xs bg-amber-500 text-slate-900 border border-amber-300 font-sans flex items-center gap-1 animate-pulse">
+              ⚠️ DYNAMIC REROUTE ({Object.values(liveRoutes).filter((r) => r?.rerouted).length} ACTIVE)
             </span>
           )}
           {heatMode === 'rain' && chip('bg-blue-600/90 text-white border border-blue-400', `Rainfall heat: LIVE (${heatData.rain.length} districts)`)}

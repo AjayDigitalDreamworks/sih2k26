@@ -2,9 +2,10 @@ import { Op } from 'sequelize';
 import { redisClient } from '../../config/redis';
 import { sequelize } from '../../config/db';
 import { logger } from '../../utils/logger';
-import { Vehicle, Route, Driver, Trip, Delivery } from '../../models/postgres';
+import { Vehicle, Route, Driver, Trip, Delivery, District } from '../../models/postgres';
 import { Alert } from '../../models/mongo';
 import { getSocketServer } from '../../sockets/socket.gateway';
+import { env } from '../../config/env';
 
 // Tracking policy — all tunable via env (root .env). Defaults match the spec:
 // LIVE when the GPS fix is fresh, STALE beyond that, OFFLINE beyond STALE.
@@ -1423,5 +1424,329 @@ export class TrackingService {
       vehicles: rows,
       thresholds: { liveSeconds: LIVE_THRESHOLD_MS / 1000, staleSeconds: STALE_THRESHOLD_MS / 1000, offlineSeconds: OFFLINE_THRESHOLD_MS / 1000 },
     };
+  }
+
+  /**
+   * Calculates a dynamic safe route for an active vehicle starting from its current GPS location.
+   * If avoidCorridors are provided or active high-risk alerts exist on the path, the ML planner
+   * computes a safe alternate road path bypassing the hazardous corridor.
+   */
+  static async calculateLiveDynamicRoute(
+    vehicleId: string,
+    options: {
+      avoidCorridors?: string[];
+      avoidDistricts?: string[];
+      reason?: string;
+      triggeringAlert?: any;
+      broadcast?: boolean;
+    } = {}
+  ): Promise<any> {
+    const vehicle = await Vehicle.findByPk(vehicleId);
+    if (!vehicle) throw new Error('Vehicle not found');
+
+    const trip = await Trip.findOne({
+      where: {
+        vehicle_id: vehicle.id,
+        status: { [Op.in]: ['planned', 'in_transit', 'delayed'] },
+      },
+      order: [['createdAt', 'DESC']],
+      raw: true,
+    });
+    if (!trip) {
+      return {
+        vehicleId: vehicle.id,
+        hasRoute: false,
+        reason: 'NO_ACTIVE_TRIP',
+        vehicle: {
+          liveStatus: vehicle.live_status || null,
+          lastGpsAt: vehicle.last_gps_at || null,
+          trackingActive: !!vehicle.tracking_active,
+          lat: vehicle.current_lat ?? null,
+          lng: vehicle.current_lng ?? null,
+        },
+      };
+    }
+
+    const route = await Route.findByPk(String(trip.route_id || ''), { raw: true });
+    if (!route) {
+      return {
+        vehicleId: vehicle.id,
+        hasRoute: false,
+        reason: 'TRIP_ROUTE_MISSING',
+        trip: { id: trip.id, status: trip.status, origin: trip.origin, destination: trip.destination },
+      };
+    }
+
+    const destDistrictId = route.dest_district_id;
+    let originDistrictId = route.origin_district_id;
+
+    const hasGps =
+      vehicle.current_lat != null && vehicle.current_lng != null &&
+      Number.isFinite(vehicle.current_lat) && Number.isFinite(vehicle.current_lng) &&
+      !(vehicle.current_lat === 0 && vehicle.current_lng === 0);
+
+    if (hasGps) {
+      const districts = await District.findAll({ attributes: ['id', 'centroid_lat', 'centroid_lng'], raw: true });
+      let bestId = originDistrictId;
+      let bestDist = Infinity;
+      for (const d of districts as any[]) {
+        if (d.centroid_lat == null || d.centroid_lng == null) continue;
+        const dM = haversine(vehicle.current_lat, vehicle.current_lng, Number(d.centroid_lat), Number(d.centroid_lng));
+        if (dM < bestDist) { bestDist = dM; bestId = d.id; }
+      }
+      originDistrictId = bestId;
+    }
+
+    // Inspect active alerts to automatically avoid disrupted corridors
+    const activeAlerts = await Alert.find({ status: 'active' }).lean();
+    const autoAvoidCorridors: string[] = [...(options.avoidCorridors || [])];
+    const autoAvoidDistricts: string[] = [...(options.avoidDistricts || [])];
+    let primaryAlert = options.triggeringAlert || null;
+
+    for (const alt of activeAlerts) {
+      const isSevere =
+        String(alt.severity).toLowerCase() === 'high' ||
+        String(alt.severity).toLowerCase() === 'critical' ||
+        ['blocked_road', 'landslide', 'flood', 'accident', 'road_damage', 'emergency_sos'].includes(alt.type);
+
+      if (isSevere) {
+        if (alt.districtId && alt.districtId !== originDistrictId && alt.districtId !== destDistrictId) {
+          if (!autoAvoidDistricts.includes(alt.districtId)) autoAvoidDistricts.push(alt.districtId);
+        }
+        const fullText = `${alt.title || ''} ${alt.location || ''} ${alt.message || ''}`;
+        const nhMatch = fullText.match(/NH-[\w/]+/i);
+        if (nhMatch && !autoAvoidCorridors.includes(nhMatch[0])) {
+          autoAvoidCorridors.push(nhMatch[0]);
+        }
+        const pairMatch = fullText.match(/([a-z_]+)-([a-z_]+)/i);
+        if (pairMatch && !autoAvoidCorridors.includes(pairMatch[0])) {
+          autoAvoidCorridors.push(pairMatch[0].toLowerCase());
+        }
+        if (!primaryAlert) primaryAlert = alt;
+      }
+    }
+
+    const planBody: any = {
+      originDistrictId,
+      destDistrictId,
+      prefer: 'safest',
+      avoidCorridors: autoAvoidCorridors,
+      avoidDistricts: autoAvoidDistricts,
+      corridorAlerts: activeAlerts,
+    };
+
+    if (hasGps) {
+      planBody.currentLat = vehicle.current_lat;
+      planBody.currentLng = vehicle.current_lng;
+    }
+
+    const resp = await fetch(`${env.mlServiceUrl}/route/plan`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(planBody),
+      signal: AbortSignal.timeout(60000),
+    });
+
+    if (!resp.ok) throw new Error(`ML route planner failed with status ${resp.status}`);
+    const plan: any = await resp.json();
+    if (!plan.success) {
+      return { vehicleId: vehicle.id, hasRoute: false, reason: 'PLAN_FAILED', planError: plan.error };
+    }
+
+    const rec = plan.recommended || {};
+    const alt = plan.safest && plan.shortest && plan.safest !== plan.shortest
+      ? { safest: plan.safest, shortest: plan.shortest }
+      : undefined;
+
+    const parseDuration = (t?: string | null) => {
+      if (!t) return 0;
+      const s = String(t);
+      const h = s.match(/(\d+)\s*h/);
+      const m = s.match(/(\d+)\s*m/);
+      return (h ? parseInt(h[1], 10) * 60 : 0) + (m ? parseInt(m[1], 10) : 0);
+    };
+
+    let etaMinutes = 0;
+    let trafficDelayMinutes = 0;
+    for (const leg of (rec.legs || [])) {
+      const dur = parseDuration(leg.osrmDurationText);
+      if (dur > 0) etaMinutes += dur;
+      const delay = (leg.traffic && typeof leg.traffic.delaySeconds === 'number' && leg.traffic.delaySeconds > 0)
+        ? leg.traffic.delaySeconds / 60 : 0;
+      if (delay > 0) { etaMinutes += delay; trafficDelayMinutes += delay; }
+    }
+    const etaAt = etaMinutes > 0 ? new Date(Date.now() + etaMinutes * 60000).toISOString() : null;
+
+    const isRerouted = Boolean(
+      plan.rerouted ||
+      (plan.avoidedCorridors && plan.avoidedCorridors.length > 0) ||
+      options.avoidCorridors?.length ||
+      (primaryAlert && rec.legs?.some((l: any) => l._avoided))
+    );
+
+    const rerouteReason = plan.rerouteReason || options.reason ||
+      (primaryAlert ? `Dynamic reroute: bypassing hazard (${primaryAlert.title}) via alternate corridor` : null);
+
+    const result = {
+      vehicleId: vehicle.id,
+      hasRoute: true,
+      routeName: route.name,
+      vehicle: {
+        liveStatus: vehicle.live_status || null,
+        lastGpsAt: vehicle.last_gps_at || null,
+        trackingActive: !!vehicle.tracking_active,
+        lat: vehicle.current_lat ?? null,
+        lng: vehicle.current_lng ?? null,
+        speed: vehicle.speed || 0,
+        heading: vehicle.current_heading || 0,
+      },
+      trip: {
+        id: trip.id,
+        status: trip.status,
+        origin: trip.origin,
+        destination: trip.destination,
+        progress: trip.progress_percent || 0,
+        driverId: trip.driver_id,
+        transporterId: trip.transporter_id,
+      },
+      origin: plan.origin,
+      destination: plan.destination,
+      preferred: plan.preferred,
+      geometry: rec.geometry || [],
+      legs: rec.legs || [],
+      totalDistanceKm: rec.totalDistanceKm ?? null,
+      riskScore: rec.riskScore ?? null,
+      riskLevel: rec.riskLevel ?? null,
+      alerts: plan.alerts || [],
+      routingProvider: plan.routingProvider || 'corridor',
+      gpsStart: !!(plan.origin && plan.origin.gpsStart),
+      alternatives: alt,
+      etaMinutes: etaMinutes > 0 ? Math.round(etaMinutes) : null,
+      etaAt,
+      etaLabel: etaAt ? new Date(etaAt).toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit' }) : null,
+      trafficDelayMinutes: Math.round(trafficDelayMinutes),
+      rerouted: isRerouted,
+      rerouteReason,
+      rerouteAlert: primaryAlert ? {
+        id: primaryAlert.id || primaryAlert._id,
+        title: primaryAlert.title,
+        type: primaryAlert.type,
+        severity: primaryAlert.severity,
+        location: primaryAlert.location,
+      } : null,
+      avoidedCorridors: plan.avoidedCorridors || autoAvoidCorridors,
+    };
+
+    // Cache dynamic rerouted route in Redis
+    if (isRerouted) {
+      try {
+        await redisClient.set(`vehicle:reroute:${vehicle.id}`, JSON.stringify({
+          ...result,
+          updatedAt: new Date().toISOString(),
+        }), { ex: 3600 });
+      } catch (e) {
+        logger.warn(`Failed to cache vehicle reroute in Redis: ${e}`);
+      }
+    }
+
+    if (options.broadcast) {
+      const io = getSocketServer();
+      if (io) {
+        const broadcastPayload = {
+          vehicleId: vehicle.id,
+          tripId: trip.id,
+          driverId: trip.driver_id,
+          transporterId: trip.transporter_id,
+          rerouted: isRerouted,
+          rerouteReason,
+          rerouteAlert: result.rerouteAlert,
+          geometry: result.geometry,
+          legs: result.legs,
+          etaMinutes: result.etaMinutes,
+          etaAt: result.etaAt,
+          timestamp: new Date().toISOString(),
+        };
+        io.to('admin:all').emit('vehicle:rerouted', broadcastPayload);
+        io.to(`transporter:${vehicle.transporter_id}`).emit('vehicle:rerouted', broadcastPayload);
+        io.to(`driver:${trip.driver_id}`).emit('vehicle:rerouted', broadcastPayload);
+        io.emit('route:rerouted', broadcastPayload);
+
+        io.to('admin:all').emit('alert:broadcast', {
+          type: 'dynamic_reroute',
+          severity: 'high',
+          title: `Dynamic Reroute: Vehicle ${vehicle.id}`,
+          message: rerouteReason || 'Vehicle dynamically rerouted to safe bypass',
+          vehicleId: vehicle.id,
+          timestamp: new Date().toISOString(),
+        });
+      }
+    }
+
+    return result;
+  }
+
+  /**
+   * When a new alert is reported (by Field Officer, Admin, Driver, or ML pipeline),
+   * this function checks if any in-transit vehicle's route passes through the affected
+   * district or corridor. If affected, it triggers dynamic rerouting and broadcasts
+   * real-time events over Socket.IO to Admin, Transporter, and Driver.
+   */
+  static async evaluateDynamicReroutesForAlert(alert: any): Promise<any[]> {
+    const isSevere =
+      String(alert.severity).toLowerCase() === 'high' ||
+      String(alert.severity).toLowerCase() === 'critical' ||
+      ['blocked_road', 'landslide', 'flood', 'accident', 'road_damage', 'emergency_sos'].includes(alert.type);
+
+    if (!isSevere) return [];
+
+    logger.info(`[REROUTE] Evaluating dynamic reroutes for alert: ${alert.title || alert.id}`);
+
+    const inTransitTrips = await Trip.findAll({
+      where: { status: { [Op.in]: ['in_transit', 'delayed'] } },
+      raw: true,
+    });
+
+    if (!inTransitTrips.length) {
+      logger.info('[REROUTE] No vehicles currently in-transit to reroute.');
+      return [];
+    }
+
+    const reroutedResults: any[] = [];
+    const alertDistrict = String(alert.districtId || '').toLowerCase();
+    const alertText = `${alert.title || ''} ${alert.location || ''} ${alert.message || ''}`.toLowerCase();
+
+    for (const trip of inTransitTrips as any[]) {
+      try {
+        const route = await Route.findByPk(String(trip.route_id || ''), { raw: true });
+        if (!route) continue;
+
+        const originDist = String(route.origin_district_id || '').toLowerCase();
+        const destDist = String(route.dest_district_id || '').toLowerCase();
+        const routeName = String(route.name || '').toLowerCase();
+
+        const isAffected =
+          (alertDistrict && (originDist === alertDistrict || destDist === alertDistrict)) ||
+          routeName.includes(alertDistrict) ||
+          (alert.routeId && alert.routeId === trip.route_id) ||
+          (alertText.includes(originDist) && alertText.includes(destDist));
+
+        if (isAffected) {
+          logger.info(`[REROUTE] Vehicle ${trip.vehicle_id} affected by alert ${alert.id}. Triggering dynamic reroute...`);
+          const rerouteResult = await this.calculateLiveDynamicRoute(trip.vehicle_id, {
+            reason: `Dynamic reroute: bypassing hazard (${alert.title}) on active route`,
+            triggeringAlert: alert,
+            broadcast: true,
+          });
+
+          if (rerouteResult.hasRoute && rerouteResult.rerouted) {
+            reroutedResults.push(rerouteResult);
+          }
+        }
+      } catch (err: any) {
+        logger.error(`[REROUTE] Failed to evaluate dynamic reroute for vehicle ${trip.vehicle_id}: ${err?.message || err}`);
+      }
+    }
+
+    return reroutedResults;
   }
 }

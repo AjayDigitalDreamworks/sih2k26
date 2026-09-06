@@ -67,7 +67,7 @@ Route.init(
     geom: {
       type: DataTypes.TEXT,
       allowNull: false,
-      defaultValue: '',
+      defaultValue: '{"type":"LineString","coordinates":[[0,0],[0,0]]}',
     },
   },
   {

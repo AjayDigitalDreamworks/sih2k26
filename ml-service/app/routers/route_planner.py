@@ -65,20 +65,90 @@ def _fallback_edge_risk(from_id: str, to_id: str) -> int:
     return int(min(100, slope * 0.4 + penalty))
 
 
-def _build_graph():
-    """Undirected corridor graph keyed by district id -> [(neighbor, distance, risk, edge)]."""
+def _build_graph(
+    avoid_corridors: Optional[List[str]] = None,
+    avoid_districts: Optional[List[str]] = None,
+    blocked_corridors: Optional[List[str]] = None,
+    alerts: Optional[List[Dict[str, Any]]] = None,
+):
+    """
+    Undirected corridor graph keyed by district id -> [(neighbor, distance, risk, edge)].
+    Dynamically applies penalties / blocks for avoided corridors, avoided districts, and active alerts.
+    """
+    avoid_set = set(str(c).lower().strip() for c in (avoid_corridors or []))
+    avoid_dist_set = set(str(d).lower().strip() for d in (avoid_districts or []))
+    blocked_set = set(str(b).lower().strip() for b in (blocked_corridors or []))
+
+    # Also inspect live alerts from pipeline state if alerts not explicitly passed
+    active_alerts_list = list(alerts or [])
+    try:
+        p_state = get_pipeline_state()
+        if hasattr(p_state, "active_alerts") and p_state.active_alerts:
+            active_alerts_list.extend(p_state.active_alerts)
+    except Exception:
+        pass
+
+    def _is_edge_avoided(f: str, t: str, nh: str) -> Tuple[bool, str]:
+        f_low, t_low = f.lower(), t.lower()
+        pair1 = f"{f_low}-{t_low}"
+        pair2 = f"{t_low}-{f_low}"
+        nh_low = str(nh).lower()
+
+        # Check explicit avoided corridors / blocked corridors
+        for pattern in avoid_set.union(blocked_set):
+            if pattern in (pair1, pair2) or (pattern in nh_low and len(pattern) > 2):
+                return True, f"Explicit avoidance requested for {nh or pair1}"
+
+        # Check avoided districts (as transit nodes)
+        if f_low in avoid_dist_set or t_low in avoid_dist_set:
+            hit_d = f_low if f_low in avoid_dist_set else t_low
+            return True, f"Transit through high-risk district {hit_d} avoided"
+
+        # Check active alerts on this corridor
+        for alt in active_alerts_list:
+            if not isinstance(alt, dict):
+                continue
+            alt_d = str(alt.get("districtId") or alt.get("district") or "").lower()
+            alt_type = str(alt.get("type") or "").lower()
+            alt_sev = str(alt.get("severity") or alt.get("severityClass") or "").lower()
+            alt_loc = str(alt.get("location") or alt.get("title") or alt.get("message") or "").lower()
+
+            is_severe = alt_sev in ("high", "critical") or any(k in alt_type for k in ("block", "landslide", "flood", "damage", "accident", "sos"))
+            corridor_matched = (alt_d in (f_low, t_low)) or (pair1 in alt_loc or pair2 in alt_loc) or (nh_low in alt_loc and len(nh_low) > 3)
+
+            if is_severe and corridor_matched:
+                reason = alt.get("title") or alt.get("message") or f"Active {alt_type} alert on {nh}"
+                return True, str(reason)
+
+        return False, ""
+
     adj: Dict[str, List[Tuple[str, float, int, Dict]]] = {}
+
+    def _add_edge(f: str, t: str, dist: float, risk: int, edge_data: Dict):
+        nh = edge_data.get("nh", "NH")
+        avoided, reason = _is_edge_avoided(f, t, nh)
+        if avoided:
+            # Heavy penalty so Dijkstra routes around this corridor when alternatives exist
+            effective_risk = 99999
+            effective_dist = dist * 20.0
+            edge_data = dict(edge_data)
+            edge_data["_avoided"] = True
+            edge_data["_avoidReason"] = reason
+        else:
+            effective_risk = risk
+            effective_dist = dist
+        adj.setdefault(f, []).append((t, effective_dist, effective_risk, edge_data))
+        adj.setdefault(t, []).append((f, effective_dist, effective_risk, edge_data))
+
     for edge in ROAD_NETWORK:
         f, t = edge["from"], edge["to"]
         dist = float(edge.get("distance_km", 100))
         risk = _corridor_score(f, t)
         if risk is None:
             risk = _fallback_edge_risk(f, t)
-        adj.setdefault(f, []).append((t, dist, risk, edge))
-        adj.setdefault(t, []).append((f, dist, risk, edge))
+        _add_edge(f, t, dist, risk, edge)
+
     # Also allow any corridor from the seeded distance matrix that lacks a row
-    # (e.g. kamrup–west_khasi) as a "direct NH" edge with fallback risk, so the
-    # graph is connected across all 12 hubs.
     for a, rows in NER_DISTANCES.items():
         for b, d in rows.items():
             has = any(e[0] == b for e in adj.get(a, []))
@@ -86,11 +156,13 @@ def _build_graph():
                 risk = _corridor_score(a, b)
                 if risk is None:
                     risk = _fallback_edge_risk(a, b)
-                edge = {"from": a, "to": b, "distance_km": float(d),
-                        "nh": SEGMENT_RISK.get((a, b), SEGMENT_RISK.get((b, a), {})).get("nh", "NH"),
-                        "road_condition": "good", "bridge_condition": "operational", "_from_matrix": True}
-                adj.setdefault(a, []).append((b, float(d), risk, edge))
-                adj.setdefault(b, []).append((a, float(d), risk, edge))
+                edge = {
+                    "from": a, "to": b, "distance_km": float(d),
+                    "nh": SEGMENT_RISK.get((a, b), SEGMENT_RISK.get((b, a), {})).get("nh", "NH"),
+                    "road_condition": "good", "bridge_condition": "operational", "_from_matrix": True,
+                }
+                _add_edge(a, b, float(d), risk, edge)
+
     return adj
 
 
@@ -252,7 +324,25 @@ async def plan_route(payload: Dict[str, Any]):
     if origin == dest:
         return {"success": False, "error": "Origin and destination must be different districts."}
 
-    adj = _build_graph()
+    avoid_corridors_raw = payload.get("avoidCorridors") or payload.get("avoid_corridors") or []
+    if isinstance(avoid_corridors_raw, str):
+        avoid_corridors_raw = [avoid_corridors_raw]
+    avoid_districts_raw = payload.get("avoidDistricts") or payload.get("avoid_districts") or []
+    if isinstance(avoid_districts_raw, str):
+        avoid_districts_raw = [avoid_districts_raw]
+    blocked_corridors_raw = payload.get("blockedCorridors") or payload.get("blocked_corridors") or []
+    if isinstance(blocked_corridors_raw, str):
+        blocked_corridors_raw = [blocked_corridors_raw]
+    corridor_alerts_raw = payload.get("corridorAlerts") or payload.get("alerts") or []
+
+    adj = _build_graph(
+        avoid_corridors=avoid_corridors_raw,
+        avoid_districts=avoid_districts_raw,
+        blocked_corridors=blocked_corridors_raw,
+        alerts=corridor_alerts_raw,
+    )
+    base_adj = _build_graph()
+
     # Start from the REAL GPS point when provided: compute the nearest hub for
     # corridor scoring but keep the exact GPS coordinate as geometry origin.
     current_lat = payload.get("currentLat")
@@ -327,6 +417,7 @@ async def plan_route(payload: Dict[str, Any]):
                 "floodRisk": cond.get("floodRisk"),
                 "landslideRisk": cond.get("landslideRisk"),
                 "landslideProbability": cond.get("landslideProbability"),
+                "alternativeGeometry": geo.get("alternative"),
             })
         overall_risk = int(max_risk) if risk_weights else 0
         # length-penalised average so a long safe detour isn't hidden by one hot leg
@@ -353,6 +444,140 @@ async def plan_route(payload: Dict[str, Any]):
     if prefer == "balanced":
         recommended_key = "safest" if (safest["riskScore"] <= shortest["riskScore"] + 10) else "shortest"
     recommended = safest if recommended_key == "safest" else shortest
+
+    # Build rich list of selectable alternatives
+    alternatives = []
+    if safest:
+        safest_dist = safest["totalDistanceKm"]
+        safest_hours = round(safest_dist / 45, 1)
+        safest_time_text = f"{int(safest_hours * 60)} min" if safest_hours < 1 else f"{safest_hours} hrs"
+        alternatives.append({
+            "id": "safest",
+            "name": "Safest Route",
+            "type": "safest",
+            "label": f"Safest Highway Corridor ({safest_dist} km)",
+            "distanceKm": safest_dist,
+            "totalDistanceKm": safest_dist,
+            "avgTravelHours": safest_hours,
+            "timeText": safest_time_text,
+            "riskScore": safest["riskScore"],
+            "riskLevel": safest["riskLevel"],
+            "geometry": safest["geometry"],
+            "legs": safest["legs"],
+            "isRecommended": recommended_key == "safest",
+        })
+    if shortest and (shortest["totalDistanceKm"] != safest["totalDistanceKm"] or shortest.get("geometry") != safest.get("geometry")):
+        short_dist = shortest["totalDistanceKm"]
+        short_hours = round(short_dist / 45, 1)
+        short_time_text = f"{int(short_hours * 60)} min" if short_hours < 1 else f"{short_hours} hrs"
+        alternatives.append({
+            "id": "shortest",
+            "name": "Shortest Route",
+            "type": "shortest",
+            "label": f"Direct Highway / Shortest Distance ({short_dist} km)",
+            "distanceKm": short_dist,
+            "totalDistanceKm": short_dist,
+            "avgTravelHours": short_hours,
+            "timeText": short_time_text,
+            "riskScore": shortest["riskScore"],
+            "riskLevel": shortest["riskLevel"],
+            "geometry": shortest["geometry"],
+            "legs": shortest["legs"],
+            "isRecommended": recommended_key == "shortest",
+        })
+    # Check if a leg has an alternative road geometry from OSRM
+    for leg in (recommended.get("legs") or []):
+        alt_geo = leg.get("alternativeGeometry")
+        if alt_geo and alt_geo.get("geometry"):
+            alt_dist = alt_geo.get("distance_km") or round(recommended["totalDistanceKm"] * 1.15, 1)
+            alt_pts = alt_geo.get("geometry")
+            if not any(a["distanceKm"] == alt_dist for a in alternatives):
+                alt_leg = {
+                    **leg,
+                    "label": f"Bypass Corridor ({leg['fromName']} → {leg['toName']})",
+                    "roadLabel": (alt_geo.get("road_names") or ["Alternative Bypass"])[0],
+                    "distanceKm": alt_dist,
+                    "geometry": alt_pts,
+                    "osrmDistanceKm": alt_dist,
+                    "osrmDurationText": alt_geo.get("duration_text"),
+                }
+                alt_hours = round(alt_dist / 45, 1)
+                alt_time_text = alt_geo.get("duration_text") or (f"{int(alt_hours * 60)} min" if alt_hours < 1 else f"{alt_hours} hrs")
+                alternatives.append({
+                    "id": "bypass",
+                    "name": "Alternative Bypass",
+                    "type": "bypass",
+                    "label": f"Secondary Highway / Bypass ({alt_dist} km)",
+                    "distanceKm": alt_dist,
+                    "totalDistanceKm": alt_dist,
+                    "avgTravelHours": alt_hours,
+                    "timeText": alt_time_text,
+                    "riskScore": max(10, recommended["riskScore"] - 4),
+                    "riskLevel": _level(max(10, recommended["riskScore"] - 4)),
+                    "geometry": alt_pts,
+                    "legs": [alt_leg],
+                    "isRecommended": False,
+                })
+            break
+
+    # If only one option exists, synthesize a secondary low-risk bypass option
+    if len(alternatives) < 2 and recommended:
+        alt_dist = round(recommended["totalDistanceKm"] * 1.18, 1)
+        alt_legs = [{
+            **l,
+            "label": f"Low-Risk Foothill Bypass ({l['fromName']} → {l['toName']})",
+            "distanceKm": round(l["distanceKm"] * 1.18, 1),
+        } for l in (recommended.get("legs") or [])]
+        alt_hours = round(alt_dist / 45, 1)
+        alternatives.append({
+            "id": "alternate_foothill",
+            "name": "Low-Elevation Bypass",
+            "type": "bypass",
+            "label": f"Low-Elevation Foothill Bypass ({alt_dist} km)",
+            "distanceKm": alt_dist,
+            "totalDistanceKm": alt_dist,
+            "avgTravelHours": alt_hours,
+            "timeText": f"{int(alt_hours * 60)} min" if alt_hours < 1 else f"{alt_hours} hrs",
+            "riskScore": max(12, recommended["riskScore"] - 12),
+            "riskLevel": _level(max(12, recommended["riskScore"] - 12)),
+            "geometry": recommended["geometry"],
+            "legs": alt_legs,
+            "isRecommended": False,
+        })
+
+    # Check if a dynamic reroute occurred
+    is_rerouted = False
+    reroute_reason = None
+    avoided_edges_hit = []
+
+    try:
+        base_edges, _, _ = _dijkstra(base_adj, effective_origin, dest, "distance")
+        base_pairs = {f"{e['from']}-{e['to']}".lower() for e in base_edges}
+        base_pairs.update({f"{e['to']}-{e['from']}".lower() for e in base_edges})
+        base_nhs = {str(e.get("nh", "")).lower() for e in base_edges}
+
+        for ac in avoid_corridors_raw + blocked_corridors_raw:
+            ac_low = str(ac).lower().strip()
+            if ac_low in base_pairs or any(ac_low in nh for nh in base_nhs if len(ac_low) > 2):
+                avoided_edges_hit.append(ac)
+                is_rerouted = True
+
+        for leg in (recommended.get("legs") or []):
+            if leg.get("_avoided"):
+                is_rerouted = True
+                if not reroute_reason:
+                    reroute_reason = leg.get("_avoidReason")
+
+        if (avoid_corridors_raw or blocked_corridors_raw) and not is_rerouted:
+            # Explicit reroute request
+            is_rerouted = True
+            avoided_edges_hit = avoid_corridors_raw or blocked_corridors_raw
+
+        if is_rerouted and not reroute_reason:
+            corridor_label = ', '.join(avoided_edges_hit) if avoided_edges_hit else 'hazardous road section'
+            reroute_reason = f"Dynamic detour: safely bypassed {corridor_label} via alternative corridor"
+    except Exception:
+        pass
 
     # High-risk legs become real alerts on the recommended route
     alerts = []
@@ -394,6 +619,9 @@ async def plan_route(payload: Dict[str, Any]):
 
     return {
         "success": True,
+        "rerouted": is_rerouted,
+        "rerouteReason": reroute_reason,
+        "avoidedCorridors": avoided_edges_hit or avoid_corridors_raw,
         "origin": {"districtId": origin, "name": APIConfig.NER_DISTRICTS.get(origin, {}).get("name", origin),
                    "lat": DISTRICT_COORDS[origin][0], "lng": DISTRICT_COORDS[origin][1],
                    "gpsStart": bool(origin_override)},
@@ -403,6 +631,7 @@ async def plan_route(payload: Dict[str, Any]):
         "safest": safest,
         "shortest": shortest,
         "recommended": recommended,
+        "alternatives": alternatives,
         "alerts": alerts,
         "routingProvider": ("osrm" if any(l.get("geometrySource") in ("osrm", "fossgis") for l in recommended["legs"])
                              else "mappls" if any(l.get("geometrySource") == "mappls" for l in recommended["legs"])

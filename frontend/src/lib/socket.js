@@ -76,6 +76,16 @@ export const subscribeToEmergencyCancelled = (callback) => {
   };
 };
 
+export const subscribeToDynamicReroute = (callback) => {
+  const s = getSocket();
+  s.on('vehicle:rerouted', callback);
+  s.on('route:rerouted', callback);
+  return () => {
+    s.off('vehicle:rerouted', callback);
+    s.off('route:rerouted', callback);
+  };
+};
+
 export const disconnectSocket = () => {
   if (socket) {
     socket.disconnect();

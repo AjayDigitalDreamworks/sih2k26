@@ -77,7 +77,7 @@ class RoutingService:
 
         url = (
             f"{OSRM_URL}/route/v1/driving/{coord_str}"
-            "?overview=full&geometries=geojson&steps=true&annotations=false"
+            "?overview=full&geometries=geojson&steps=true&annotations=false&alternatives=true"
         )
         async with httpx.AsyncClient(timeout=20) as client:
             resp = await client.get(url)
@@ -102,9 +102,35 @@ class RoutingService:
             if not road_names:
                 road_names.append("National Highway")
 
-            summary = route.get("summary") or {}
             distance_m = route.get("distance", 0) or 0
             duration_s = route.get("duration", 0) or 0
+
+            # Alternative route if provided by OSRM
+            alt_res = None
+            if len(routes) > 1:
+                r2 = routes[1]
+                r2_coords = r2.get("geometry", {}).get("coordinates", [])
+                r2_points = [[round(lat, 6), round(lng, 6)] for lng, lat in r2_coords]
+                r2_dist_m = r2.get("distance", 0) or 0
+                r2_dur_s = r2.get("duration", 0) or 0
+                r2_names: List[str] = []
+                for leg in r2.get("legs", []):
+                    for step in leg.get("steps", []):
+                        nm = step.get("name")
+                        if nm and nm not in r2_names and nm != "route":
+                            r2_names.append(nm)
+                if not r2_names:
+                    r2_names.append("Alternative Highway Bypass")
+                alt_res = {
+                    "distance_km": round(r2_dist_m / 1000, 1),
+                    "duration_seconds": round(r2_dur_s),
+                    "duration_minutes": round(r2_dur_s / 60, 1),
+                    "distance_text": f"{round(r2_dist_m / 1000, 1)} km",
+                    "duration_text": cls._format_duration(r2_dur_s),
+                    "geometry": r2_points,
+                    "road_names": r2_names[:6],
+                }
+
             return {
                 "source": "osrm",
                 "provider": "OSRM (OpenStreetMap road network)",
@@ -116,6 +142,7 @@ class RoutingService:
                 "duration_text": cls._format_duration(duration_s),
                 "geometry": points,  # [[lat, lng], ...] — follows real roads
                 "road_names": road_names[:6],
+                "alternative": alt_res,
                 "polyline": "",
                 "bbox": data.get("bbox"),
             }

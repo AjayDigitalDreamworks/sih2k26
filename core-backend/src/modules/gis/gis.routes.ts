@@ -2,7 +2,7 @@ import { Router, Request, Response } from 'express';
 import { authenticateJwt } from '../../middleware/auth.middleware';
 import { sendSuccess, sendError } from '../../utils/response';
 import { sequelize } from '../../config/db';
-import { Vehicle, District, Road, Route, RiskScore } from '../../models/postgres';
+import { Vehicle, District, Road, Route, RiskScore, Bridge } from '../../models/postgres';
 import { redisClient } from '../../config/redis';
 import { env } from '../../config/env';
 import { Op } from 'sequelize';
@@ -29,6 +29,7 @@ router.get('/layers', async (_req: Request, res: Response) => {
       { id: 'base_map', name: 'Base Map', type: 'tile', source: 'OpenStreetMap', ...online() },
       { id: 'districts', name: 'Districts', type: 'vector', source: 'Database', ...online() },
       { id: 'roads', name: 'Roads', type: 'vector', source: 'Database', ...online() },
+      { id: 'bridges', name: 'Bridges', type: 'vector', source: 'Database', ...online() },
       { id: 'vehicles', name: 'Live Vehicles', type: 'realtime', source: 'GPS Tracking', ...online() },
       { id: 'routes', name: 'Active Routes', type: 'vector', source: 'Database', ...online() },
       { id: 'risk_flood', name: 'Flood Risk', type: 'risk', source: floodConfigured ? 'Google Flood Hub + ML' : 'ML Disruption Model + live rainfall', ...online() },
@@ -104,6 +105,42 @@ router.get('/roads', async (req: Request, res: Response) => {
 
     const roads = await Road.findAll({ where, raw: true });
     return sendSuccess(res, roads, 'Roads retrieved');
+  } catch (err: any) {
+    return sendError(res, err.message);
+  }
+});
+
+/**
+ * GET /api/gis/bridges
+ * Get bridges with spatial coordinates as GeoJSON features
+ */
+router.get('/bridges', async (req: Request, res: Response) => {
+  try {
+    const { status, road_id, district_id } = req.query;
+    const where: any = {};
+    if (status) where.status = status;
+    if (road_id) where.road_id = road_id;
+    if (district_id) where.district_id = district_id;
+
+    const bridges = await Bridge.findAll({ where, raw: true });
+
+    const features = bridges.map((b: any) => ({
+      type: 'Feature',
+      geometry: {
+        type: 'Point',
+        coordinates: [b.lng, b.lat],
+      },
+      properties: {
+        id: b.id,
+        name: b.name,
+        road_id: b.road_id,
+        district_id: b.district_id,
+        status: b.status,
+        load_capacity_tons: b.load_capacity_tons,
+      },
+    }));
+
+    return sendSuccess(res, { type: 'FeatureCollection', features }, 'Bridges retrieved');
   } catch (err: any) {
     return sendError(res, err.message);
   }
