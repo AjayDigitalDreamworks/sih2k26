@@ -27,10 +27,10 @@ const DISTRICT_COORDS = {
 };
 
 const TILE_LAYERS = {
-  streets: { url: 'https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', name: 'Streets' },
-  satellite: { url: 'https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}', name: 'Satellite' },
-  terrain: { url: 'https://server.arcgisonline.com/ArcGIS/rest/services/World_Topo_Map/MapServer/tile/{z}/{y}/{x}', name: 'Terrain' },
-  dark: { url: 'https://server.arcgisonline.com/ArcGIS/rest/services/Canvas/World_Dark_Gray_Base/MapServer/tile/{z}/{y}/{x}', name: 'Dark' },
+  streets: { url: 'https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', name: 'Streets', maxNativeZoom: 19 },
+  satellite: { url: 'https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}', name: 'Satellite', maxNativeZoom: 17 },
+  terrain: { url: 'https://server.arcgisonline.com/ArcGIS/rest/services/World_Topo_Map/MapServer/tile/{z}/{y}/{x}', name: 'Terrain', maxNativeZoom: 16 },
+  dark: { url: 'https://server.arcgisonline.com/ArcGIS/rest/services/Canvas/World_Dark_Gray_Base/MapServer/tile/{z}/{y}/{x}', name: 'Dark', maxNativeZoom: 15 },
 };
 
 function getStatusColor(status) {
@@ -282,8 +282,8 @@ export const FleetTrackingMap = ({ selectedVehicleId, onSelectVehicle }) => {
         }
       </div>
 
-      <MapContainer center={mapCenter} zoom={7} style={{ height: '100%', width: '100%' }} zoomControl={false} attributionControl={false}>
-        <ResilientTileLayer url={tile.url} attribution="&copy; OpenStreetMap" key={activeLayer} />
+      <MapContainer center={mapCenter} zoom={7} maxZoom={19} style={{ height: '100%', width: '100%' }} zoomControl={false} attributionControl={false}>
+        <ResilientTileLayer url={tile.url} attribution="&copy; OpenStreetMap" key={activeLayer} maxNativeZoom={tile.maxNativeZoom || 16} maxZoom={19} />
 
         {/* Rainfall / flood heatmap from real district observations */}
         {heatMode !== 'off' && (

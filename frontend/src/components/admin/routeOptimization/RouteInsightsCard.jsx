@@ -54,7 +54,7 @@ export const RouteInsightsCard = ({ routes, onExport }) => {
     return () => {
       mounted = false;
     };
-  }, []);
+  }, [routes]);
 
   return (
     <div className="card" style={{ display: 'flex', flexDirection: 'column', justifyContent: 'space-between' }}>

@@ -4,9 +4,9 @@ import { sequelize } from '../../config/db';
 export class Driver extends Model {
   public id!: string;
   public name!: string;
-  public phone!: string;
-  public license_number!: string;
-  public license_expiry!: Date;
+  public phone?: string | null;
+  public license_number?: string | null;
+  public license_expiry?: Date | null;
   public vehicle_id?: string | null;
   public transporter_id!: string;
   public user_id?: string | null; // links the login account (role: driver) to this driver record
@@ -28,15 +28,15 @@ Driver.init(
     },
     phone: {
       type: DataTypes.STRING(20),
-      allowNull: false,
+      allowNull: true,
     },
     license_number: {
       type: DataTypes.STRING(50),
-      allowNull: false,
+      allowNull: true,
     },
     license_expiry: {
       type: DataTypes.DATE,
-      allowNull: false,
+      allowNull: true,
     },
     vehicle_id: {
       type: DataTypes.STRING(50),

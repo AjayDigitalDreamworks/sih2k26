@@ -2,8 +2,10 @@ import React from 'react';
 import { motion } from 'framer-motion';
 import { User, ShieldCheck, UserCog } from 'lucide-react';
 import { loginTabs } from '../../data/authData';
+import { useLang } from '../../contexts/LanguageContext';
 
 export default function LoginTypeTabs({ activeTab, setActiveTab }) {
+  const { t } = useLang();
   const getIcon = (iconName, isActive) => {
     const iconClass = `w-3.5 h-3.5 sm:w-4 sm:h-4 flex-shrink-0 transition-colors ${
       isActive ? 'text-emerald-600' : 'text-slate-500'
@@ -36,7 +38,7 @@ export default function LoginTypeTabs({ activeTab, setActiveTab }) {
             }`}
           >
             {getIcon(tab.icon, isActive)}
-            <span className="truncate">{tab.label}</span>
+            <span className="truncate">{t(tab.label)}</span>
             {isActive && (
               <motion.div
                 layoutId="activeTabIndicator"

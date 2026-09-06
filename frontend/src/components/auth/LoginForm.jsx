@@ -4,6 +4,7 @@ import { motion } from 'framer-motion';
 import { Mail, Lock, Eye, EyeOff, ArrowRight } from 'lucide-react';
 import { toast } from 'sonner';
 import { useAuth } from '@/contexts/AuthContext';
+import { useLang } from '@/contexts/LanguageContext';
 import LoginTypeTabs from './LoginTypeTabs';
 import SocialLoginButtons from './SocialLoginButtons';
 import SecurityNotice from './SecurityNotice';
@@ -12,6 +13,7 @@ export default function LoginForm() {
   const navigate = useNavigate();
   const location = useLocation();
   const { login, isLoading } = useAuth();
+  const { t } = useLang();
   
   const [activeTab, setActiveTab] = useState('official');
   const [showPassword, setShowPassword] = useState(false);
@@ -30,22 +32,47 @@ export default function LoginForm() {
     if (result.success) {
       toast.success(result.message);
       
-      const destination = location.state?.from?.pathname;
-      if (destination) {
-        navigate(destination, { replace: true });
-        return;
-      }
-
-      // Default role routing — drivers land in the real-GPS driver app
       const backendRole = result.user?.backendRole;
-      if (backendRole === 'driver') {
-        navigate('/driver', { replace: true });
-      } else if (backendRole === 'admin' || backendRole === 'district_officer' || activeTab === 'official') {
-        navigate('/admin', { replace: true });
-      } else if (backendRole === 'transporter' || activeTab === 'operator') {
-        navigate('/transporter/dashboard', { replace: true });
+      const userRole = result.user?.role;
+
+      const getRoleHome = () => {
+        if (backendRole === 'field_officer' || backendRole === 'field_agent' || userRole === 'field_officer') {
+          return '/field-officer';
+        }
+        if (backendRole === 'driver' || userRole === 'driver') {
+          return '/driver';
+        }
+        if (backendRole === 'admin' || backendRole === 'district_officer' || userRole === 'official' || userRole === 'admin') {
+          return '/admin';
+        }
+        if (backendRole === 'transporter' || userRole === 'operator' || userRole === 'transporter') {
+          return '/transporter/dashboard';
+        }
+        return '/home';
+      };
+
+      const isAuthorizedForPath = (path) => {
+        if (!path || path === '/' || path === '/login') return false;
+        if (path.startsWith('/admin')) {
+          return ['admin', 'district_officer', 'official'].includes(backendRole) || ['official', 'admin'].includes(userRole);
+        }
+        if (path.startsWith('/transporter')) {
+          return ['transporter', 'operator'].includes(backendRole) || ['operator', 'transporter'].includes(userRole);
+        }
+        if (path.startsWith('/driver')) {
+          return backendRole === 'driver' || userRole === 'driver';
+        }
+        if (path.startsWith('/field-officer')) {
+          return ['field_officer', 'field_agent'].includes(backendRole) || userRole === 'field_officer';
+        }
+        return false;
+      };
+
+      const destination = location.state?.from?.pathname;
+      if (destination && isAuthorizedForPath(destination)) {
+        navigate(destination, { replace: true });
       } else {
-        navigate('/home', { replace: true });
+        navigate(getRoleHome(), { replace: true });
       }
     } else {
       toast.error(result.message || 'Login failed. Please check your credentials.');
@@ -88,10 +115,10 @@ export default function LoginForm() {
       {/* Header Heading */}
       <div className="text-center mb-6">
         <h2 className="text-2xl sm:text-3xl font-black text-[#0B1E36] tracking-tight">
-          Welcome Back!
+          {t('auth.welcomeBack')}
         </h2>
         <p className="text-xs sm:text-sm text-slate-500 font-medium mt-1">
-          Sign in to continue to{' '}
+          {t('auth.signInPrompt')}{' '}
           <span className="font-extrabold text-emerald-600">Raahi</span>
         </p>
       </div>
@@ -104,7 +131,7 @@ export default function LoginForm() {
         {/* Email or Phone Input */}
         <div>
           <label className="block text-xs font-bold text-slate-700 mb-1.5">
-            Email or Phone Number
+            {t('auth.emailOrPhone')}
           </label>
           <div className="relative">
             <div className="absolute inset-y-0 left-0 pl-3.5 flex items-center pointer-events-none text-slate-400">
@@ -114,7 +141,7 @@ export default function LoginForm() {
               type="text"
               value={emailOrPhone}
               onChange={(e) => setEmailOrPhone(e.target.value)}
-              placeholder="Enter email or phone number"
+              placeholder={t('auth.emailPlaceholder')}
               className="w-full pl-10 pr-4 py-2.5 rounded-xl border border-slate-200 bg-white text-xs sm:text-sm text-slate-800 placeholder-slate-400 focus:outline-none focus:ring-2 focus:ring-emerald-500/30 focus:border-emerald-500 transition-all shadow-2xs"
               required
             />
@@ -124,7 +151,7 @@ export default function LoginForm() {
         {/* Password Input */}
         <div>
           <label className="block text-xs font-bold text-slate-700 mb-1.5">
-            Password
+            {t('auth.password')}
           </label>
           <div className="relative">
             <div className="absolute inset-y-0 left-0 pl-3.5 flex items-center pointer-events-none text-slate-400">
@@ -134,7 +161,7 @@ export default function LoginForm() {
               type={showPassword ? 'text' : 'password'}
               value={password}
               onChange={(e) => setPassword(e.target.value)}
-              placeholder="Enter your password"
+              placeholder={t('auth.passwordPlaceholder')}
               className="w-full pl-10 pr-10 py-2.5 rounded-xl border border-slate-200 bg-white text-xs sm:text-sm text-slate-800 placeholder-slate-400 focus:outline-none focus:ring-2 focus:ring-emerald-500/30 focus:border-emerald-500 transition-all shadow-2xs"
               required
             />
@@ -158,13 +185,13 @@ export default function LoginForm() {
               onChange={(e) => setRememberMe(e.target.checked)}
               className="w-4 h-4 rounded text-emerald-600 focus:ring-emerald-500 border-slate-300 rounded cursor-pointer"
             />
-            <span className="text-xs text-slate-600 font-medium">Remember me</span>
+            <span className="text-xs text-slate-600 font-medium">{t('auth.rememberMe')}</span>
           </label>
           <a
             href="#forgot-password"
             className="text-xs font-bold text-emerald-600 hover:text-emerald-700 transition-colors"
           >
-            Forgot Password?
+            {t('auth.forgotPassword')}
           </a>
         </div>
 
@@ -179,11 +206,11 @@ export default function LoginForm() {
           {isLoading ? (
             <span className="flex items-center gap-2">
               <span className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin"></span>
-              <span>Signing In...</span>
+              <span>{t('auth.signingIn')}</span>
             </span>
           ) : (
             <>
-              <span>Sign In</span>
+              <span>{t('auth.signIn')}</span>
               <ArrowRight className="w-4 h-4" />
             </>
           )}

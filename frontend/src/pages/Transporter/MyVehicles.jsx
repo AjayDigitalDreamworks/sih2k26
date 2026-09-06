@@ -57,6 +57,7 @@ export default function MyVehicles() {
       capacity: v.capacity_kg ? `${Number(v.capacity_kg).toLocaleString()} kg` : undefined,
       driver: v.driver
         ? {
+            id: v.driver.id,
             name: v.driver.name || 'Unassigned',
             phone: v.driver.phone || undefined,
             rating: v.driver.rating || undefined,

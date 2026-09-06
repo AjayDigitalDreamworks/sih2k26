@@ -2,7 +2,7 @@ import { Op } from 'sequelize';
 import { redisClient } from '../../config/redis';
 import { sequelize } from '../../config/db';
 import { logger } from '../../utils/logger';
-import { Vehicle, Route, Driver, Trip } from '../../models/postgres';
+import { Vehicle, Route, Driver, Trip, Delivery } from '../../models/postgres';
 import { Alert } from '../../models/mongo';
 import { getSocketServer } from '../../sockets/socket.gateway';
 
@@ -486,6 +486,107 @@ export class TrackingService {
     return { insideGeofence, geofenceName, geofenceType, event };
   }
 
+  /** Detect whether a vehicle is entering or traversing a high-risk corridor */
+  static async checkHighRiskCorridor(vehicleId: string, lat: number, lng: number, currentRouteName?: string | null) {
+    try {
+      // Find all routes that are at_risk, blocked, or have risk score >= 50
+      const riskyRoutes = await Route.findAll({
+        where: {
+          [Op.or]: [
+            { status: { [Op.in]: ['at_risk', 'blocked'] } },
+            { current_risk_score: { [Op.gte]: 50 } },
+          ],
+        },
+      });
+
+      if (!riskyRoutes || riskyRoutes.length === 0) {
+        return { inHighRiskCorridor: false };
+      }
+
+      let matchedRoute: Route | null = null;
+      let minDistance = Infinity;
+
+      for (const r of riskyRoutes) {
+        if (currentRouteName && (r.name === currentRouteName || r.id === currentRouteName)) {
+          matchedRoute = r;
+          break;
+        }
+
+        if (r.geom) {
+          try {
+            const geoObj = typeof r.geom === 'string' ? JSON.parse(r.geom) : r.geom;
+            const coords = geoObj?.coordinates || [];
+            if (coords.length >= 2) {
+              const dist = distanceToRoute(lat, lng, coords.map((c: any) => [c[1], c[0]]));
+              if (dist <= 3500 && dist < minDistance) {
+                minDistance = dist;
+                matchedRoute = r;
+              }
+            }
+          } catch { /* ignored */ }
+        }
+      }
+
+      if (!matchedRoute) {
+        return { inHighRiskCorridor: false };
+      }
+
+      // Generate alert if not alerted recently (30 min cooldown per route per vehicle)
+      const alertKey = `vehicle:highrisk_alert:${vehicleId}:${matchedRoute.id}`;
+      const alreadyAlerted = await redisClient.get(alertKey);
+
+      if (!alreadyAlerted) {
+        const alert = await Alert.create({
+          id: `ALT-HR-${Date.now().toString().slice(-6)}`,
+          title: `⚠️ High-Risk Corridor Alert: ${vehicleId}`,
+          type: 'route_risk',
+          severity: matchedRoute.status === 'blocked' ? 'High' : 'High',
+          severityClass: 'high',
+          districtId: matchedRoute.origin_district_id || null,
+          routeId: matchedRoute.id,
+          location: matchedRoute.name,
+          time: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
+          message: `Vehicle ${vehicleId} is traversing high-risk corridor ${matchedRoute.name} (Risk Score: ${matchedRoute.current_risk_score}/100, Status: ${matchedRoute.status.toUpperCase()}). Monitoring active.`,
+          channel: 'tracking',
+          status: 'active',
+        });
+
+        await redisClient.set(alertKey, '1', { ex: 1800 });
+
+        const io = getSocketServer();
+        if (io) {
+          const alertPayload = {
+            id: alert.id,
+            vehicleId,
+            routeId: matchedRoute.id,
+            routeName: matchedRoute.name,
+            riskScore: matchedRoute.current_risk_score,
+            status: matchedRoute.status,
+            type: 'route_risk',
+            severity: 'High',
+            title: alert.title,
+            message: alert.message,
+            timestamp: new Date().toISOString(),
+          };
+          io.to('admin:all').emit('alert.created', alertPayload);
+          io.to('admin:all').emit('alert:broadcast', alertPayload);
+        }
+        console.log(`[RISK-ALERT] ⚠️ Vehicle ${vehicleId} entered high-risk corridor ${matchedRoute.name}`);
+      }
+
+      return {
+        inHighRiskCorridor: true,
+        routeId: matchedRoute.id,
+        routeName: matchedRoute.name,
+        riskScore: matchedRoute.current_risk_score,
+        routeStatus: matchedRoute.status,
+      };
+    } catch (err: any) {
+      console.warn('[TRACKING] Error in checkHighRiskCorridor:', err?.message);
+      return { inHighRiskCorridor: false };
+    }
+  }
+
   static async calculateEta(vehicleId: string, lat: number, lng: number, currentSpeed: number) {
     try {
       const vehicle = await Vehicle.findByPk(vehicleId);
@@ -560,6 +661,7 @@ export class TrackingService {
       direction: bearingToDirection(latestGps?.heading || 0), currentRoute: vehicle.current_route || '',
       eta: status.eta, etaMinutes: status.etaMinutes, distanceTravelled: stopInfo.distanceTravelled,
       distanceRemaining: status.distanceRemaining || 0, routeDeviation: status.routeDeviation,
+      geofenceStatus: status.geofenceStatus || { insideGeofence: false, geofenceName: null, geofenceType: null, event: null },
       stopDetection: stopInfo, gpsAccuracy: latestGps?.accuracyRating || 'unknown',
       batteryLevel: latestGps?.batteryLevel || vehicle.fuel_percent, historyPoints: history.length,
     };
@@ -601,9 +703,12 @@ export class TrackingService {
       if (driver.status !== 'active') return { ok: false, error: 'Driver account is not active', status: 403 };
 
       // Find the vehicle actually assigned to this driver (server-side truth).
-      const assignedVehicle = vehicleId
+      let assignedVehicle = vehicleId
         ? await Vehicle.findByPk(vehicleId)
         : driver.vehicle_id ? await Vehicle.findByPk(driver.vehicle_id) : null;
+      if (!assignedVehicle && !vehicleId) {
+        assignedVehicle = await Vehicle.findOne({ where: { assigned_driver_id: driver.id } });
+      }
       if (!assignedVehicle) return { ok: false, error: 'Vehicle not found', status: 404 };
       if (driver.vehicle_id && assignedVehicle.id !== driver.vehicle_id) {
         return { ok: false, error: 'Driver is not assigned to this vehicle', status: 403 };
@@ -611,6 +716,8 @@ export class TrackingService {
       if (assignedVehicle.assigned_driver_id && assignedVehicle.assigned_driver_id !== driver.id) {
         return { ok: false, error: 'Vehicle is assigned to a different driver', status: 403 };
       }
+      if (!driver.vehicle_id) await driver.update({ vehicle_id: assignedVehicle.id });
+      if (!assignedVehicle.assigned_driver_id) await assignedVehicle.update({ assigned_driver_id: driver.id });
 
       // A driver must have a started trip on that vehicle before reporting GPS.
       const trip = tripId
@@ -820,8 +927,29 @@ export class TrackingService {
       await redisClient.set(`vehicle:history:${vehicle.id}`, JSON.stringify(existingHistory.slice(-500)), { ex: GPS_HISTORY_TTL });
     }
 
-    // 6. Broadcast — server is the single source of truth for live updates.
-    const broadcast = { ...livePayload, status: movement, liveStatus, ageSeconds: Math.round(ageMs / 1000), route: vehicle.current_route || '', direction: bearingToDirection(heading) };
+    // 6. High-Risk Corridor Entry Detection
+    let corridorCheck: any = null;
+    if (isFresh) {
+      corridorCheck = await this.checkHighRiskCorridor(vehicle.id, body.latitude, body.longitude, vehicle.current_route);
+      if (corridorCheck?.inHighRiskCorridor) {
+        livePayload.enteringHighRiskCorridor = true;
+        livePayload.corridorRisk = corridorCheck.riskScore;
+        livePayload.corridorName = corridorCheck.routeName;
+      }
+    }
+
+    // 7. Broadcast — server is the single source of truth for live updates.
+    const broadcast = {
+      ...livePayload,
+      status: movement,
+      liveStatus,
+      ageSeconds: Math.round(ageMs / 1000),
+      route: vehicle.current_route || '',
+      direction: bearingToDirection(heading),
+      enteringHighRiskCorridor: !!livePayload.enteringHighRiskCorridor,
+      corridorRisk: livePayload.corridorRisk || null,
+      corridorName: livePayload.corridorName || null,
+    };
     const io = getSocketServer();
     if (io) {
       const rooms = ['admin:all', `transporter:${vehicle.transporter_id}`];
@@ -835,7 +963,7 @@ export class TrackingService {
       console.log(`[TRACKING] ${liveStatus} ${vehicle.id} ${body.latitude},${body.longitude} src=${source} acc=${accuracy}m age=${Math.round(ageMs / 1000)}s`);
     }
 
-    // 7. Geofence detection on the REAL GPS pipeline (server-side state, real
+    // 8. Geofence detection on the REAL GPS pipeline (server-side state, real
     //    hub circles). Emits geofence:event + alert.created + alert:broadcast.
     let geofenceEvent: any = null;
     if (isFresh) {
@@ -853,7 +981,7 @@ export class TrackingService {
       }
     }
 
-    return { ok: true, locationId, liveStatus, movement, persisted: true, vehicleId: vehicle.id, geofenceEvent };
+    return { ok: true, locationId, liveStatus, movement, persisted: true, vehicleId: vehicle.id, geofenceEvent, corridorCheck };
   }
 
   /** Trip lifecycle: ASSIGNED(planned) → STARTED(in_transit, tracking on) → COMPLETED. */
@@ -867,6 +995,8 @@ export class TrackingService {
       const driver = await this.resolveDriverForUser(user.id);
       if (!driver || trip.driver_id !== driver.id) return { error: 'Trip not assigned to this driver', statusCode: 403 };
       if (trip.vehicle_id !== (driver.vehicle_id || vehicle.id)) return { error: 'Vehicle mismatch', statusCode: 403 };
+      if (!driver.vehicle_id) await driver.update({ vehicle_id: vehicle.id });
+      if (!vehicle.assigned_driver_id) await vehicle.update({ assigned_driver_id: driver.id });
     } else if (user.role === 'transporter' && vehicle.transporter_id !== user.transporterId) {
       return { error: 'Vehicle belongs to another transporter', statusCode: 403 };
     }
@@ -875,7 +1005,17 @@ export class TrackingService {
     if (trip.status === 'in_transit') return { ok: true, alreadyStarted: true, trip };
 
     await trip.update({ status: 'in_transit', started_at: new Date() });
-    await vehicle.update({ status: 'idle', tracking_active: true, current_trip_id: trip.id, current_route: trip.origin && trip.destination ? `${trip.origin} → ${trip.destination}` : trip.route_id });
+    await vehicle.update({
+      status: 'moving',
+      live_status: 'LIVE',
+      tracking_active: true,
+      current_trip_id: trip.id,
+      current_route: trip.origin && trip.destination ? `${trip.origin} → ${trip.destination}` : trip.route_id,
+    });
+    // Synchronize any linked deliveries
+    try {
+      await Delivery.update({ status: 'in_transit' }, { where: { trip_id: trip.id } });
+    } catch {}
     // Fresh per-trip trail: drop stale Redis trail/live from any previous run/simulation.
     await redisClient.del(`vehicle:history:${vehicle.id}`);
     await redisClient.del(`vehicle:live:${vehicle.id}`);
@@ -899,6 +1039,10 @@ export class TrackingService {
 
     if (trip.status === 'completed' || trip.status === 'canceled') return { error: 'Trip already closed', statusCode: 409 };
     await trip.update({ status: 'completed', actual_arrival_at: new Date(), progress_percent: 100 });
+    // Synchronize any linked deliveries
+    try {
+      await Delivery.update({ status: 'delivered', delivered_at: new Date() }, { where: { trip_id: trip.id } });
+    } catch {}
     if (vehicle) {
       await vehicle.update({
         tracking_active: false, current_trip_id: null,
@@ -931,6 +1075,10 @@ export class TrackingService {
       if (!driver) return { error: 'No driver profile linked to this account', statusCode: 403 };
       if (driver.status !== 'active') return { error: 'Driver account is not active', statusCode: 403 };
       vehicle = driver.vehicle_id ? await Vehicle.findByPk(driver.vehicle_id) : null;
+      if (!vehicle) {
+        vehicle = await Vehicle.findOne({ where: { assigned_driver_id: driver.id } });
+        if (vehicle) await driver.update({ vehicle_id: vehicle.id });
+      }
       if (!vehicle) return { error: 'No vehicle assigned to this driver — cannot raise SOS', statusCode: 403 };
       actorName = driver.name;
     } else {
@@ -1109,7 +1257,11 @@ export class TrackingService {
   static async getDriverContext(user: any) {
     const driver = await this.resolveDriverForUser(user.id);
     if (!driver) return { error: 'No driver profile linked to this account', statusCode: 403 };
-    const vehicle = driver.vehicle_id ? await Vehicle.findByPk(driver.vehicle_id) : null;
+    let vehicle = driver.vehicle_id ? await Vehicle.findByPk(driver.vehicle_id) : null;
+    if (!vehicle) {
+      vehicle = await Vehicle.findOne({ where: { assigned_driver_id: driver.id } });
+      if (vehicle) await driver.update({ vehicle_id: vehicle.id });
+    }
     const activeTrip = vehicle?.current_trip_id
       ? await Trip.findByPk(vehicle.current_trip_id)
       : await Trip.findOne({ where: { driver_id: driver.id, status: { [Op.in]: ['planned', 'in_transit'] } }, order: [['createdAt', 'DESC']] });

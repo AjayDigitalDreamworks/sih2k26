@@ -2,7 +2,7 @@ import React from 'react';
 import { BrowserRouter, Routes, Route, Navigate } from 'react-router-dom';
 import ErrorBoundary from './components/ErrorBoundary';
 import { ThemeProvider } from './contexts/ThemeContext';
-import { AuthProvider } from './contexts/AuthContext';
+import { AuthProvider, useAuth } from './contexts/AuthContext';
 import { Toaster } from 'sonner';
 
 import Home from './pages/Home';
@@ -10,7 +10,27 @@ import Login from './pages/Login';
 import AdminDashboardApp from './pages/admin/AdminDashboardApp';
 import TransporterApp from './pages/Transporter/TransporterApp';
 import DriverDashboardApp from './pages/Driver/DriverDashboardApp';
+import FieldOfficerApp from './pages/FieldOfficer/FieldOfficerApp';
 import ProtectedRoute from './components/auth/ProtectedRoute';
+
+function RoleDashboardRedirect() {
+  const { user, isAuthenticated, isLoading } = useAuth();
+  if (isLoading) return null;
+  if (!isAuthenticated || !user) {
+    return <Navigate to="/login" replace />;
+  }
+  const role = user.backendRole || user.role;
+  if (role === 'admin' || role === 'district_officer' || role === 'official') {
+    return <Navigate to="/admin" replace />;
+  }
+  if (role === 'driver') {
+    return <Navigate to="/driver" replace />;
+  }
+  if (role === 'field_officer' || role === 'field_agent') {
+    return <Navigate to="/field-officer" replace />;
+  }
+  return <Navigate to="/transporter/dashboard" replace />;
+}
 
 export default function App() {
   return (
@@ -26,7 +46,7 @@ export default function App() {
               {/* Public Login Page */}
               <Route path="/login" element={<Login />} />
 
-              {/* JWT Protected Admin Dashboard Routes */}
+              {/* JWT Protected Admin Dashboard Routes — strictly official/admin/district_officer */}
               <Route
                 path="/admin/*"
                 element={
@@ -36,28 +56,41 @@ export default function App() {
                 }
               />
 
-              {/* JWT Protected Transporter Dashboard Hub Routes */}
+              {/* JWT Protected Transporter Dashboard Hub Routes — strictly transporter/operator */}
               <Route
                 path="/transporter/*"
                 element={
-                  <ProtectedRoute allowedRoles={['operator', 'transporter', 'driver', 'admin', 'official']}>
+                  <ProtectedRoute allowedRoles={['operator', 'transporter']}>
                     <TransporterApp />
                   </ProtectedRoute>
                 }
               />
 
-              {/* Real GPS Driver App (Web/PWA — same backend the future Android app uses) */}
+              {/* Real GPS Driver App — strictly driver */}
               <Route
                 path="/driver/*"
                 element={
-                  <ProtectedRoute allowedRoles={['operator', 'transporter', 'driver', 'admin', 'official']}>
+                  <ProtectedRoute allowedRoles={['driver']}>
                     <DriverDashboardApp />
                   </ProtectedRoute>
                 }
               />
 
+              {/* Real Field Officer Web App & GIS Intelligence Module — strictly field officer */}
+              <Route
+                path="/field-officer/*"
+                element={
+                  <ProtectedRoute allowedRoles={['field_officer', 'field_agent']}>
+                    <FieldOfficerApp />
+                  </ProtectedRoute>
+                }
+              />
+
               {/* Quick Navigation Redirects with Route Protection */}
-              <Route path="/dashboard" element={<Navigate to="/transporter/dashboard" replace />} />
+              <Route path="/field" element={<Navigate to="/field-officer" replace />} />
+              <Route path="/field-agent" element={<Navigate to="/field-officer" replace />} />
+              <Route path="/officer" element={<Navigate to="/field-officer" replace />} />
+              <Route path="/dashboard" element={<RoleDashboardRedirect />} />
               <Route path="/consignments" element={<Navigate to="/transporter/consignments" replace />} />
               <Route path="/vehicles" element={<Navigate to="/transporter/vehicles" replace />} />
               <Route path="/live-tracking" element={<Navigate to="/transporter/live-tracking" replace />} />

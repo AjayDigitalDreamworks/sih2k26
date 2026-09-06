@@ -48,7 +48,7 @@ export default function AddVehicleModal({ isOpen, onClose, onVehicleAdded, vehic
           capacityKg: String(vehicle.raw?.capacity_kg || ''),
           status: vehicle.statusType || 'idle',
           currentRoute: vehicle.route || vehicle.raw?.current_route || '',
-          driverId: vehicle.raw?.assigned_driver_id || (vehicle.driver ? vehicle.driver.name : '') || '',
+          driverId: vehicle.raw?.assigned_driver_id || vehicle.raw?.driver?.id || vehicle.driver?.id || '',
         });
       } else {
         setFormData({
@@ -85,13 +85,16 @@ export default function AddVehicleModal({ isOpen, onClose, onVehicleAdded, vehic
     setLoading(true);
     try {
       let message = '';
+      const payload = {
+        model: formData.model,
+        capacity_kg: capacityKg,
+        status: formData.status,
+        current_route: formData.currentRoute.trim() || null,
+        assigned_driver_id: formData.driverId || null,
+      };
+
       if (editing) {
-        const res = await ApiClient.updateVehicle(registrationId, {
-          model: formData.model,
-          capacity_kg: capacityKg,
-          status: formData.status,
-          current_route: formData.currentRoute.trim() || null,
-        });
+        const res = await ApiClient.updateVehicle(registrationId, payload);
         if (!res?.success) {
           toast.error(res?.message || 'Could not update vehicle.');
           return;
@@ -100,11 +103,8 @@ export default function AddVehicleModal({ isOpen, onClose, onVehicleAdded, vehic
       } else {
         const res = await ApiClient.createVehicle({
           id: registrationId,
-          model: formData.model,
           type: 'truck',
-          capacity_kg: capacityKg,
-          status: formData.status,
-          current_route: formData.currentRoute.trim() || null,
+          ...payload,
         });
         if (!res?.success) {
           toast.error(res?.message || 'Could not register vehicle.');
@@ -113,24 +113,13 @@ export default function AddVehicleModal({ isOpen, onClose, onVehicleAdded, vehic
         message = `Vehicle ${registrationId} registered to fleet.`;
       }
 
-      // Assign the selected real driver to the vehicle (select, not manual entry)
       if (formData.driverId) {
         const selectedDriver = availableDrivers.find((d) => d.id === formData.driverId);
-        const alreadyLinked = vehicle?.raw?.assigned_driver_id === formData.driverId
-          || (editing && vehicle?.driver?.name && selectedDriver && vehicle.driver.name === selectedDriver.name);
-        if (!alreadyLinked && selectedDriver) {
-          try {
-            const upd = await ApiClient.request(`/transporter/drivers/${selectedDriver.id}`, {
-              method: 'PATCH',
-              body: JSON.stringify({ vehicle_id: registrationId, status: 'active' }),
-            });
-            if (upd?.success) message += ` Assigned driver ${selectedDriver.name}.`;
-            else message += ' (Driver assignment failed — try again later.)';
-          } catch (err) {
-            console.warn('Driver assignment failed:', err);
-            message += ' (Driver assignment failed — try again later.)';
-          }
+        if (selectedDriver) {
+          message += ` Assigned driver ${selectedDriver.name}.`;
         }
+      } else if (editing && vehicle?.raw?.assigned_driver_id) {
+        message += ' Driver unassigned.';
       }
 
       onVehicleAdded(message);

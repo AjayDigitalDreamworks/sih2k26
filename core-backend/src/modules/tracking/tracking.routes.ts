@@ -1,5 +1,31 @@
 import { Router, Request, Response } from 'express';
 import { authenticateJwt } from '../../middleware/auth.middleware';
+import { Vehicle, Driver } from '../../models/postgres';
+
+/**
+ * Vehicle-scoped reads must respect ownership: admin/district officer may read
+ * any vehicle, a transporter only their own fleet, and a DRIVER only the exact
+ * vehicle assigned to them (identity from the JWT — never from the URL alone).
+ */
+async function authorizeVehicleRead(user: any, vehicleId: string): Promise<{ ok: true } | { ok: false; status: number; error: string }> {
+  const role = user?.role;
+  if (!role) return { ok: false, status: 401, error: 'Unauthorized' };
+  if (role === 'admin' || role === 'district_officer') return { ok: true };
+  const vehicle = await Vehicle.findByPk(String(vehicleId));
+  if (!vehicle) return { ok: false, status: 404, error: 'Vehicle not found' };
+  if (role === 'transporter') {
+    return vehicle.transporter_id && vehicle.transporter_id === user.transporterId
+      ? { ok: true }
+      : { ok: false, status: 403, error: 'Vehicle belongs to another transporter' };
+  }
+  if (role === 'driver') {
+    const driver = await Driver.findOne({ where: { user_id: user.id } });
+    return driver && driver.vehicle_id === vehicle.id
+      ? { ok: true }
+      : { ok: false, status: 403, error: 'Driver may only view their assigned vehicle' };
+  }
+  return { ok: false, status: 403, error: 'Not authorized to view this vehicle' };
+}
 import { validate } from '../../middleware/validate.middleware';
 import { gpsPingSchema, trackingLocationSchema } from '../../middleware/validation.schemas';
 import { sendSuccess, sendError } from '../../utils/response';
@@ -134,6 +160,8 @@ router.get('/status', authenticateJwt, async (_req: Request, res: Response) => {
 /** GET /api/tracking/vehicles/:vehicleId/current */
 router.get('/vehicles/:vehicleId/current', authenticateJwt, async (req: Request, res: Response) => {
   try {
+    const auth = await authorizeVehicleRead(req.user as any, String(req.params.vehicleId));
+    if (!auth.ok) return sendError(res, auth.error, auth.status);
     const result = await TrackingService.getVehicleTrackingStatus(String(req.params.vehicleId));
     if (!result) return sendError(res, 'Vehicle not found', 404);
     return sendSuccess(res, result, 'Current vehicle tracking state');
@@ -146,6 +174,8 @@ router.get('/vehicles/:vehicleId/current', authenticateJwt, async (req: Request,
 /** GET /api/tracking/vehicles/:vehicleId/history?start_time&end_time&trip_id&limit&offset */
 router.get('/vehicles/:vehicleId/history', authenticateJwt, async (req: Request, res: Response) => {
   try {
+    const auth = await authorizeVehicleRead(req.user as any, String(req.params.vehicleId));
+    if (!auth.ok) return sendError(res, auth.error, auth.status);
     const result = await TrackingService.getPersistedHistory(String(req.params.vehicleId), {
       startTime: req.query.start_time ? String(req.query.start_time) : undefined,
       endTime: req.query.end_time ? String(req.query.end_time) : undefined,
@@ -163,6 +193,8 @@ router.get('/vehicles/:vehicleId/history', authenticateJwt, async (req: Request,
 /** GET /api/tracking/vehicles/:vehicleId/trip-summary?trip_id= — real GPS trip stats */
 router.get('/vehicles/:vehicleId/trip-summary', authenticateJwt, async (req: Request, res: Response) => {
   try {
+    const auth = await authorizeVehicleRead(req.user as any, String(req.params.vehicleId));
+    if (!auth.ok) return sendError(res, auth.error, auth.status);
     const result = await TrackingService.getTripSummary(
       String(req.params.vehicleId),
       req.query.trip_id ? String(req.query.trip_id) : undefined
@@ -178,6 +210,8 @@ router.get('/vehicles/:vehicleId/trip-summary', authenticateJwt, async (req: Req
 /** GET /api/tracking/vehicles/:vehicleId/status — live/current/legacy */
 router.get('/:vehicleId/status', authenticateJwt, async (req: Request, res: Response) => {
   try {
+    const auth = await authorizeVehicleRead(req.user as any, String(req.params.vehicleId));
+    if (!auth.ok) return sendError(res, auth.error, auth.status);
     const result = await TrackingService.getVehicleTrackingStatus(String(req.params.vehicleId));
     if (!result) return sendError(res, 'Vehicle not found', 404);
     return sendSuccess(res, result, 'Vehicle tracking status');
@@ -190,6 +224,8 @@ router.get('/:vehicleId/status', authenticateJwt, async (req: Request, res: Resp
 /** GET /api/tracking/vehicles/:vehicleId/trail — recent Redis trail (map polyline) */
 router.get('/:vehicleId/trail', authenticateJwt, async (req: Request, res: Response) => {
   try {
+    const auth = await authorizeVehicleRead(req.user as any, String(req.params.vehicleId));
+    if (!auth.ok) return sendError(res, auth.error, auth.status);
     const limit = parseInt(String(req.query.limit || '200')) || 200;
     const trail = await TrackingService.getGpsTrail(String(req.params.vehicleId), limit);
     return sendSuccess(res, trail, 'GPS trail retrieved');

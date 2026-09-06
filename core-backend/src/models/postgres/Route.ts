@@ -13,6 +13,7 @@ export class Route extends Model {
   public current_risk_score!: number;
   public fuel_cost_estimate!: number;
   public toll_cost!: number;
+  public geom!: string; // PostGIS GEOMETRY(LINESTRING, 4326) stored as GeoJSON
   public readonly createdAt!: Date;
   public readonly updatedAt!: Date;
 }
@@ -63,6 +64,11 @@ Route.init(
       type: DataTypes.DOUBLE,
       defaultValue: 400,
     },
+    geom: {
+      type: DataTypes.TEXT,
+      allowNull: false,
+      defaultValue: '',
+    },
   },
   {
     sequelize,
@@ -70,3 +76,23 @@ Route.init(
     timestamps: true,
   }
 );
+
+// Helper to create a linestring between two points
+export function createRouteLinestring(
+  originLat: number,
+  originLng: number,
+  destLat: number,
+  destLng: number,
+  intermediatePoints: Array<[number, number]> = []
+): string {
+  const coordinates = [
+    [originLng, originLat],
+    ...intermediatePoints,
+    [destLng, destLat],
+  ];
+  
+  return JSON.stringify({
+    type: 'LineString',
+    coordinates,
+  });
+}

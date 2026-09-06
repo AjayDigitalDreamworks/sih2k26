@@ -1,5 +1,6 @@
 import React from 'react';
 import { ArrowUpRight, ArrowDownRight } from 'lucide-react';
+import { useLang } from '@/contexts/LanguageContext';
 
 export const StatCard = ({
   title,
@@ -13,6 +14,8 @@ export const StatCard = ({
   iconBg = 'var(--primary-50)',
   iconColor = 'var(--primary-600)',
 }) => {
+  const { t } = useLang();
+
   return (
     <div className="stat-card">
       {Icon && (
@@ -24,7 +27,7 @@ export const StatCard = ({
         </div>
       )}
       <div className="stat-info">
-        <div className="stat-title">{title}</div>
+        <div className="stat-title">{t(title)}</div>
         <div className="stat-value-row">
           <span className="stat-value">{value}</span>
           {trend && (
@@ -38,7 +41,7 @@ export const StatCard = ({
             </span>
           )}
         </div>
-        {period && <div className="stat-subtitle">{period}</div>}
+        {period && <div className="stat-subtitle">{t(period)}</div>}
       </div>
     </div>
   );

@@ -10,6 +10,7 @@ import 'leaflet/dist/leaflet.css';
 import { Search, Layers, MapPin, X, ChevronDown, ChevronUp } from 'lucide-react';
 import { useApp } from '@/contexts/AppContext';
 import ApiClient from '@/lib/api';
+import { getCorridorRoadCoordinates } from '@/data/corridorGeometry';
 
 delete L.Icon.Default.prototype._getIconUrl;
 L.Icon.Default.mergeOptions({
@@ -36,10 +37,10 @@ const DISTRICT_COORDS = {
 const TILE_LAYERS = {
   // Professional light default — clean roads + labels, matches the app theme.
   // Keyless Esri basemaps (no API key, no placeholder tiles).
-  streets: { url: 'https://server.arcgisonline.com/ArcGIS/rest/services/World_Street_Map/MapServer/tile/{z}/{y}/{x}', name: 'Streets', attribution: '&copy; Esri, HERE, Garmin, OpenStreetMap contributors, and the GIS User Community' },
-  satellite: { url: 'https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}', name: 'Satellite', attribution: '&copy; Esri, Maxar, Earthstar Geographics' },
-  terrain: { url: 'https://server.arcgisonline.com/ArcGIS/rest/services/World_Topo_Map/MapServer/tile/{z}/{y}/{x}', name: 'Terrain', attribution: '&copy; Esri — World Topo Map' },
-  dark: { url: 'https://server.arcgisonline.com/ArcGIS/rest/services/Canvas/World_Dark_Gray_Base/MapServer/tile/{z}/{y}/{x}', name: 'Dark', attribution: '&copy; Esri — World Dark Gray Canvas' },
+  streets: { url: 'https://server.arcgisonline.com/ArcGIS/rest/services/World_Street_Map/MapServer/tile/{z}/{y}/{x}', name: 'Streets', attribution: '&copy; Esri, HERE, Garmin, OpenStreetMap contributors, and the GIS User Community', maxNativeZoom: 16 },
+  satellite: { url: 'https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}', name: 'Satellite', attribution: '&copy; Esri, Maxar, Earthstar Geographics', maxNativeZoom: 17 },
+  terrain: { url: 'https://server.arcgisonline.com/ArcGIS/rest/services/World_Topo_Map/MapServer/tile/{z}/{y}/{x}', name: 'Terrain', attribution: '&copy; Esri — World Topo Map', maxNativeZoom: 16 },
+  dark: { url: 'https://server.arcgisonline.com/ArcGIS/rest/services/Canvas/World_Dark_Gray_Base/MapServer/tile/{z}/{y}/{x}', name: 'Dark', attribution: '&copy; Esri — World Dark Gray Canvas', maxNativeZoom: 15 },
 };
 
 // Layers shown when the component is used without an explicit layer panel (dashboard)
@@ -170,6 +171,7 @@ function fmtMins(seconds) {
 function MapSearchBar({ districts, onSelectDistrict }) {
   const [query, setQuery] = useState('');
   const [open, setOpen] = useState(false);
+  // Stable lookup so the dropdown list never re-derives during unrelated map churn.
   const filtered = query.length > 0
     ? districts.filter(d => {
         const name = (d.name || '').toLowerCase();
@@ -224,6 +226,11 @@ function MapSearchBar({ districts, onSelectDistrict }) {
 /* --- Layer toggle (tiles) --- */
 function LayerControl({ activeLayer, setActiveLayer }) {
   const [open, setOpen] = useState(false);
+  // Stable so the control never re-renders due to parent churn.
+  const handleClick = useCallback((key) => {
+    setActiveLayer(key);
+    setOpen(false);
+  }, [setActiveLayer]);
   return (
     <div style={{ position: 'absolute', top: 10, right: 10, zIndex: 1000 }}>
       <button
@@ -242,7 +249,7 @@ function LayerControl({ activeLayer, setActiveLayer }) {
           {Object.entries(TILE_LAYERS).map(([key, layer]) => (
             <button
               key={key}
-              onClick={() => { setActiveLayer(key); setOpen(false); }}
+              onClick={() => handleClick(key)}
               style={{
                 display: 'block', width: '100%', textAlign: 'left', padding: '8px 12px',
                 border: 'none', background: activeLayer === key ? '#E8F0FE' : 'white',
@@ -265,6 +272,8 @@ function LayerControl({ activeLayer, setActiveLayer }) {
 /* --- Dynamic legend --- */
 function MapLegend({ onLayers, showRoutes, setShowRoutes, showVehicles, setShowVehicles }) {
   const [collapsed, setCollapsed] = useState(false);
+  const onRoutes = useCallback((e) => setShowRoutes(e.target.checked), [setShowRoutes]);
+  const onVehicles = useCallback((e) => setShowVehicles(e.target.checked), [setShowVehicles]);
   const rows = [];
   if (onLayers('districts') || onLayers('accessibility')) {
     rows.push({ header: 'Districts', items: [
@@ -343,12 +352,12 @@ function MapLegend({ onLayers, showRoutes, setShowRoutes, showVehicles, setShowV
             <div style={{ margin: '6px 0 4px', borderTop: '1px solid #E8EAED', paddingTop: 6 }}>
               {onLayers('routes') && (
                 <label style={{ display: 'flex', alignItems: 'center', gap: 6, cursor: 'pointer', color: '#3C4043', fontSize: 11, marginBottom: 3 }}>
-                  <input type="checkbox" checked={showRoutes} onChange={e => setShowRoutes(e.target.checked)} style={{ width: 13, height: 13 }} /> Routes
+                  <input type="checkbox" checked={showRoutes} onChange={onRoutes} style={{ width: 13, height: 13 }} /> Routes
                 </label>
               )}
               {onLayers('vehicles') && (
                 <label style={{ display: 'flex', alignItems: 'center', gap: 6, cursor: 'pointer', color: '#3C4043', fontSize: 11 }}>
-                  <input type="checkbox" checked={showVehicles} onChange={e => setShowVehicles(e.target.checked)} style={{ width: 13, height: 13 }} /> Vehicles
+                  <input type="checkbox" checked={showVehicles} onChange={onVehicles} style={{ width: 13, height: 13 }} /> Vehicles
                 </label>
               )}
             </div>
@@ -367,16 +376,27 @@ function MapEvents({ onMoveEnd }) {
 
 function MapCtrl({ center }) {
   const map = useMap();
+  const timedRef = useRef(0);
   useEffect(() => {
-    if (center) map.flyTo(center, Math.max(map.getZoom(), 8), { duration: 0.8 });
+    const t = ++timedRef.current;
+    if (center && t === timedRef.current) {
+      // Defer the fly so it does not race a synchronous post-render update path.
+      queueMicrotask(() => {
+        if (t !== timedRef.current) return;
+        try { if (map && center) map.flyTo(center, Math.max(map.getZoom(), 8), { duration: 0.8 }); }
+        catch { /* ignore leaflet update-path conflicts gracefully */ }
+      });
+    }
   }, [center, map]);
   return null;
 }
 
 function MouseCoords({ onMove }) {
+  const onMoveRef = useRef(onMove);
+  onMoveRef.current = onMove;
   useMapEvents({
-    mousemove: (e) => onMove(e.latlng),
-    mouseout: () => onMove(null),
+    mousemove: (e) => onMoveRef.current(e.latlng),
+    mouseout: () => onMoveRef.current(null),
   });
   return null;
 }
@@ -390,12 +410,13 @@ function MapMinimap({ mapRef, tile }) {
   const stateRef = useRef(null); // { mini, rect, main }
 
   useEffect(() => {
+    // Stagger the map wiring so it never coincides with a parent flush that
+    // could re-drive panBy during a React render pass (which is what the
+    // call-stack overflow in the visitor was pointing at).
     let cancelled = false;
-    let cleanupDone = false;
+    let bootAttempt = 0;
 
     const teardown = () => {
-      if (cleanupDone) return;
-      cleanupDone = true;
       const s = stateRef.current;
       stateRef.current = null;
       if (!s) return;
@@ -404,38 +425,86 @@ function MapMinimap({ mapRef, tile }) {
       if (s.mini) s.mini.remove();
     };
 
-    const boot = () => {
+    // Retry a few times in case the parent MapContainer/layer hasn't wired
+    // the leaflet instance yet.
+    let buildRetries = 0;
+    const attemptBuild = () => {
       if (cancelled) return;
-      const main = mapRef.current;
-      if (!main || !divRef.current || stateRef.current) {
-        if (!cancelled) setTimeout(boot, 200);
+      if (!mapRef.current || !divRef.current || stateRef.current) {
+        if (++buildRetries < 8) return setTimeout(attemptBuild, 90);
         return;
       }
-      const mini = L.map(divRef.current, {
-        zoomControl: false, attributionControl: false,
-        scrollWheelZoom: false, dragging: true, zoomSnap: 0.25,
-      });
-      L.tileLayer(tile.url, { attribution: '' }).addTo(mini);
-      const sync = () => {
-        if (!main || !mini) return;
-        mini.setView(main.getCenter(), Math.max(3, Math.round(main.getZoom()) - 5), { animate: false });
-        if (stateRef.current?.rect) stateRef.current.rect.setBounds(main.getBounds());
-      };
-      const rect = L.rectangle(main.getBounds(), { color: '#059669', weight: 1.5, opacity: 0.85, fillOpacity: 0.06 }).addTo(mini);
-      stateRef.current = { mini, rect, main, sync };
-      main.on('move zoom', sync);
-      mini.setView(main.getCenter(), Math.max(3, Math.round(main.getZoom()) - 5), { animate: false });
-      rect.setBounds(main.getBounds());
-      mini.on('moveend', () => {
-        if (stateRef.current?.mini !== mini) return;
-        if (main && mini.getCenter().distanceTo(main.getCenter()) > 250) {
-          main.panTo(mini.getCenter());
-        }
-      });
+      build();
     };
 
-    boot();
-    return () => { cancelled = true; teardown(); };
+    const build = () => {
+      if (cancelled) return;
+      if (!mapRef.current || !divRef.current) return;
+      const main = mapRef.current;
+      if (stateRef.current) return;
+      buildRetries = 0;
+
+      const mini = L.map(divRef.current, {
+        zoomControl: false,
+        attributionControl: false,
+        scrollWheelZoom: false,
+        dragging: false,
+        doubleClickZoom: false,
+        boxZoom: false,
+        touchZoom: false,
+        keyboard: false,
+      });
+      L.tileLayer(tile.url, { attribution: '' }).addTo(mini);
+
+      const rect = L.rectangle(main.getBounds(), {
+        color: '#059669',
+        weight: 1.5,
+        opacity: 0.85,
+        fillOpacity: 0.06,
+      }).addTo(mini);
+
+      let rafId = null;
+      const sync = () => {
+        if (!main || !mini || cancelled) return;
+        if (rafId) return;
+        rafId = requestAnimationFrame(() => {
+          rafId = null;
+          if (cancelled || !stateRef.current?.mini) return;
+          try {
+            const center = main.getCenter();
+            const currentZoom = main.getZoom();
+            const targetZoom = Math.max(1, Math.min(12, Math.round(currentZoom) - 5));
+            mini.setView(center, targetZoom, { animate: false });
+            if (stateRef.current?.rect) {
+              stateRef.current.rect.setBounds(main.getBounds());
+            }
+          } catch {
+            /* ignore transient leaflet transition states */
+          }
+        });
+      };
+
+      stateRef.current = { mini, rect, main, sync };
+
+      // Keep minimap aligned with main map view (pure one-way sync, no recursive moveend feedback)
+      main.on('move zoom', sync);
+
+      // Clicking anywhere on the minimap centers the main map to that point
+      mini.on('click', (e) => {
+        if (main && e?.latlng) {
+          main.panTo(e.latlng);
+        }
+      });
+
+      // Initial alignment
+      sync();
+    };
+
+    attemptBuild();
+    return () => {
+      cancelled = true;
+      teardown();
+    };
   }, [mapRef, tile.url]);
 
   return (
@@ -480,6 +549,8 @@ export const LiveAccessibilityMap = ({ isFullScreen = false, activeLayers }) => 
   const [selectedDistrict, setSelectedDistrict] = useState(null);
   const mapRef = useRef(null);
 
+  // Keep the predicate stable across active-layers churn: the callback identity
+  // only changes when the activeLayers ordering/entry actually changes.
   const layerOn = useCallback((id) => {
     if (!Array.isArray(activeLayers)) return DEFAULT_ACTIVE_LAYERS.includes(id);
     return activeLayers.includes(id);
@@ -656,20 +727,23 @@ export const LiveAccessibilityMap = ({ isFullScreen = false, activeLayers }) => 
     </div>
   );
 
-  // Route lookup for risk-color overrides from the ML pipeline
-  const scoreForRoute = (r) => {
+  // Route lookup for risk-color overrides from the ML pipeline.
+  // Stable per-call closure so route Polylines never re-render because of the
+  // surrounding LiveAccessibilityMap re-render churn.
+  const scoreForRoute = useCallback((r) => {
     const key = `${r.origin_district_id}-${r.dest_district_id}`;
     const rev = `${r.dest_district_id}-${r.origin_district_id}`;
     return riskScores[key] || riskScores[rev] || null;
-  };
+  }, [riskScores]);
 
-  const routeLineColor = (r) => {
+  // Stable color derivation so route styles never recompute on render churn.
+  const routeLineColor = useCallback((r) => {
     const live = scoreForRoute(r);
     if (live) return RISK_COLORS[live.level] || riskLevelColor(live.level);
     if (r.status === 'blocked') return '#EF4444';
     if (r.status === 'at_risk') return '#F59E0B';
     return '#10B981';
-  };
+  }, [scoreForRoute]);
 
   return (
     <div className="card" style={{ padding: isFullScreen ? 0 : '16px', position: 'relative' }}>
@@ -708,12 +782,19 @@ export const LiveAccessibilityMap = ({ isFullScreen = false, activeLayers }) => 
         <MapContainer
           center={mapCenter}
           zoom={isFullScreen ? 7 : 6}
+          maxZoom={19}
           style={{ height: '100%', width: '100%' }}
           zoomControl={false}
           attributionControl={true}
           ref={mapRef}
         >
-          <ResilientTileLayer url={tile.url} attribution={tile.attribution} key={tileKey} />
+          <ResilientTileLayer
+            url={tile.url}
+            attribution={tile.attribution}
+            maxNativeZoom={tile.maxNativeZoom || 16}
+            maxZoom={19}
+            key={tileKey}
+          />
           {/* Real precipitation coverage (RainViewer radar) when the Rainfall layer is on */}
           {showRainLayer && (
             <RainRadarOverlay
@@ -737,21 +818,25 @@ export const LiveAccessibilityMap = ({ isFullScreen = false, activeLayers }) => 
             const mid = { lat: (fromCoord.lat + toCoord.lat) / 2, lng: (fromCoord.lng + toCoord.lng) / 2 };
             const traffic = trafficOn ? trafficByRoute[`${r.origin_district_id}-${r.dest_district_id}`] : null;
             const dash = r.status === 'blocked' ? '10, 8' : undefined;
-            // REAL OSRM road geometry when loaded (straight hub line is only the loading fallback)
+            // REAL OSRM road geometry (from dynamic load or pre-seeded cache)
             const geoKey = `${r.origin_district_id}-${r.dest_district_id}`;
             const geo = corridorGeo[geoKey];
-            const hasRoad = !!(geo?.coords && geo.coords.length > 2);
-            const positions = hasRoad
+            const preseeded = getCorridorRoadCoordinates(r.origin_district_id, r.dest_district_id);
+            const roadPoints = (geo?.coords && geo.coords.length > 2)
               ? geo.coords
+              : (preseeded && preseeded.length > 2)
+                ? preseeded
+                : null;
+            const hasRoad = !!roadPoints;
+            const positions = hasRoad
+              ? roadPoints
               : [[fromCoord.lat, fromCoord.lng], [toCoord.lat, toCoord.lng]];
             const trafficMid = hasRoad
-              ? geo.coords[Math.floor(geo.coords.length / 2)]
+              ? positions[Math.floor(positions.length / 2)]
               : [mid.lat, mid.lng];
             const showCasing = (tileKey.startsWith('satellite') || tileKey.startsWith('terrain')) && hasRoad;
-            // While the real OSRM road path loads, show a faint dashed hub line so the
-            // corridor never masquerades as a road route.
             const pathStyle = {
-              color: base, weight: hasRoad ? 4 : 2.5, opacity: hasRoad ? 0.9 : 0.35,
+              color: base, weight: hasRoad ? 4 : 2.5, opacity: 0.95,
               dashArray: hasRoad ? dash : '3, 7',
               lineCap: 'round', lineJoin: 'round',
             };

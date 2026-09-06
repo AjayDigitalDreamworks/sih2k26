@@ -8,8 +8,9 @@ export class District extends Model {
   public connectivity_status!: 'accessible' | 'partial' | 'blocked';
   public connectivity_score!: number;
   public population!: number;
-  public lat!: number;
-  public lng!: number;
+  public geom!: string; // PostGIS GEOMETRY(POLYGON, 4326) stored as GeoJSON
+  public centroid_lat!: number;
+  public centroid_lng!: number;
   public readonly createdAt!: Date;
   public readonly updatedAt!: Date;
 }
@@ -40,11 +41,16 @@ District.init(
       type: DataTypes.INTEGER,
       defaultValue: 100000,
     },
-    lat: {
+    geom: {
+      type: DataTypes.TEXT,
+      allowNull: false,
+      defaultValue: '',
+    },
+    centroid_lat: {
       type: DataTypes.DOUBLE,
       allowNull: false,
     },
-    lng: {
+    centroid_lng: {
       type: DataTypes.DOUBLE,
       allowNull: false,
     },
@@ -55,3 +61,23 @@ District.init(
     timestamps: true,
   }
 );
+
+// Helper to create GeoJSON polygon from bounding box (simplified for seed data)
+export function createDistrictPolygon(lat: number, lng: number, radiusKm: number = 30): string {
+  // Approximate 1 degree lat = 111km, 1 degree lng = 111km * cos(lat)
+  const latRadius = radiusKm / 111;
+  const lngRadius = radiusKm / (111 * Math.cos((lat * Math.PI) / 180));
+  
+  const corners = [
+    [lng - lngRadius, lat - latRadius], // SW
+    [lng + lngRadius, lat - latRadius], // SE
+    [lng + lngRadius, lat + latRadius], // NE
+    [lng - lngRadius, lat + latRadius], // NW
+    [lng - lngRadius, lat - latRadius], // Close polygon
+  ];
+  
+  return JSON.stringify({
+    type: 'Polygon',
+    coordinates: [corners],
+  });
+}

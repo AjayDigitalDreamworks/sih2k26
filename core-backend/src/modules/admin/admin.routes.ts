@@ -37,6 +37,7 @@ router.patch('/alerts/:id', AdminController.updateAlert);
 
 // 6. Field Reports
 router.get('/field-reports', AdminController.getFieldReports);
+router.post('/field-reports', AdminController.createFieldReport);
 router.patch('/field-reports/:id/verify', AdminController.verifyFieldReport);
 router.patch('/field-reports/:id/reject', AdminController.rejectFieldReport);
 

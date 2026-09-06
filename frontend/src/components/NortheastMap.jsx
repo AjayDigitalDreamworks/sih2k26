@@ -259,9 +259,11 @@ export function NortheastMap({
       map.removeLayer(map._currentTileLayer);
     }
 
+    const isEsri = tileLayerType === 'satellite';
     const newLayer = L.tileLayer(tileUrls[tileLayerType], {
       maxZoom: 18,
-      attribution: '© <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors',
+      maxNativeZoom: isEsri ? 17 : 18,
+      attribution: isEsri ? '© Esri, Maxar' : '© OpenStreetMap contributors',
       subdomains: "abc",
     }).addTo(map);
 

@@ -48,6 +48,9 @@ export function useDriverTracking() {
   const lastFixRef = useRef(null);
   const lastUploadRef = useRef(null); // last successfully uploaded fix (for movement check)
   const startedRef = useRef(false);
+  const stoppingRef = useRef(false);    // true while a STOP request is in flight
+  const lastUploadAtRef = useRef(null); // last successful upload time
+  const ctxRef = useRef(null);          // latest context, for effect guards
 
   const refreshPendingCount = useCallback(async () => {
     const n = await trackingQueue.count();
@@ -93,9 +96,16 @@ export function useDriverTracking() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [ctx]);
 
+  // Keep the ref of the context so listeners/effects can check trip state.
+  useEffect(() => { ctxRef.current = ctx; }, [ctx]);
+
   // ---- Connectivity ----
   useEffect(() => {
-    const goOnline = () => { setOnline(true); flushQueue(); };
+    const activeTrip = () => !!ctxRef.current?.trip && ctxRef.current.trip.status === 'in_transit';
+    const goOnline = () => {
+      setOnline(true);
+      if (activeTrip()) flushQueue();
+    };
     const goOffline = () => setOnline(false);
     window.addEventListener('online', goOnline);
     window.addEventListener('offline', goOffline);
@@ -105,6 +115,12 @@ export function useDriverTracking() {
     };
   }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
+  // Module-level shared watch id. React StrictMode double-invokes effects in
+  // dev; two instances must share ONE real geolocation watch + upload interval
+  // so the GPS stream is never duplicated (which would double upload rate and
+  // trip the backend spacing gate). A remount re-registers after cleanup runs.
+  const sharedWatchId = useRef(typeof globalThis !== 'undefined' && globalThis.__TRACKING_WATCH__ ? globalThis.__TRACKING_WATCH__ : null);
+
   // ---- Browser GPS (REAL geolocation only — no synthetic points) ----
   const startWatching = useCallback(() => {
     if (!('geolocation' in navigator)) {
@@ -112,9 +128,13 @@ export function useDriverTracking() {
       setGpsError('This browser does not support geolocation');
       return;
     }
-    if (watchIdRef.current != null) return;
+    if (sharedWatchId.current != null) {
+      // A watch from a previous mount still exists — reuse it, don't re-ask.
+      setWatchActive(true);
+      return;
+    }
     setWatchActive(true);
-    watchIdRef.current = navigator.geolocation.watchPosition(
+    sharedWatchId.current = navigator.geolocation.watchPosition(
       (pos) => {
         const fix = {
           lat: pos.coords.latitude,
@@ -136,13 +156,19 @@ export function useDriverTracking() {
       },
       WATCH_OPTS
     );
+    try { globalThis.__TRACKING_WATCH__ = sharedWatchId.current; } catch { /* noop */ }
   }, []);
 
   const stopWatching = useCallback(() => {
-    if (watchIdRef.current != null) {
-      navigator.geolocation.clearWatch(watchIdRef.current);
-      watchIdRef.current = null;
+    // The real unmount clears the shared watch; StrictMode's effect re-run
+    // will re-register it afterwards. Leaving a stale watch running would keep
+    // the GPS stream alive on pages that no longer need tracking.
+    const id = (typeof globalThis !== 'undefined' && globalThis.__TRACKING_WATCH__) || sharedWatchId.current;
+    if (id != null) {
+      try { navigator.geolocation.clearWatch(id); } catch { /* noop */ }
     }
+    sharedWatchId.current = null;
+    try { delete globalThis.__TRACKING_WATCH__; } catch { /* noop */ }
     setWatchActive(false);
   }, []);
 
@@ -193,7 +219,9 @@ export function useDriverTracking() {
     }
   }, [ctx]);
 
-  // Flush queued observations (original gps_timestamp preserved).
+  // Flush queued observations (original gps_timestamp preserved). Only runs
+  // while a trip is active — points from a finished trip are invalid and would
+  // be rejected by the server forever, so they are dropped on STOP instead.
   const flushQueue = useCallback(async () => {
     if (isOffline()) return 0;
     const queued = await trackingQueue.getAll();
@@ -220,6 +248,9 @@ export function useDriverTracking() {
     if (!ctx || !ctx.trip || ctx.trip.status !== 'in_transit') return undefined;
     if (!lastFixRef.current) return undefined;
     const iv = setInterval(async () => {
+      // Stop in flight / trip closed server-side: never keep pushing points.
+      if (stoppingRef.current) return;
+      if (!ctxRef.current?.trip || ctxRef.current.trip.status !== 'in_transit') return;
       const fix = lastFixRef.current;
       if (!fix) return;
       // Skip very poor fixes silently (logged locally, never fabricated).
@@ -237,7 +268,6 @@ export function useDriverTracking() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [ctx]);
 
-  const lastUploadAtRef = useRef(null);
   useEffect(() => { lastUploadAtRef.current = lastUploadAt; }, [lastUploadAt]);
 
   // ---- SOS / EMERGENCY ----
@@ -313,6 +343,7 @@ export function useDriverTracking() {
   const stopTrip = useCallback(async () => {
     if (!ctx?.trip) return false;
     setTripBusy(true);
+    stoppingRef.current = true;
     try {
       const res = await ApiClient.stopTrip(ctx.trip.id);
       if (res?.success) {
@@ -321,7 +352,10 @@ export function useDriverTracking() {
         setLastCompleted({
           id: ctx.trip.id, origin: ctx.trip.origin, destination: ctx.trip.destination, at: new Date(),
         });
-        await flushQueue();
+        // The server has already closed the trip — any unsent queue points for
+        // it are no longer valid and would be rejected forever. Drop them.
+        await trackingQueue.clear();
+        await refreshPendingCount();
         await loadContext();
         return true;
       }
@@ -331,6 +365,7 @@ export function useDriverTracking() {
       setUploadError(e.message || 'Could not stop trip');
       return false;
     } finally {
+      stoppingRef.current = false;
       setTripBusy(false);
     }
   }, [ctx, loadContext, flushQueue]);

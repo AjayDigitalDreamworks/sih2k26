@@ -7,7 +7,7 @@ const router = Router();
 
 // Apply JWT Auth and Role Guard for all Transporter endpoints
 router.use(authenticateJwt);
-router.use(requireRole(['transporter', 'driver', 'admin']));
+router.use(requireRole(['transporter']));
 
 // 0. Self profile (updates only the caller's own user row)
 router.patch('/profile', TransporterController.updateOwnProfile);

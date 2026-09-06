@@ -7,10 +7,11 @@ import { LiveAccessibilityMap } from '@/components/admin/dashboard/LiveAccessibi
 import { GisLayerManager } from '@/components/admin/common/GisLayerManager';
 
 export const LiveMapPage = () => {
+  // Stabilize the initial layer set so toggling never mutates the live array.
   const [activeLayers, setActiveLayers] = useState([
     'base_map', 'districts', 'roads', 'routes', 'vehicles', 'weather', 'rainfall',
     'risk_flood', 'risk_landslide', 'traffic', 'disruptions', 'hospitals', 'warehouses', 'logistics_hubs',
-  ]);
+  ].slice());
   const [activeState, setActiveState] = useState('All');
   const [showLayerPanel, setShowLayerPanel] = useState(true);
 

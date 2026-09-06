@@ -13,9 +13,9 @@ import RainRadarOverlay from '../admin/common/RainRadarOverlay';
 
 // Keyless Esri basemaps (no API key, no placeholder tiles).
 const TILE_LAYERS = {
-  streets: { url: 'https://server.arcgisonline.com/ArcGIS/rest/services/World_Street_Map/MapServer/tile/{z}/{y}/{x}', name: 'Streets', attribution: '&copy; Esri, HERE, Garmin, OpenStreetMap contributors, and the GIS User Community' },
-  satellite: { url: 'https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}', name: 'Satellite', attribution: '&copy; Esri, Maxar, Earthstar Geographics' },
-  dark: { url: 'https://server.arcgisonline.com/ArcGIS/rest/services/Canvas/World_Dark_Gray_Base/MapServer/tile/{z}/{y}/{x}', name: 'Dark', attribution: '&copy; Esri — World Dark Gray Canvas' },
+  streets: { url: 'https://server.arcgisonline.com/ArcGIS/rest/services/World_Street_Map/MapServer/tile/{z}/{y}/{x}', name: 'Streets', attribution: '&copy; Esri, HERE, Garmin, OpenStreetMap contributors, and the GIS User Community', maxNativeZoom: 16 },
+  satellite: { url: 'https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}', name: 'Satellite', attribution: '&copy; Esri, Maxar, Earthstar Geographics', maxNativeZoom: 17 },
+  dark: { url: 'https://server.arcgisonline.com/ArcGIS/rest/services/Canvas/World_Dark_Gray_Base/MapServer/tile/{z}/{y}/{x}', name: 'Dark', attribution: '&copy; Esri — World Dark Gray Canvas', maxNativeZoom: 15 },
 };
 
 const RISK_COLORS = { critical: '#7F1D1D', high: '#EF4444', medium: '#F59E0B', low: '#10B981' };
@@ -97,23 +97,52 @@ function MapMinimap({ mapRef, tile }) {
       if (!main || !el || !el.offsetWidth || !el.offsetHeight || stateRef.current) { if (!cancelled) setTimeout(boot, 200); return; }
       let mini;
       try {
-        mini = L.map(el, { zoomControl: false, attributionControl: false, scrollWheelZoom: false, dragging: true, zoomSnap: 0.25 });
+        mini = L.map(el, {
+          zoomControl: false,
+          attributionControl: false,
+          scrollWheelZoom: false,
+          dragging: false,
+          doubleClickZoom: false,
+          boxZoom: false,
+          touchZoom: false,
+          keyboard: false,
+        });
       } catch { if (!cancelled) setTimeout(boot, 200); return; }
       L.tileLayer(tile.url, { attribution: '' }).addTo(mini);
+
+      const rect = L.rectangle(main.getBounds(), {
+        color: '#059669',
+        weight: 1.5,
+        opacity: 0.85,
+        fillOpacity: 0.06,
+      }).addTo(mini);
+
+      let rafId = null;
       const sync = () => {
-        if (!main || !mini) return;
-        mini.setView(main.getCenter(), Math.max(3, Math.round(main.getZoom()) - 5), { animate: false });
-        if (stateRef.current?.rect) stateRef.current.rect.setBounds(main.getBounds());
+        if (!main || !mini || cancelled) return;
+        if (rafId) return;
+        rafId = requestAnimationFrame(() => {
+          rafId = null;
+          if (cancelled || !stateRef.current?.mini) return;
+          try {
+            const center = main.getCenter();
+            const targetZoom = Math.max(1, Math.min(12, Math.round(main.getZoom()) - 5));
+            mini.setView(center, targetZoom, { animate: false });
+            if (stateRef.current?.rect) {
+              stateRef.current.rect.setBounds(main.getBounds());
+            }
+          } catch {
+            /* ignore transient leaflet transition states */
+          }
+        });
       };
-      const rect = L.rectangle(main.getBounds(), { color: '#059669', weight: 1.5, opacity: 0.85, fillOpacity: 0.06 }).addTo(mini);
+
       stateRef.current = { mini, rect, main, sync, teardown };
       main.on('move zoom', sync);
-      mini.setView(main.getCenter(), Math.max(3, Math.round(main.getZoom()) - 5), { animate: false });
-      rect.setBounds(main.getBounds());
-      mini.on('moveend', () => {
-        if (stateRef.current?.mini !== mini) return;
-        if (main && mini.getCenter().distanceTo(main.getCenter()) > 250) main.panTo(mini.getCenter());
+      mini.on('click', (e) => {
+        if (main && e?.latlng) main.panTo(e.latlng);
       });
+      sync();
     };
     boot();
     return () => { cancelled = true; teardown(); };
@@ -411,8 +440,8 @@ export default function LiveTrackingMap({ embedded = false, selectedId, onSelect
       )}
 
       <div className={`relative w-full rounded-2xl overflow-hidden border border-slate-200/80 select-none bg-slate-100 z-0 ${embedded ? 'h-[420px] lg:h-[500px]' : 'h-[340px] sm:h-[370px] lg:h-[400px]'}`}>
-        <MapContainer center={centerPos} zoom={7} zoomControl={false} scrollWheelZoom className="w-full h-full z-0" ref={mapRef}>
-          <ResilientTileLayer key={activeLayer} url={tile.url} attribution={tile.attribution} maxZoom={19} />
+        <MapContainer center={centerPos} zoom={7} maxZoom={19} zoomControl={false} scrollWheelZoom className="w-full h-full z-0" ref={mapRef}>
+          <ResilientTileLayer key={activeLayer} url={tile.url} attribution={tile.attribution} maxNativeZoom={tile.maxNativeZoom || 16} maxZoom={19} />
 
           {/* Real precipitation coverage (RainViewer radar, keyless) */}
           {radarOn && <RainRadarOverlay onState={(s, meta) => { setRadarState(s); setRadarMeta(meta || null); }} opacity={0.5} />}

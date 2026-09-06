@@ -40,7 +40,7 @@ async function startServer() {
       } catch (e) { /* ignore */ }
     }, 60000);
 
-    server.listen(env.port, () => {
+    server.listen(env.port, '0.0.0.0', () => {
       logger.info('Raahi Core Backend is ACTIVE', {
         port: env.port,
         mode: env.nodeEnv,

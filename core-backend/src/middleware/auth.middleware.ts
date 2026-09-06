@@ -7,7 +7,7 @@ export interface AuthenticatedUser {
   id: string;
   name: string;
   email: string;
-  role: 'admin' | 'district_officer' | 'field_agent' | 'transporter' | 'driver' | 'viewer';
+  role: 'admin' | 'district_officer' | 'field_officer' | 'field_agent' | 'transporter' | 'driver' | 'viewer';
   districtId?: string | null;
   transporterId?: string | null;
 }

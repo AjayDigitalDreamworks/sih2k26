@@ -13,6 +13,7 @@ import {
 } from 'lucide-react';
 import ApiClient from '@/lib/api';
 import { useApp } from '@/contexts/AppContext';
+import { useLang } from '@/contexts/LanguageContext';
 
 // Normalise severities (DB broadcast alerts are 'High/Medium/Low', the ML engine
 // emits 'critical/high/medium/low') into one display + filter group.
@@ -43,6 +44,7 @@ const hhmm = (iso) => {
 
 export const AlertsPage = () => {
   const { openModal, addToast } = useApp();
+  const { lang, localizeAlert } = useLang();
   const [filterGroup, setFilterGroup] = useState('All');
   const [dbAlerts, setDbAlerts] = useState([]);      // broadcast / admin alerts (DB)
   const [mlAlerts, setMlAlerts] = useState([]);      // real-time ML risk-engine alerts
@@ -192,6 +194,7 @@ export const AlertsPage = () => {
         )}
 
         {filtered.map((alert) => {
+          const locAlert = localizeAlert ? localizeAlert(alert, lang) : alert;
           const isHigh = sevGroup(alert.severity) === 'High';
           const isMedium = sevGroup(alert.severity) === 'Medium';
           const isMl = alert.source === 'ml';
@@ -222,7 +225,7 @@ export const AlertsPage = () => {
                 <div style={{ display: 'flex', flexDirection: 'column', gap: '4px', minWidth: 0 }}>
                   <div style={{ display: 'flex', alignItems: 'center', gap: '8px', flexWrap: 'wrap' }}>
                     <span style={{ fontSize: '14px', fontWeight: 700, color: 'var(--text-primary)' }}>
-                      {alert.title}
+                      {locAlert.title || alert.title}
                     </span>
                     {isMl ? (
                       <span className="badge badge-high" style={{ display: 'inline-flex', alignItems: 'center', gap: 4, background: '#EDE9FE', color: '#6D28D9', border: '1px solid #DDD6FE' }}>
@@ -234,12 +237,12 @@ export const AlertsPage = () => {
                       </span>
                     )}
                     <span className={`badge badge-${isHigh ? 'high' : isMedium ? 'medium' : 'low'}`}>
-                      {alert.severity} Severity
+                      {locAlert.severity || alert.severity}
                     </span>
                   </div>
 
-                  {alert.message && (
-                    <div style={{ fontSize: '12px', color: 'var(--text-secondary)' }}>{alert.message}</div>
+                  {(locAlert.message || alert.message) && (
+                    <div style={{ fontSize: '12px', color: 'var(--text-secondary)' }}>{locAlert.message || alert.message}</div>
                   )}
 
                   <div style={{ display: 'flex', alignItems: 'center', gap: '16px', fontSize: '12px', color: 'var(--text-muted)', flexWrap: 'wrap' }}>

@@ -1,292 +1,868 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { LogOut, Navigation, Truck, MapPin, Wifi, WifiOff, Satellite, Play, Square, RefreshCw, TriangleAlert, Activity, Siren, PhoneOff } from 'lucide-react';
+import {
+  LogOut,
+  Navigation,
+  MapPin,
+  Wifi,
+  WifiOff,
+  Satellite,
+  Play,
+  Square,
+  RefreshCw,
+  TriangleAlert,
+  Siren,
+  PhoneOff,
+  Route,
+  Map as MapIcon,
+  History,
+  AlertTriangle,
+  User,
+  ShieldAlert,
+  CheckCircle2,
+  Clock,
+  Truck,
+  Activity,
+  X,
+  Gauge,
+} from 'lucide-react';
 import { useAuth } from '@/contexts/AuthContext';
 import { useDriverTracking } from '@/hooks/useDriverTracking';
+import DriverLiveMap from '@/components/driver/DriverLiveMap';
+import DriverReportForm from '@/components/driver/DriverReportForm';
+import DriverHistory from '@/components/driver/DriverHistory';
+import ApiClient from '@/lib/api';
+import { toast } from 'sonner';
 
-const card = {
-  background: '#fff', border: '1px solid #E5E7EB', borderRadius: 16,
-  padding: '16px', boxShadow: '0 1px 3px rgba(0,0,0,0.06)',
-};
+const TABS = [
+  { id: 'tracking', label: 'Live Tracking', icon: MapIcon },
+  { id: 'reports', label: 'Road Reports', icon: AlertTriangle },
+  { id: 'history', label: 'Trip History', icon: History },
+  { id: 'settings', label: 'Profile', icon: User },
+];
 
-const pill = (color, bg) => ({
-  display: 'inline-flex', alignItems: 'center', gap: 6, fontSize: 12, fontWeight: 600,
-  color, background: bg, padding: '4px 10px', borderRadius: 999, border: `1px solid ${color}33`,
-});
+function fmtAge(sec) {
+  if (sec == null) return '—';
+  if (sec < 45) return 'LIVE';
+  if (sec <= 300) return 'STALE';
+  return 'OFFLINE';
+}
 
 export default function DriverDashboardApp() {
   const navigate = useNavigate();
   const { user, logout } = useAuth();
   const t = useDriverTracking();
+  const [tab, setTab] = useState('tracking');
   const [, setTick] = useState(0);
-  useEffect(() => { const i = setInterval(() => setTick(x => x + 1), 1000); return () => clearInterval(i); }, []);
+  const [sosModalOpen, setSosModalOpen] = useState(false);
 
-  const handleSos = async () => {
-    if (t.sosActive) {
-      if (window.confirm('Cancel the active SOS? Admins will be notified that you are safe.')) {
-        await t.cancelSos();
-      }
-      return;
-    }
-    if (window.confirm('Send EMERGENCY SOS to the control room?\nYour live GPS location will be shared with admins.')) {
-      await t.sendSos();
-    }
-  };
+  // 1-second timer for live freshness updates
+  useEffect(() => {
+    const i = setInterval(() => setTick((x) => x + 1), 1000);
+    return () => clearInterval(i);
+  }, []);
+
+  const [routeCoords, setRouteCoords] = useState(null);
+  const [trail, setTrail] = useState([]);
+  const [live, setLive] = useState(null);
+  const [liveError, setLiveError] = useState(null);
 
   const isDriver = user?.backendRole === 'driver';
+  const vehicle = t.ctx?.vehicle;
+  const trip = t.ctx?.trip;
+  const gps = t.gps;
+  const ageSec = t.lastUploadAgeSec != null && t.lastUploadAgeSec !== 0
+    ? t.lastUploadAgeSec
+    : t.trackingLive ? 0 : null;
+
+  // Live map data: corridor geometry from GIS + verified GPS trail
+  const loadRoute = useCallback(async () => {
+    if (!trip?.route_id) {
+      setRouteCoords(null);
+      return;
+    }
+    try {
+      const res = await ApiClient.getGisRoutes();
+      const feats = res?.success ? res.data?.features || [] : [];
+      const feat = feats.find((f) => f.properties?.id === trip.route_id) ||
+        feats.find(
+          (f) =>
+            (f.properties?.name || '').toLowerCase().includes(
+              String((vehicle?.current_route || '').toLowerCase().split('(')[0].trim() || '').toLowerCase()
+            ) && f.properties?.name
+        );
+      if (feat?.geometry?.coordinates?.length) {
+        setRouteCoords(feat.geometry.coordinates);
+      }
+    } catch {
+      // GIS unavailable — map will show GPS trail only
+    }
+  }, [trip?.route_id, vehicle?.current_route]);
+
+  const loadTrail = useCallback(async () => {
+    if (!vehicle?.id) {
+      setTrail([]);
+      return;
+    }
+    try {
+      const res = await ApiClient.getVehicleHistory(vehicle.id, { trip_id: trip?.id || '', limit: '300' });
+      if (res?.success && Array.isArray(res.data?.points)) {
+        setTrail(res.data.points);
+      }
+    } catch {
+      // keep previous trail
+    }
+  }, [vehicle?.id, trip?.id]);
+
+  const loadLive = useCallback(async () => {
+    if (!vehicle?.id) {
+      setLive(null);
+      return;
+    }
+    try {
+      const res = await ApiClient.getVehicleTrackingStatus(vehicle.id);
+      if (res?.success && res.data) {
+        setLive(res.data);
+      }
+    } catch {
+      setLiveError('Live status unavailable');
+    }
+  }, [vehicle?.id]);
+
+  // Poll server live-state while tracking
+  useEffect(() => {
+    if (t.tripStarted && vehicle?.id) {
+      loadLive();
+      const iv = setInterval(() => {
+        loadLive();
+        loadTrail();
+      }, 8000);
+      return () => clearInterval(iv);
+    }
+    setLive(null);
+    return undefined;
+  }, [t.tripStarted, vehicle?.id, loadLive, loadTrail]);
+
+  useEffect(() => {
+    if (trip?.id && vehicle?.id) {
+      loadRoute();
+      loadTrail();
+    } else {
+      setRouteCoords(null);
+      setTrail([]);
+    }
+  }, [trip?.id, vehicle?.id, loadRoute, loadTrail, t.lastCompleted]);
+
+  // Refresh context shortly after start/stop
+  useEffect(() => {
+    if (t.trackingLive || t.lastCompleted) {
+      const id = setTimeout(() => {
+        t.reload();
+        loadLive();
+        loadTrail();
+      }, 2500);
+      return () => clearTimeout(id);
+    }
+  }, [t.trackingLive, t.lastCompleted]);
+
   if (!isDriver) {
     return (
-      <div style={{ minHeight: '100vh', display: 'flex', alignItems: 'center', justifyContent: 'center', background: '#0F172A', color: '#fff', fontFamily: 'Inter,sans-serif' }}>
-        <div style={{ textAlign: 'center', padding: 24 }}>
-          <h1 style={{ fontSize: 22, marginBottom: 8 }}>RAAHI Driver App</h1>
-          <p style={{ color: '#94A3B8' }}>This account is not a driver account.</p>
-          <button onClick={() => { logout(); navigate('/login'); }} style={{ marginTop: 16, padding: '10px 22px', borderRadius: 10, border: 'none', background: '#10B981', color: '#fff', fontWeight: 700, cursor: 'pointer' }}>
-            Sign in as Driver
+      <div className="min-h-screen flex items-center justify-center bg-slate-900 text-white p-6 font-sans">
+        <div className="max-w-md w-full text-center bg-slate-800/80 rounded-2xl p-8 border border-slate-700 shadow-xl">
+          <Truck className="w-12 h-12 text-emerald-400 mx-auto mb-4" />
+          <h1 className="text-xl font-bold mb-2">RAAHI Driver Portal</h1>
+          <p className="text-slate-400 text-sm mb-6">This account is not registered as a fleet driver.</p>
+          <button
+            onClick={() => {
+              logout();
+              navigate('/login');
+            }}
+            className="w-full py-3 px-4 rounded-xl bg-emerald-600 hover:bg-emerald-500 font-bold text-sm text-white transition-colors"
+          >
+            Sign In with Driver Account
           </button>
         </div>
       </div>
     );
   }
 
-  const vehicle = t.ctx?.vehicle;
-  const trip = t.ctx?.trip;
-  const gps = t.gps;
-  const ageSec = t.lastUploadAgeSec != null && t.lastUploadAgeSec !== 0 ? t.lastUploadAgeSec : t.trackingLive ? 0 : null;
+  const handleSosConfirm = async () => {
+    setSosModalOpen(false);
+    if (t.sosActive) {
+      await t.cancelSos();
+    } else {
+      await t.sendSos();
+    }
+  };
+
+  const handleStart = async () => {
+    if (!trip || trip.status !== 'planned') return;
+    const ok = await t.startTrip();
+    if (ok) {
+      toast.success('Trip started — live GPS tracking active');
+      setTab('tracking');
+    }
+  };
+
+  const handleStop = async () => {
+    if (!trip || trip.status !== 'in_transit') return;
+    if (!window.confirm('Stop tracking and complete this trip? All telemetry will be finalized.')) return;
+    const ok = await t.stopTrip();
+    if (ok) {
+      toast.success('Trip completed — tracking stopped');
+    }
+  };
+
+  const gpsFresh = gps ? Math.max(0, (Date.now() - new Date(gps.gpsTimestamp).getTime()) / 1000) : null;
+  const marker = gps?.lat != null ? { lat: gps.lat, lng: gps.lng, heading: gps.heading || 0 } : null;
+
+  const devMeters = live?.routeDeviation?.isDeviated ? live.routeDeviation.deviationMeters : null;
+  const insideGeofence = live?.geofenceStatus?.insideGeofence ? live.geofenceStatus.geofenceName : null;
+  const prolongedStop = live?.stopDetection?.stopDurationMinutes >= 2 ? live.stopDetection.stopDurationMinutes : null;
 
   return (
-    <div style={{ minHeight: '100vh', background: '#F4F6FA', fontFamily: "'Inter','Segoe UI',sans-serif", paddingBottom: 150 }}>
-      {/* Header */}
-      <div style={{ background: 'linear-gradient(135deg,#0F766E,#065F46)', color: '#fff', padding: '18px 20px 54px' }}>
-        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', maxWidth: 520, margin: '0 auto' }}>
-          <div>
-            <div style={{ fontSize: 20, fontWeight: 800, letterSpacing: 1 }}>RAAHI <span style={{ fontWeight: 400, opacity: 0.75, fontSize: 13 }}>DRIVER</span></div>
-            <div style={{ fontSize: 12, opacity: 0.8, marginTop: 2 }}>{user?.name} · {user?.emailOrPhone || ''}</div>
-          </div>
-          <button onClick={() => { logout(); navigate('/login'); }} style={{ display: 'flex', alignItems: 'center', gap: 6, background: 'rgba(255,255,255,0.15)', color: '#fff', border: '1px solid rgba(255,255,255,0.3)', borderRadius: 10, padding: '8px 12px', cursor: 'pointer', fontWeight: 600, fontSize: 12 }}>
-            <LogOut size={14} /> Sign out
-          </button>
-        </div>
-      </div>
-
-      <div style={{ maxWidth: 520, margin: '-36px auto 0', padding: '0 16px', display: 'flex', flexDirection: 'column', gap: 12 }}>
-        {t.ctxError && !t.ctx && (
-          <div style={{ ...card, borderColor: '#FCA5A5', display: 'flex', alignItems: 'center', gap: 10 }}>
-            <TriangleAlert color="#DC2626" size={18} />
-            <div style={{ fontSize: 13, color: '#7F1D1D' }}>{t.ctxError}</div>
-          </div>
-        )}
-        {t.loadingCtx ? (
-          <div style={{ ...card, textAlign: 'center', color: '#6B7280', fontSize: 14 }}>Loading your assignment…</div>
-        ) : (
-          <>
-            {/* Vehicle card */}
-            <div style={card}>
-              <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 8 }}>
-                <div style={{ width: 42, height: 42, borderRadius: 12, background: '#EFF6FF', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-                  <Truck size={22} color="#2563EB" />
-                </div>
-                <div style={{ flex: 1 }}>
-                  <div style={{ fontSize: 11, color: '#9CA3AF', fontWeight: 600, textTransform: 'uppercase' }}>Vehicle</div>
-                  <div style={{ fontSize: 20, fontWeight: 800, color: '#111827' }}>{vehicle?.id || '—'}</div>
-                </div>
-                {vehicle && (
-                  <span style={{ fontSize: 11, color: '#6B7280', textAlign: 'right' }}>{vehicle.model}<br />{vehicle.type}</span>
+    <div className="min-h-screen bg-slate-100 text-slate-900 font-sans pb-28 select-none">
+      {/* ── Top Header ── */}
+      <header className="sticky top-0 z-40 bg-gradient-to-r from-emerald-800 via-teal-800 to-slate-900 text-white shadow-md border-b border-emerald-700/50">
+        <div className="max-w-2xl mx-auto px-4 py-3 flex items-center justify-between">
+          <div className="flex items-center gap-2.5">
+            <div className="w-9 h-9 rounded-xl bg-white/10 flex items-center justify-center border border-white/20">
+              <Truck className="w-5 h-5 text-emerald-300" />
+            </div>
+            <div>
+              <div className="flex items-center gap-1.5 leading-none">
+                <span className="text-base font-black tracking-wider text-white">RAAHI</span>
+                <span className="text-[10px] font-bold uppercase tracking-widest px-1.5 py-0.5 rounded bg-emerald-500/25 border border-emerald-400/40 text-emerald-300">
+                  Driver
+                </span>
+              </div>
+              <div className="text-xs text-slate-300 font-medium mt-1 flex items-center gap-1.5">
+                <span>{user?.name}</span>
+                {vehicle?.id && (
+                  <>
+                    <span className="text-slate-400">•</span>
+                    <span className="font-mono text-emerald-200 font-bold">{vehicle.id}</span>
+                  </>
                 )}
               </div>
-              {!vehicle && <div style={{ fontSize: 13, color: '#9CA3AF' }}>No vehicle assigned to this driver.</div>}
             </div>
+          </div>
 
-            {/* Trip card */}
-            <div style={card}>
-              <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 8 }}>
-                <div style={{ width: 42, height: 42, borderRadius: 12, background: '#ECFDF5', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-                  <MapPin size={22} color="#059669" />
-                </div>
-                <div style={{ flex: 1 }}>
-                  <div style={{ fontSize: 11, color: '#9CA3AF', fontWeight: 600, textTransform: 'uppercase' }}>Trip</div>
-                  <div style={{ fontSize: 16, fontWeight: 700, color: '#111827' }}>
-                    {trip ? `${trip.origin || '—'} → ${trip.destination || '—'}` : t.lastCompleted ? `${t.lastCompleted.origin || '—'} → ${t.lastCompleted.destination || '—'}` : 'No active trip'}
-                  </div>
-                </div>
-                {trip && <span style={pill(trip.status === 'in_transit' ? '#059669' : '#D97706', trip.status === 'in_transit' ? '#ECFDF5' : '#FFFBEB')}>{trip.status.toUpperCase()}</span>}
-                {!trip && t.lastCompleted && <span style={pill('#059669', '#ECFDF5')}>✓ COMPLETED</span>}
-              </div>
-              {trip && (
-                <div style={{ fontSize: 12, color: '#6B7280', marginBottom: 10 }}>
-                  Trip ID {trip.id} · ETA {trip.eta ? new Date(trip.eta).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) : '—'}
-                </div>
-              )}
-              {!trip && t.lastCompleted && (
-                <div style={{ fontSize: 12, color: '#6B7280', marginBottom: 10 }}>
-                  Trip ID {t.lastCompleted.id} completed at {new Date(t.lastCompleted.at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })} · Waiting for the next assignment.
-                </div>
-              )}
+          <div className="flex items-center gap-2">
+            {/* Quick SOS Trigger in Header */}
+            <button
+              onClick={() => setSosModalOpen(true)}
+              disabled={t.sosBusy || !vehicle}
+              className={`flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs font-black transition-all cursor-pointer ${
+                t.sosActive
+                  ? 'bg-amber-500 text-slate-950 animate-pulse shadow-lg shadow-amber-500/50'
+                  : 'bg-rose-600 hover:bg-rose-500 text-white shadow-sm shadow-rose-900/50'
+              } disabled:opacity-50`}
+              title="Emergency SOS"
+            >
+              <Siren className="w-3.5 h-3.5" />
+              <span>{t.sosActive ? 'SOS ACTIVE' : 'SOS'}</span>
+            </button>
 
-              {trip && trip.status === 'planned' && (
-                <button
-                  onClick={t.startTrip}
-                  disabled={t.tripBusy}
-                  style={{ width: '100%', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 8, padding: '14px', borderRadius: 12, background: '#059669', color: '#fff', fontWeight: 800, fontSize: 15, border: 'none', cursor: 'pointer' }}
-                >
-                  <Play size={18} /> {t.tripBusy ? 'Starting…' : 'START TRIP'}
-                </button>
-              )}
-              {trip && trip.status === 'in_transit' && (
-                <button
-                  onClick={t.stopTrip}
-                  disabled={t.tripBusy}
-                  style={{ width: '100%', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 8, padding: '14px', borderRadius: 12, background: '#DC2626', color: '#fff', fontWeight: 800, fontSize: 15, border: 'none', cursor: 'pointer' }}
-                >
-                  <Square size={18} /> {t.tripBusy ? 'Stopping…' : 'STOP TRIP'}
-                </button>
-              )}
-              {trip && trip.status === 'completed' && (
-                <div style={{ textAlign: 'center', fontSize: 14, fontWeight: 700, color: '#059669', padding: 8 }}>✓ Trip completed</div>
-              )}
+            {/* Refresh assignment */}
+            <button
+              onClick={() => {
+                t.reload();
+                toast.info('Reloading driver assignment...');
+              }}
+              className="p-1.5 rounded-lg bg-white/10 hover:bg-white/20 text-white transition-colors cursor-pointer"
+              title="Refresh Assignment"
+            >
+              <RefreshCw className="w-4 h-4" />
+            </button>
+
+            {/* Sign Out */}
+            <button
+              onClick={() => {
+                logout();
+                navigate('/login');
+              }}
+              className="p-1.5 rounded-lg bg-white/10 hover:bg-rose-500/30 text-white/80 hover:text-white transition-colors cursor-pointer"
+              title="Sign Out"
+            >
+              <LogOut className="w-4 h-4" />
+            </button>
+          </div>
+        </div>
+      </header>
+
+      {/* ── Main Scroll Area ── */}
+      <main className="max-w-2xl mx-auto px-3.5 pt-3.5 space-y-3.5">
+        {/* Context error alert if any */}
+        {t.ctxError && !t.ctx && (
+          <div className="bg-rose-50 border border-rose-200 text-rose-800 rounded-2xl p-4 flex items-start gap-3 shadow-xs">
+            <TriangleAlert className="w-5 h-5 text-rose-600 flex-shrink-0 mt-0.5" />
+            <div className="text-xs">
+              <p className="font-bold">Assignment Alert</p>
+              <p className="text-rose-700 mt-0.5">{t.ctxError}</p>
             </div>
+          </div>
+        )}
 
-            {/* GPS card */}
-            <div style={card}>
-              <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 10 }}>
-                <Satellite size={18} color="#2563EB" />
-                <div style={{ fontSize: 14, fontWeight: 800, color: '#111827' }}>GPS</div>
-                {t.gpsReady && <span style={pill('#059669', '#ECFDF5')}>🟢 READY</span>}
-                {t.permission === 'denied' && <span style={pill('#DC2626', '#FEF2F2')}>PERMISSION DENIED</span>}
-                {t.permission === 'unsupported' && <span style={pill('#DC2626', '#FEF2F2')}>UNSUPPORTED</span>}
-                {t.gpsError && t.permission !== 'denied' && <span style={pill('#D97706', '#FFFBEB')}>UNAVAILABLE</span>}
-                {!t.gps && !t.gpsError && t.permission === 'prompt' && <span style={pill('#D97706', '#FFFBEB')}>REQUESTING…</span>}
+        {t.loadingCtx ? (
+          <div className="bg-white rounded-2xl border border-slate-200 p-8 text-center text-slate-500 shadow-xs">
+            <RefreshCw className="w-6 h-6 animate-spin mx-auto mb-2 text-emerald-600" />
+            <p className="text-sm font-semibold">Synchronizing fleet assignment…</p>
+          </div>
+        ) : (
+          <>
+            {tab === 'tracking' && (
+              <TrackingView
+                t={t}
+                vehicle={vehicle}
+                trip={trip}
+                marker={marker}
+                gps={gps}
+                gpsFresh={gpsFresh}
+                ageSec={ageSec}
+                live={live}
+                liveError={liveError}
+                routeCoords={routeCoords}
+                trail={trail}
+                devMeters={devMeters}
+                insideGeofence={insideGeofence}
+                prolongedStop={prolongedStop}
+                onStart={handleStart}
+                onStop={handleStop}
+                onOpenSos={() => setSosModalOpen(true)}
+              />
+            )}
+
+            {tab === 'reports' && (
+              <div className="bg-white rounded-2xl border border-slate-200 shadow-xs p-4 sm:p-5 space-y-4">
+                <div>
+                  <h2 className="text-base font-black text-slate-900">Report Road Incidents</h2>
+                  <p className="text-xs text-slate-500 mt-0.5">
+                    {t.tripStarted
+                      ? 'Live GPS fix will be automatically attached to your dispatch report.'
+                      : 'Reports attach your browser GPS coordinates to alert the control center.'}
+                  </p>
+                </div>
+                <DriverReportForm mode="incident" latestFix={gps} />
+                <div className="h-px bg-slate-100 my-4" />
+                <div>
+                  <h3 className="text-sm font-black text-slate-900">GIS Road Damage & Obstacle Reporting</h3>
+                  <p className="text-xs text-slate-500 mt-0.5">Report potholes, landslides, or floods to the route risk engine.</p>
+                </div>
+                <DriverReportForm mode="road" latestFix={gps} />
               </div>
+            )}
 
-              {t.permission === 'denied' && (
-                <div style={{ background: '#FEF2F2', border: '1px solid #FECACA', borderRadius: 10, padding: 10, fontSize: 13, color: '#7F1D1D', marginBottom: 8 }}>
-                  Location permission was denied. Allow location for this site in your browser, then tap <b>Enable GPS</b>.
+            {tab === 'history' && (
+              <div className="bg-white rounded-2xl border border-slate-200 shadow-xs overflow-hidden">
+                <div className="p-4 border-b border-slate-100">
+                  <h2 className="text-base font-black text-slate-900">Completed Trips History</h2>
+                  <p className="text-xs text-slate-500 mt-0.5">Verified trip logs, GPS distances, and travel metrics.</p>
                 </div>
-              )}
-
-              {t.gpsError && t.permission !== 'denied' && (
-                <div style={{ background: '#FFFBEB', border: '1px solid #FDE68A', borderRadius: 10, padding: 10, fontSize: 13, color: '#92400E', marginBottom: 8 }}>
-                  {t.gpsError}. GPS fixes are not being sent while unavailable — nothing is fabricated.
+                <div className="p-4">
+                  <DriverHistory />
                 </div>
-              )}
-
-              {t.gps && (
-                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 8, marginBottom: 8 }}>
-                  <Metric label="Latitude" value={t.gps.lat?.toFixed(6)} />
-                  <Metric label="Longitude" value={t.gps.lng?.toFixed(6)} />
-                  <Metric label="Accuracy" value={gps?.accuracy != null ? `${Math.round(gps.accuracy)} m${gps.accuracy > 150 ? ' (low)' : ''}` : '—'} />
-                  <Metric label="Speed" value={gps?.speed != null ? `${Math.round(gps.speed)} km/h` : '—'} />
-                  <Metric label="Heading" value={gps?.heading != null ? `${Math.round(gps.heading)}°` : '—'} />
-                  <Metric label="GPS fix time" value={gps?.gpsTimestamp ? new Date(gps.gpsTimestamp).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' }) : '—'} />
-                </div>
-              )}
-
-              {!t.gpsReady && !t.gpsError && t.permission !== 'denied' && (
-                <div style={{ fontSize: 12, color: '#9CA3AF', marginBottom: 8 }}>Waiting for the first real GPS fix…</div>
-              )}
-
-              {(!t.watchActive || t.permission === 'denied' || t.gpsError) && (
-                <button onClick={t.startWatching} style={{ width: '100%', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 8, padding: '12px', borderRadius: 10, background: '#1D4ED8', color: '#fff', fontWeight: 700, border: 'none', cursor: 'pointer', fontSize: 14 }}>
-                  <Navigation size={16} /> {t.gpsError && t.permission !== 'denied' ? 'RETRY GPS' : 'ENABLE GPS'}
-                </button>
-              )}
-            </div>
-
-            {/* Connection / Upload card */}
-            <div style={card}>
-              <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 10 }}>
-                {t.online ? <Wifi size={18} color="#059669" /> : <WifiOff size={18} color="#D97706" />}
-                <div style={{ flex: 1, fontSize: 13, fontWeight: 700, color: '#111827' }}>
-                  {t.online ? 'Internet: CONNECTED' : 'Internet: CONNECTION LOST'}
-                </div>
-                {t.syncState === 'LIVE' && <span style={pill('#059669', '#ECFDF5')}>🟢 TRACKING LIVE</span>}
-                {t.syncState === 'PENDING' && <span style={pill('#D97706', '#FFFBEB')}>PENDING ({t.pendingCount})</span>}
-                {t.syncState === 'CONNECTION_LOST' && <span style={pill('#D97706', '#FFFBEB')}>🟡 CONNECTION LOST</span>}
-                {t.syncState === 'SYNCED' && <span style={pill('#2563EB', '#EFF6FF')}>SYNCED</span>}
-                {t.syncState === 'IDLE' && <span style={pill('#9CA3AF', '#F3F4F6')}>IDLE</span>}
               </div>
+            )}
 
-              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 8 }}>
-                <Metric label="Tracking" value={t.tripStarted ? (t.trackingLive ? '🟢 ACTIVE' : 'ACTIVE · syncing') : (t.lastCompleted ? 'OFF (trip completed)' : 'OFF (start trip)')} />
-                <Metric label="Last upload" value={ageSec == null ? '—' : `${ageSec}s ago`} />
-                <Metric label="Pending points" value={String(t.pendingCount)} />
-                <Metric label="Source" value="WEB_GPS (real browser GPS)" />
-              </div>
-
-              {t.uploadError && (
-                <div style={{ background: '#FEF2F2', border: '1px solid #FECACA', borderRadius: 10, padding: 10, fontSize: 12, color: '#991B1B', marginTop: 10 }}>
-                  {t.uploadError}
-                </div>
-              )}
-              {!t.online && (
-                <div style={{ background: '#FFFBEB', borderRadius: 10, padding: 10, fontSize: 12, color: '#92400E', marginTop: 10 }}>
-                  GPS collection continues. Points are stored on this device and will sync automatically when the connection returns (original GPS timestamps preserved).
-                </div>
-              )}
-              <div style={{ display: 'flex', gap: 8, marginTop: 12 }}>
-                <button onClick={t.reload} style={{ flex: 1, display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 6, padding: '10px', borderRadius: 10, border: '1px solid #D1D5DB', background: '#fff', cursor: 'pointer', fontSize: 13, fontWeight: 600, color: '#374151' }}>
-                  <RefreshCw size={14} /> Refresh assignment
-                </button>
-                <button onClick={() => navigate('/')} style={{ flex: 1, display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 6, padding: '10px', borderRadius: 10, border: '1px solid #D1D5DB', background: '#fff', cursor: 'pointer', fontSize: 13, fontWeight: 600, color: '#374151' }}>
-                  <Activity size={14} /> Raahi portal
-                </button>
-              </div>
-            </div>
+            {tab === 'settings' && <ProfileView user={user} />}
           </>
         )}
-      </div>
+      </main>
 
-      {/* SOS / EMERGENCY — fixed action button */}
-      <div style={{ position: 'fixed', bottom: 18, left: 0, right: 0, zIndex: 50, display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 8, padding: '0 16px' }}>
-        {t.sosActive && (
-          <div style={{ background: '#7F1D1D', color: '#FEE2E2', borderRadius: 12, padding: '10px 16px', fontSize: 13, fontWeight: 700, textAlign: 'center', maxWidth: 460, width: '100%', border: '1px solid #FCA5A5' }}>
-            🚨 SOS ACTIVE — emergency alert sent to the control room with your live location. Tap the button below to cancel when you are safe.
-          </div>
-        )}
-        {t.sosError && !t.sosActive && (
-          <div style={{ background: '#FEF2F2', color: '#991B1B', borderRadius: 12, padding: '10px 16px', fontSize: 12, fontWeight: 600, textAlign: 'center', maxWidth: 460, width: '100%', border: '1px solid #FECACA' }}>
-            {t.sosError}
-          </div>
-        )}
-        <button
-          onClick={handleSos}
-          disabled={t.sosBusy || !t.ctx?.vehicle}
-          style={{
-            width: 'min(92%, 460px)',
-            display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 10,
-            padding: '16px', borderRadius: 999,
-            background: t.sosActive ? 'linear-gradient(135deg,#B45309,#92400E)' : 'linear-gradient(135deg,#DC2626,#991B1B)',
-            color: '#fff', fontWeight: 900, fontSize: 17, letterSpacing: 0.5,
-            border: '3px solid ' + (t.sosActive ? '#F59E0B' : '#FCA5A5'),
-            cursor: t.ctx?.vehicle && !t.sosBusy ? 'pointer' : 'not-allowed',
-            opacity: t.ctx?.vehicle ? 1 : 0.5,
-            boxShadow: t.sosActive ? '0 4px 20px rgba(245,158,11,0.5)' : '0 4px 20px rgba(220,38,38,0.45)',
-            animation: t.sosActive ? 'none' : 'sosPulse 2s infinite',
-          }}
-        >
-          {t.sosActive ? <PhoneOff size={22} /> : <Siren size={22} />}
-          {t.sosBusy ? 'WAIT…' : t.sosActive ? 'CANCEL SOS' : '🚨 SOS — EMERGENCY'}
-        </button>
-        {!t.ctx?.vehicle && (
-          <span style={{ fontSize: 11, color: '#9CA3AF', fontWeight: 600 }}>SOS needs an assigned vehicle</span>
-        )}
-      </div>
+      {/* ── Fixed Bottom Navigation Bar ── */}
+      <nav className="fixed bottom-0 left-0 right-0 z-40 bg-white/95 backdrop-blur-md border-t border-slate-200/90 shadow-lg">
+        <div className="max-w-2xl mx-auto flex items-center justify-around">
+          {TABS.map((tb) => {
+            const Icon = tb.icon;
+            const active = tab === tb.id;
+            return (
+              <button
+                key={tb.id}
+                onClick={() => setTab(tb.id)}
+                className={`flex-1 py-2.5 flex flex-col items-center gap-1 transition-colors cursor-pointer ${
+                  active ? 'text-emerald-700 font-black' : 'text-slate-400 hover:text-slate-600 font-medium'
+                }`}
+              >
+                <div className="relative">
+                  <Icon className={`w-5 h-5 ${active ? 'text-emerald-600' : 'text-slate-400'}`} />
+                  {tb.id === 'tracking' && t.tripStarted && (
+                    <span className="absolute -top-1 -right-1 w-2 h-2 rounded-full bg-emerald-500 animate-ping" />
+                  )}
+                </div>
+                <span className="text-[11px] leading-none">{tb.label}</span>
+                {active && <span className="w-6 h-0.5 rounded-full bg-emerald-600 -mb-1 mt-0.5" />}
+              </button>
+            );
+          })}
+        </div>
+      </nav>
 
-      <style>{`
-        @keyframes sosPulse {
-          0% { box-shadow: 0 0 0 0 rgba(220,38,38,0.55); }
-          70% { box-shadow: 0 0 0 18px rgba(220,38,38,0); }
-          100% { box-shadow: 0 0 0 0 rgba(220,38,38,0); }
-        }
-      `}</style>
+      {/* ── SOS Emergency Confirmation Modal ── */}
+      {sosModalOpen && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-950/75 backdrop-blur-xs animate-in fade-in duration-200">
+          <div className="w-full max-w-sm bg-white rounded-3xl p-6 shadow-2xl border border-rose-100 text-center space-y-4">
+            <div
+              className={`w-16 h-16 rounded-2xl mx-auto flex items-center justify-center ${
+                t.sosActive ? 'bg-amber-100 text-amber-700' : 'bg-rose-100 text-rose-600 animate-bounce'
+              }`}
+            >
+              {t.sosActive ? <PhoneOff className="w-8 h-8" /> : <Siren className="w-8 h-8" />}
+            </div>
+
+            <div>
+              <h3 className="text-lg font-black text-slate-900">
+                {t.sosActive ? 'Cancel Active Emergency?' : 'Confirm Emergency SOS?'}
+              </h3>
+              <p className="text-xs text-slate-500 mt-1.5 leading-relaxed">
+                {t.sosActive
+                  ? 'Your current emergency status will be cleared and the central command center will be informed that you are safe.'
+                  : 'This broadcasts a critical PRIORITY EMERGENCY alert to state command centers and attaches your live GPS coordinates.'}
+              </p>
+            </div>
+
+            {gps && (
+              <div className="bg-slate-50 rounded-xl p-2.5 border border-slate-100 text-xs font-mono text-slate-600">
+                Fix: {gps.lat.toFixed(5)}, {gps.lng.toFixed(5)} (±{Math.round(gps.accuracy)}m)
+              </div>
+            )}
+
+            <div className="flex gap-2 pt-2">
+              <button
+                type="button"
+                onClick={() => setSosModalOpen(false)}
+                className="flex-1 py-3 rounded-xl border border-slate-200 font-bold text-xs text-slate-700 hover:bg-slate-50 cursor-pointer"
+              >
+                Cancel
+              </button>
+              <button
+                type="button"
+                onClick={handleSosConfirm}
+                disabled={t.sosBusy}
+                className={`flex-1 py-3 rounded-xl font-black text-xs text-white shadow-md transition-colors cursor-pointer ${
+                  t.sosActive ? 'bg-amber-600 hover:bg-amber-500' : 'bg-rose-600 hover:bg-rose-500'
+                }`}
+              >
+                {t.sosBusy ? 'Transmitting…' : t.sosActive ? 'Clear SOS' : 'Trigger SOS Now'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }
 
-function Metric({ label, value }) {
+/* ─────────────────────────────────────────────────────────────────────────────
+   TRACKING VIEW (Primary Driver Workspace)
+   ───────────────────────────────────────────────────────────────────────────── */
+function TrackingView({
+  t,
+  vehicle,
+  trip,
+  marker,
+  gps,
+  gpsFresh,
+  ageSec,
+  live,
+  liveError,
+  routeCoords,
+  trail,
+  devMeters,
+  insideGeofence,
+  prolongedStop,
+  onStart,
+  onStop,
+  onOpenSos,
+}) {
   return (
-    <div style={{ background: '#F9FAFB', borderRadius: 10, padding: '8px 10px' }}>
-      <div style={{ fontSize: 10, color: '#9CA3AF', fontWeight: 600, textTransform: 'uppercase', letterSpacing: '0.4px' }}>{label}</div>
-      <div style={{ fontSize: 14, fontWeight: 700, color: '#111827', marginTop: 2, wordBreak: 'break-word' }}>{value}</div>
+    <div className="space-y-3.5">
+      {/* ── Assigned Vehicle & Trip Banner ── */}
+      <div className="bg-white rounded-2xl border border-slate-200 shadow-xs p-4 space-y-3">
+        <div className="flex items-start justify-between gap-3">
+          <div className="flex items-center gap-3">
+            <div className="w-11 h-11 rounded-xl bg-emerald-50 border border-emerald-100 flex items-center justify-center flex-shrink-0">
+              <Truck className="w-6 h-6 text-emerald-700" />
+            </div>
+            <div>
+              <div className="flex items-center gap-2">
+                <span className="text-base font-black text-slate-900">{vehicle?.id || 'No Vehicle Assigned'}</span>
+                {vehicle?.model && (
+                  <span className="text-[10px] font-bold text-slate-500 bg-slate-100 px-2 py-0.5 rounded-md">
+                    {vehicle.model}
+                  </span>
+                )}
+              </div>
+              <p className="text-xs text-slate-500 font-medium mt-0.5">
+                {trip
+                  ? `${trip.origin || 'Origin'} → ${trip.destination || 'Destination'}`
+                  : t.lastCompleted
+                  ? `Completed: ${t.lastCompleted.origin} → ${t.lastCompleted.destination}`
+                  : 'Waiting for trip dispatch'}
+              </p>
+            </div>
+          </div>
+
+          <div>
+            {trip?.status === 'in_transit' && (
+              <span className="inline-flex items-center gap-1.5 text-[10px] font-black text-emerald-700 bg-emerald-50 border border-emerald-200 px-2.5 py-1 rounded-full">
+                <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse" /> IN TRANSIT
+              </span>
+            )}
+            {trip?.status === 'planned' && (
+              <span className="inline-flex items-center gap-1.5 text-[10px] font-black text-amber-700 bg-amber-50 border border-amber-200 px-2.5 py-1 rounded-full">
+                TRIP ASSIGNED
+              </span>
+            )}
+            {!trip && t.lastCompleted && (
+              <span className="inline-flex items-center gap-1.5 text-[10px] font-bold text-slate-600 bg-slate-100 border border-slate-200 px-2.5 py-1 rounded-full">
+                ✓ COMPLETED
+              </span>
+            )}
+            {!trip && !t.lastCompleted && (
+              <span className="inline-flex items-center gap-1.5 text-[10px] font-bold text-slate-400 bg-slate-50 border border-slate-200 px-2.5 py-1 rounded-full">
+                IDLE
+              </span>
+            )}
+          </div>
+        </div>
+
+        {/* Start / Stop Tactical Buttons */}
+        {trip?.status === 'planned' && (
+          <button
+            onClick={onStart}
+            disabled={t.tripBusy}
+            className="w-full py-3.5 px-4 rounded-xl bg-gradient-to-r from-emerald-600 to-teal-700 hover:from-emerald-500 hover:to-teal-600 text-white font-black text-sm tracking-wide shadow-md shadow-emerald-700/20 flex items-center justify-center gap-2 cursor-pointer transition-all active:scale-[0.99] disabled:opacity-60"
+          >
+            <Play className="w-4 h-4 fill-white" />
+            <span>{t.tripBusy ? 'STARTING TRACKING…' : 'START TRIP & BEGIN TRACKING'}</span>
+          </button>
+        )}
+
+        {trip?.status === 'in_transit' && (
+          <button
+            onClick={onStop}
+            disabled={t.tripBusy}
+            className="w-full py-3.5 px-4 rounded-xl bg-gradient-to-r from-rose-600 to-red-700 hover:from-rose-500 hover:to-red-600 text-white font-black text-sm tracking-wide shadow-md shadow-rose-700/20 flex items-center justify-center gap-2 cursor-pointer transition-all active:scale-[0.99] disabled:opacity-60"
+          >
+            <Square className="w-4 h-4 fill-white" />
+            <span>{t.tripBusy ? 'FINALIZING TRIP…' : 'STOP TRIP & COMPLETE'}</span>
+          </button>
+        )}
+      </div>
+
+      {/* ── Status Pills Bar ── */}
+      <div className="flex flex-wrap items-center gap-2">
+        {/* GPS Fix Pill */}
+        <span
+          className={`inline-flex items-center gap-1.5 text-[11px] font-bold px-3 py-1 rounded-full border ${
+            t.gpsReady
+              ? 'text-emerald-700 bg-emerald-50 border-emerald-200'
+              : 'text-amber-700 bg-amber-50 border-amber-200'
+          }`}
+        >
+          <Satellite className="w-3 h-3" />
+          <span>
+            {t.permission === 'denied'
+              ? 'GPS Permission Denied'
+              : !t.gpsReady
+              ? 'GPS Acquiring…'
+              : gpsFresh != null && gpsFresh <= 30
+              ? 'GPS Live'
+              : 'GPS Ready'}
+          </span>
+        </span>
+
+        {/* Connectivity Pill */}
+        <span
+          className={`inline-flex items-center gap-1.5 text-[11px] font-bold px-3 py-1 rounded-full border ${
+            t.online
+              ? 'text-emerald-700 bg-emerald-50 border-emerald-200'
+              : 'text-amber-700 bg-amber-50 border-amber-200'
+          }`}
+        >
+          {t.online ? <Wifi className="w-3 h-3" /> : <WifiOff className="w-3 h-3" />}
+          <span>{t.online ? 'Online' : 'Offline Mode'}</span>
+        </span>
+
+        {/* Server Sync Pill */}
+        {ageSec != null && (
+          <span
+            className={`inline-flex items-center gap-1.5 text-[11px] font-bold px-3 py-1 rounded-full border ${
+              ageSec <= 45
+                ? 'text-emerald-700 bg-emerald-50 border-emerald-200'
+                : ageSec <= 300
+                ? 'text-amber-700 bg-amber-50 border-amber-200'
+                : 'text-slate-600 bg-slate-100 border-slate-200'
+            }`}
+          >
+            <Activity className="w-3 h-3" />
+            <span>Server: {fmtAge(ageSec)}</span>
+          </span>
+        )}
+
+        {/* Offline Queue Count */}
+        {t.pendingCount > 0 && (
+          <span className="inline-flex items-center gap-1.5 text-[11px] font-bold px-3 py-1 rounded-full border text-indigo-700 bg-indigo-50 border-indigo-200">
+            Queue: {t.pendingCount}
+          </span>
+        )}
+      </div>
+
+      {/* ── Interactive Live Map Card ── */}
+      <div className="bg-white rounded-2xl border border-slate-200 shadow-xs overflow-hidden">
+        <div className="p-3 border-b border-slate-100 flex items-center justify-between text-xs">
+          <div className="font-black text-slate-800 flex items-center gap-1.5">
+            <MapIcon className="w-3.5 h-3.5 text-emerald-600" />
+            <span>Corridor & GPS Breadcrumbs</span>
+          </div>
+          {gps && (
+            <span className="font-mono text-[11px] text-slate-500 font-semibold">
+              ±{Math.round(gps.accuracy)}m accuracy
+            </span>
+          )}
+        </div>
+
+        <div className="relative">
+          <DriverLiveMap marker={marker} route={routeCoords} trail={trail} height={280} />
+        </div>
+
+        {/* Map Legend */}
+        <div className="p-2.5 bg-slate-50 border-t border-slate-100 flex flex-wrap items-center gap-3.5 text-[11px] text-slate-600 font-semibold">
+          <span className="inline-flex items-center gap-1.5">
+            <span className="w-3 h-1 rounded bg-blue-600" /> Highway Corridor
+          </span>
+          <span className="inline-flex items-center gap-1.5">
+            <span className="w-3 h-1 rounded bg-emerald-500 border border-emerald-600" /> GPS Trail
+          </span>
+          {gps && (
+            <span className="ml-auto font-mono text-[10px] text-slate-500">
+              {gps.lat.toFixed(4)}, {gps.lng.toFixed(4)}
+            </span>
+          )}
+        </div>
+      </div>
+
+      {/* ── Live Telemetry Details Grid ── */}
+      <div className="grid grid-cols-2 sm:grid-cols-4 gap-2.5">
+        <div className="bg-white rounded-xl border border-slate-200 p-3 shadow-xs">
+          <span className="text-[10px] font-bold uppercase tracking-wider text-slate-400 block">Speed</span>
+          <span className="text-base font-black text-slate-900 mt-0.5 block">
+            {gps?.speed != null ? `${Math.round(gps.speed)} km/h` : '0 km/h'}
+          </span>
+        </div>
+        <div className="bg-white rounded-xl border border-slate-200 p-3 shadow-xs">
+          <span className="text-[10px] font-bold uppercase tracking-wider text-slate-400 block">Heading</span>
+          <span className="text-base font-black text-slate-900 mt-0.5 block">
+            {gps?.heading != null ? `${Math.round(gps.heading)}°` : '—'}
+          </span>
+        </div>
+        <div className="bg-white rounded-xl border border-slate-200 p-3 shadow-xs">
+          <span className="text-[10px] font-bold uppercase tracking-wider text-slate-400 block">GPS Fix Age</span>
+          <span className="text-base font-black text-slate-900 mt-0.5 block">
+            {gpsFresh == null ? '—' : `${Math.round(gpsFresh)}s`}
+          </span>
+        </div>
+        <div className="bg-white rounded-xl border border-slate-200 p-3 shadow-xs">
+          <span className="text-[10px] font-bold uppercase tracking-wider text-slate-400 block">Server Sync</span>
+          <span className="text-base font-black text-slate-900 mt-0.5 block">
+            {ageSec == null ? '—' : `${ageSec}s ago`}
+          </span>
+        </div>
+      </div>
+
+      {/* ── Corridor Analysis Card (PostGIS alerts) ── */}
+      {(trip?.status === 'in_transit' || devMeters || insideGeofence || prolongedStop) && (
+        <div className="bg-white rounded-2xl border border-slate-200 p-4 shadow-xs space-y-2.5">
+          <div className="flex items-center justify-between">
+            <h4 className="text-xs font-black text-slate-900 uppercase tracking-wider">Corridor Telemetry Analysis</h4>
+            <span className="text-[10px] text-slate-400 font-bold">Server Verified</span>
+          </div>
+
+          {devMeters && (
+            <div className="bg-rose-50 border border-rose-200 text-rose-800 rounded-xl p-3 text-xs font-bold flex items-center gap-2">
+              <TriangleAlert className="w-4 h-4 text-rose-600 flex-shrink-0" />
+              <span>Route Deviation Alert: {Math.round(devMeters)}m away from assigned highway.</span>
+            </div>
+          )}
+
+          {insideGeofence && (
+            <div className="bg-emerald-50 border border-emerald-200 text-emerald-800 rounded-xl p-2.5 text-xs font-semibold flex items-center gap-2">
+              <CheckCircle2 className="w-4 h-4 text-emerald-600 flex-shrink-0" />
+              <span>Within Geofence: {insideGeofence}</span>
+            </div>
+          )}
+
+          {prolongedStop && (
+            <div className="bg-amber-50 border border-amber-200 text-amber-800 rounded-xl p-2.5 text-xs font-semibold flex items-center gap-2">
+              <Clock className="w-4 h-4 text-amber-600 flex-shrink-0" />
+              <span>Stationary for {Math.round(prolongedStop)} minutes.</span>
+            </div>
+          )}
+
+          <div className="grid grid-cols-2 gap-2 text-xs pt-1">
+            <div className="flex justify-between py-1 border-b border-slate-100">
+              <span className="text-slate-500 font-medium">Distance Remaining:</span>
+              <span className="font-bold text-slate-800">{live?.distanceRemaining != null ? `${live.distanceRemaining} km` : '—'}</span>
+            </div>
+            <div className="flex justify-between py-1 border-b border-slate-100">
+              <span className="text-slate-500 font-medium">Corridor ETA:</span>
+              <span className="font-bold text-slate-800">{live?.eta || '—'}</span>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* ── GPS Permission / Offline Guidance Card ── */}
+      {(!t.watchActive || t.permission === 'denied' || t.gpsError) && (
+        <div className="bg-amber-50 border border-amber-200 text-amber-900 rounded-2xl p-4 space-y-3">
+          <div className="flex items-start gap-2.5">
+            <AlertTriangle className="w-5 h-5 text-amber-600 flex-shrink-0 mt-0.5" />
+            <div className="text-xs">
+              <p className="font-bold">GPS Access Required for Live Tracking</p>
+              <p className="text-amber-700 mt-0.5">
+                {t.permission === 'denied'
+                  ? 'Browser location permission is blocked. Please enable location in your device settings.'
+                  : 'Enable GPS so your vehicle location broadcasts to the regional dispatch map.'}
+              </p>
+            </div>
+          </div>
+          <button
+            onClick={t.startWatching}
+            className="w-full py-2.5 rounded-xl bg-amber-600 hover:bg-amber-500 text-white font-bold text-xs shadow-xs cursor-pointer"
+          >
+            {t.permission === 'denied' ? 'Request Permission Again' : 'Enable Device GPS'}
+          </button>
+        </div>
+      )}
+
+      {/* ── Emergency SOS Dedicated Bottom Action ── */}
+      <div className="bg-rose-50 border border-rose-200/80 rounded-2xl p-4 flex items-center justify-between gap-4">
+        <div>
+          <span className="text-xs font-black text-rose-900 flex items-center gap-1.5">
+            <ShieldAlert className="w-4 h-4 text-rose-600" /> Emergency Assistance
+          </span>
+          <p className="text-[11px] text-rose-700 mt-0.5">
+            Broadcast distress beacon to police and highway patrol.
+          </p>
+        </div>
+        <button
+          onClick={onOpenSos}
+          className={`px-4 py-2.5 rounded-xl text-xs font-black text-white shadow-md transition-all active:scale-95 cursor-pointer ${
+            t.sosActive ? 'bg-amber-600 hover:bg-amber-500' : 'bg-rose-600 hover:bg-rose-500'
+          }`}
+        >
+          {t.sosActive ? 'CANCEL SOS' : 'TRIGGER SOS'}
+        </button>
+      </div>
+    </div>
+  );
+}
+
+/* ─────────────────────────────────────────────────────────────────────────────
+   PROFILE VIEW
+   ───────────────────────────────────────────────────────────────────────────── */
+function ProfileView({ user }) {
+  const [profile, setProfile] = useState(null);
+  const [name, setName] = useState(user?.name || '');
+  const [phone, setPhone] = useState('');
+  const [saving, setSaving] = useState(false);
+
+  useEffect(() => {
+    (async () => {
+      try {
+        const res = await ApiClient.getDriverMe();
+        if (res?.success) {
+          setProfile(res.data);
+          setName(res.data.driver?.name || res.data.user?.name || user?.name || '');
+          setPhone(res.data.driver?.phone || res.data.user?.phone || '');
+        }
+      } catch {
+        // non-fatal
+      }
+    })();
+  }, [user]);
+
+  const handleSave = async (e) => {
+    e.preventDefault();
+    setSaving(true);
+    try {
+      const res = await ApiClient.updateDriverMe({ name: name.trim(), phone: phone.trim() || null });
+      if (res?.success) {
+        toast.success('Driver profile updated');
+        setProfile(res.data);
+      } else {
+        toast.error(res?.message || 'Could not update profile');
+      }
+    } catch (err) {
+      toast.error(err.message || 'Network error');
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  return (
+    <div className="bg-white rounded-2xl border border-slate-200 p-5 shadow-xs space-y-4">
+      <div>
+        <h2 className="text-base font-black text-slate-900">Driver Credentials & Profile</h2>
+        <p className="text-xs text-slate-500 mt-0.5">Authenticated fleet driver profile linked to your vehicle.</p>
+      </div>
+
+      {profile?.driver && (
+        <div className="bg-slate-50 border border-slate-200 rounded-xl p-3 text-xs space-y-1">
+          <div className="flex justify-between">
+            <span className="text-slate-500 font-medium">Driver ID:</span>
+            <span className="font-mono font-bold text-slate-800">{profile.driver.id}</span>
+          </div>
+          <div className="flex justify-between">
+            <span className="text-slate-500 font-medium">Safety Rating:</span>
+            <span className="font-bold text-emerald-700">{profile.driver.rating ?? '5.0'} ★</span>
+          </div>
+          <div className="flex justify-between">
+            <span className="text-slate-500 font-medium">Assigned Vehicle:</span>
+            <span className="font-mono font-bold text-slate-800">{profile.vehicle?.id || 'Unassigned'}</span>
+          </div>
+        </div>
+      )}
+
+      <form onSubmit={handleSave} className="space-y-3">
+        <div>
+          <label className="block text-xs font-bold text-slate-700 mb-1">Full Name</label>
+          <input
+            type="text"
+            value={name}
+            onChange={(e) => setName(e.target.value)}
+            className="w-full px-3.5 py-2.5 rounded-xl border border-slate-200 text-xs font-semibold text-slate-800 focus:outline-none focus:border-emerald-500"
+            required
+          />
+        </div>
+        <div>
+          <label className="block text-xs font-bold text-slate-700 mb-1">Contact Phone</label>
+          <input
+            type="tel"
+            value={phone}
+            onChange={(e) => setPhone(e.target.value)}
+            placeholder="+91 90000 00000"
+            className="w-full px-3.5 py-2.5 rounded-xl border border-slate-200 text-xs font-semibold text-slate-800 focus:outline-none focus:border-emerald-500"
+          />
+        </div>
+        <button
+          type="submit"
+          disabled={saving}
+          className="w-full py-3 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white font-bold text-xs shadow-xs transition-colors cursor-pointer disabled:opacity-50"
+        >
+          {saving ? 'Saving changes…' : 'Update Profile'}
+        </button>
+      </form>
+
+      <div className="pt-3 border-t border-slate-100 text-[11px] text-slate-400 space-y-1.5 leading-relaxed">
+        <p>
+          <b>Privacy Policy:</b> Real GPS location is only collected during an active trip that you initiate, and ceases immediately upon tapping Stop.
+        </p>
+        <p>
+          <b>Offline Capability:</b> Telemetry points recorded during network drops are buffered locally in IndexedDB and dispatched once internet returns.
+        </p>
+      </div>
     </div>
   );
 }

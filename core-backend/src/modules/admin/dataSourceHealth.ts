@@ -2,8 +2,9 @@ import { Request, Response } from 'express';
 import { sendSuccess, sendError } from '../../utils/response';
 import { redisClient } from '../../config/redis';
 import { sequelize } from '../../config/db';
+import { env } from '../../config/env';
 
-const ML_URL = process.env.ML_SERVICE_URL || 'http://localhost:8000';
+const ML_URL = env.mlServiceUrl;
 
 async function checkEndpoint(url: string, timeout: number = 5000) {
   const start = Date.now();

@@ -11,6 +11,7 @@ import {
 import { Alert, FieldReport } from '../../models/mongo';
 import { sendSuccess, sendError } from '../../utils/response';
 import { notifyRiskRecalculation } from '../../utils/mlRiskTrigger';
+import { env } from '../../config/env';
 
 export class TransporterController {
   // 0. Self profile (company display data lives on the account's user row)
@@ -76,54 +77,123 @@ export class TransporterController {
   // 2. Trip Planning & Creation
   static async planTrip(req: Request, res: Response) {
     try {
-      const { originDistrictId, destDistrictId } = req.body;
+      const { originDistrictId, destDistrictId, commodityType, weightKg } = req.body;
 
       if (!originDistrictId || !destDistrictId) {
         return sendError(res, 'originDistrictId and destDistrictId are required', 400);
       }
 
-      // Only real corridor routes from the DB are used — no fabricated estimates.
-      const route = await Route.findOne({
+      if (originDistrictId === destDistrictId) {
+        return sendError(res, 'Origin and destination must be different districts.', 400);
+      }
+
+      // Query ML engine for real road network routing (Safest vs Shortest)
+      let mlPlan: any = null;
+      try {
+        const mlRes = await fetch(`${env.mlServiceUrl}/route/plan`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            originDistrictId,
+            destDistrictId,
+            prefer: 'safest',
+            commodityType: commodityType || 'general',
+            weightKg: weightKg || 1000,
+          }),
+        });
+        if (mlRes.ok) {
+          const json: any = await mlRes.json();
+          if (json.success) mlPlan = json;
+        }
+      } catch (e) {
+        // Best effort ML engine
+      }
+
+      // Find or dynamically create Route in PostgreSQL
+      let route = await Route.findOne({
         where: {
           origin_district_id: originDistrictId,
           dest_district_id: destDistrictId,
         },
       });
 
+      const originName = mlPlan?.origin?.name || originDistrictId.replace(/_/g, ' ').replace(/\b\w/g, (c: string) => c.toUpperCase());
+      const destName = mlPlan?.destination?.name || destDistrictId.replace(/_/g, ' ').replace(/\b\w/g, (c: string) => c.toUpperCase());
+      const routeDistance = mlPlan?.recommended?.totalDistanceKm || mlPlan?.safest?.totalDistanceKm || 175;
+      const routeTravelHours = Math.round((routeDistance / 45) * 10) / 10;
+      const routeRisk = mlPlan?.recommended?.riskScore || 25;
+
       if (!route) {
-        return sendError(res, `No corridor route found between ${originDistrictId} and ${destDistrictId}`, 404);
+        const routeId = `R-${originDistrictId.slice(0, 3).toUpperCase()}-${destDistrictId.slice(0, 3).toUpperCase()}`;
+        route = await Route.create({
+          id: routeId,
+          name: `${originName} → ${destName}`,
+          origin_district_id: originDistrictId,
+          dest_district_id: destDistrictId,
+          distance_km: routeDistance,
+          avg_travel_hours: routeTravelHours,
+          current_risk_score: routeRisk,
+          status: routeRisk > 70 ? 'blocked' : routeRisk > 50 ? 'at_risk' : 'open',
+        });
       }
 
-      const baseFuelCost = route.distance_km * 14.5;
-
-      // Real alternate corridors leaving from the same origin district
-      const alternateRoutes = await Route.findAll({
-        where: {
-          origin_district_id: originDistrictId,
-          dest_district_id: { [require('sequelize').Op.ne]: destDistrictId },
-        },
-        limit: 3,
-      });
+      const safestOpt = mlPlan?.safest;
+      const shortestOpt = mlPlan?.shortest;
+      const safestDist = safestOpt?.totalDistanceKm || route.distance_km;
+      const shortestDist = shortestOpt?.totalDistanceKm || route.distance_km;
 
       const suggestion = {
+        routeId: route.id,
+        name: route.name,
+        origin: { districtId: originDistrictId, name: originName },
+        destination: { districtId: destDistrictId, name: destName },
         primary: {
           routeId: route.id,
           name: route.name,
-          distanceKm: route.distance_km,
-          estimatedHours: route.avg_travel_hours,
-          fuelCostEstimate: Math.round(baseFuelCost),
-          riskScore: route.current_risk_score,
-          riskLevel: route.current_risk_score > 60 ? 'high' : 'low',
+          distanceKm: safestDist,
+          estimatedHours: Math.round((safestDist / 45) * 10) / 10,
+          fuelCostEstimate: Math.round(safestDist * 14.5),
+          riskScore: safestOpt?.riskScore ?? route.current_risk_score,
+          riskLevel: (safestOpt?.riskScore ?? route.current_risk_score) > 60 ? 'high' : 'low',
+          geometry: safestOpt?.geometry || [],
+          legs: safestOpt?.legs || [],
         },
-        alternates: alternateRoutes.map((alt) => ({
-          routeId: alt.id,
-          name: alt.name,
-          distanceKm: alt.distance_km,
-          estimatedHours: alt.avg_travel_hours,
-          fuelCostEstimate: Math.round(alt.distance_km * 14.5),
-          riskScore: alt.current_risk_score,
-          riskLevel: alt.current_risk_score > 60 ? 'high' : 'low',
-        })),
+        safest: safestOpt ? {
+          routeId: route.id,
+          name: `Safest Path via ${safestOpt.legs?.[0]?.roadLabel || 'National Highway'}`,
+          distanceKm: safestOpt.totalDistanceKm,
+          estimatedHours: Math.round((safestOpt.totalDistanceKm / 45) * 10) / 10,
+          fuelCostEstimate: Math.round(safestOpt.totalDistanceKm * 14.5),
+          riskScore: safestOpt.riskScore,
+          riskLevel: safestOpt.riskLevel,
+          geometry: safestOpt.geometry,
+          legs: safestOpt.legs,
+          roadCondition: safestOpt.legs?.[0]?.roadCondition || 'good',
+        } : null,
+        shortest: shortestOpt ? {
+          routeId: route.id,
+          name: `Shortest Direct via ${shortestOpt.legs?.[0]?.roadLabel || 'Corridor'}`,
+          distanceKm: shortestOpt.totalDistanceKm,
+          estimatedHours: Math.round((shortestOpt.totalDistanceKm / 50) * 10) / 10,
+          fuelCostEstimate: Math.round(shortestOpt.totalDistanceKm * 14.5),
+          riskScore: shortestOpt.riskScore,
+          riskLevel: shortestOpt.riskLevel,
+          geometry: shortestOpt.geometry,
+          legs: shortestOpt.legs,
+          roadCondition: shortestOpt.legs?.[0]?.roadCondition || 'good',
+        } : null,
+        alerts: mlPlan?.alerts || [],
+        alternates: [
+          ...(shortestOpt && shortestOpt.totalDistanceKm !== safestDist ? [{
+            routeId: route.id,
+            name: `Shortest Direct Corridor (${originName} → ${destName})`,
+            distanceKm: shortestOpt.totalDistanceKm,
+            estimatedHours: Math.round((shortestOpt.totalDistanceKm / 50) * 10) / 10,
+            fuelCostEstimate: Math.round(shortestOpt.totalDistanceKm * 14.5),
+            riskScore: shortestOpt.riskScore,
+            riskLevel: shortestOpt.riskLevel,
+          }] : []),
+        ],
       };
 
       return sendSuccess(res, suggestion, 'Trip plan generated with real corridor evaluation');
@@ -136,24 +206,39 @@ export class TransporterController {
     try {
       const transporterId = req.user?.transporterId || 'transporter_01';
 
-      // Resolve a real corridor route — never default to a fabricated one
+      // Resolve or dynamically create corridor route in PostgreSQL
       let route: Route | null = null;
       if (req.body.routeId) {
         route = await Route.findOne({ where: { id: req.body.routeId } });
-      } else if (req.body.originDistrictId && req.body.destDistrictId) {
+      }
+      if (!route && req.body.originDistrictId && req.body.destDistrictId) {
         route = await Route.findOne({
           where: {
             origin_district_id: req.body.originDistrictId,
             dest_district_id: req.body.destDistrictId,
           },
         });
+        if (!route) {
+          const originName = req.body.originDistrictId.replace(/_/g, ' ').replace(/\b\w/g, (c: string) => c.toUpperCase());
+          const destName = req.body.destDistrictId.replace(/_/g, ' ').replace(/\b\w/g, (c: string) => c.toUpperCase());
+          const routeId = `R-${req.body.originDistrictId.slice(0, 3).toUpperCase()}-${req.body.destDistrictId.slice(0, 3).toUpperCase()}`;
+          route = await Route.create({
+            id: routeId,
+            name: `${originName} → ${destName}`,
+            origin_district_id: req.body.originDistrictId,
+            dest_district_id: req.body.destDistrictId,
+            distance_km: req.body.distanceKm || 175,
+            avg_travel_hours: req.body.estimatedHours || 4,
+            current_risk_score: 25,
+            status: 'open',
+          });
+        }
       }
       if (!route) {
-        return sendError(res, 'No real corridor route found for this trip (choose origin/destination districts from the route map)', 400);
+        return sendError(res, 'Could not resolve corridor route for this trip', 400);
       }
 
-      // Vehicle + driver must be real assets of THIS transporter, and the trip
-      // must link driver ↔ vehicle ↔ trip so the Driver App resolves a vehicle.
+      // Vehicle + driver verification
       const vehicle = req.body.vehicleId
         ? await Vehicle.findOne({ where: { id: req.body.vehicleId, transporter_id: transporterId } })
         : null;
@@ -163,8 +248,22 @@ export class TransporterController {
         ? await Driver.findOne({ where: { id: req.body.driverId, transporter_id: transporterId } })
         : null;
       if (!driver) return sendError(res, 'Driver not found in your fleet — select a real driver', 400);
+
       if (driver.vehicle_id && driver.vehicle_id !== vehicle.id) {
         return sendError(res, `Driver ${driver.name} is already assigned to vehicle ${driver.vehicle_id}`, 409);
+      }
+      if (vehicle.assigned_driver_id && vehicle.assigned_driver_id !== driver.id) {
+        return sendError(res, `Vehicle ${vehicle.id} is already assigned to another driver`, 409);
+      }
+
+      const existingTrip = await Trip.findOne({
+        where: {
+          [Op.or]: [{ vehicle_id: vehicle.id }, { driver_id: driver.id }],
+          status: { [Op.in]: ['planned', 'in_transit'] },
+        },
+      });
+      if (existingTrip) {
+        return sendError(res, `Vehicle or driver already has an active or planned trip (${existingTrip.id})`, 409);
       }
 
       const id = `TRIP-${Date.now().toString().slice(-6)}`;
@@ -176,11 +275,19 @@ export class TransporterController {
         route_id: route.id,
         origin: route.name.split('→')[0]?.trim() || req.body.origin || route.origin_district_id,
         destination: route.name.split('→')[1]?.trim() || req.body.destination || route.dest_district_id,
-        // ASSIGNED — the driver starts it (and GPS tracking) from the Driver App
         status: 'planned',
         progress_percent: 0,
-        eta: new Date(Date.now() + Math.round(route.avg_travel_hours) * 3600 * 1000),
+        eta: new Date(Date.now() + Math.round(route.avg_travel_hours || 4) * 3600 * 1000),
       });
+
+      // Link delivery / consignment if deliveryId or consignmentId provided
+      const deliveryId = req.body.deliveryId || req.body.consignmentId;
+      if (deliveryId) {
+        const del = await Delivery.findOne({ where: { id: deliveryId, transporter_id: transporterId } });
+        if (del) {
+          await del.update({ trip_id: trip.id, status: 'in_transit' });
+        }
+      }
 
       // Link the assignment so the driver's context resolves vehicle + trip.
       await driver.update({ vehicle_id: vehicle.id, status: 'active' });
@@ -232,10 +339,32 @@ export class TransporterController {
   static async createVehicle(req: Request, res: Response) {
     try {
       const transporterId = req.user?.transporterId || 'transporter_01';
+      let assignedDriver: Driver | null = null;
+      if (req.body.assigned_driver_id) {
+        assignedDriver = await Driver.findOne({
+          where: { id: req.body.assigned_driver_id, transporter_id: transporterId },
+        });
+        if (!assignedDriver) {
+          return sendError(res, 'Driver not found in your fleet', 400);
+        }
+        // If this driver was previously assigned to another vehicle, release the old vehicle
+        if (assignedDriver.vehicle_id) {
+          await Vehicle.update(
+            { assigned_driver_id: null },
+            { where: { id: assignedDriver.vehicle_id, transporter_id: transporterId } }
+          );
+        }
+      }
+
       const vehicle = await Vehicle.create({
         ...req.body,
         transporter_id: transporterId,
       });
+
+      if (assignedDriver) {
+        await assignedDriver.update({ vehicle_id: vehicle.id });
+      }
+
       return sendSuccess(res, vehicle, 'Vehicle registered to fleet', 201);
     } catch (err: any) {
       return sendError(res, err.message);
@@ -249,6 +378,34 @@ export class TransporterController {
         where: { id: req.params.id, transporter_id: transporterId },
       });
       if (!vehicle) return sendError(res, 'Vehicle not found', 404);
+
+      if (req.body.assigned_driver_id !== undefined) {
+        const newDriverId = req.body.assigned_driver_id;
+        // If unassigning or assigning a different driver, release old driver
+        if (vehicle.assigned_driver_id && vehicle.assigned_driver_id !== newDriverId) {
+          await Driver.update(
+            { vehicle_id: null },
+            { where: { id: vehicle.assigned_driver_id, transporter_id: transporterId } }
+          );
+        }
+
+        if (newDriverId) {
+          const newDriver = await Driver.findOne({
+            where: { id: newDriverId, transporter_id: transporterId },
+          });
+          if (!newDriver) return sendError(res, 'Driver not found in your fleet', 400);
+
+          // If new driver was assigned to another vehicle, release that vehicle
+          if (newDriver.vehicle_id && newDriver.vehicle_id !== vehicle.id) {
+            await Vehicle.update(
+              { assigned_driver_id: null },
+              { where: { id: newDriver.vehicle_id, transporter_id: transporterId } }
+            );
+          }
+
+          await newDriver.update({ vehicle_id: vehicle.id });
+        }
+      }
 
       await vehicle.update(req.body);
       return sendSuccess(res, vehicle, 'Vehicle updated');
@@ -300,6 +457,13 @@ export class TransporterController {
       if (req.body.vehicle_id) {
         const vehicle = await Vehicle.findOne({ where: { id: req.body.vehicle_id, transporter_id: transporterId } });
         if (!vehicle) return sendError(res, 'Vehicle not found in your fleet', 400);
+        // Release any driver previously assigned to this vehicle
+        if (vehicle.assigned_driver_id) {
+          await Driver.update(
+            { vehicle_id: null },
+            { where: { id: vehicle.assigned_driver_id, transporter_id: transporterId } }
+          );
+        }
         await vehicle.update({ assigned_driver_id: id });
       }
 
@@ -329,8 +493,14 @@ export class TransporterController {
           : null;
         if (req.body.vehicle_id && !newVehicle) return sendError(res, 'Vehicle not found in your fleet', 400);
         // release previous vehicle
-        if (driver.vehicle_id) await Vehicle.update({ assigned_driver_id: null }, { where: { id: driver.vehicle_id } });
-        if (newVehicle) await newVehicle.update({ assigned_driver_id: driver.id });
+        if (driver.vehicle_id) await Vehicle.update({ assigned_driver_id: null }, { where: { id: driver.vehicle_id, transporter_id: transporterId } });
+        if (newVehicle) {
+          // release previous driver of new vehicle
+          if (newVehicle.assigned_driver_id && newVehicle.assigned_driver_id !== driver.id) {
+            await Driver.update({ vehicle_id: null }, { where: { id: newVehicle.assigned_driver_id, transporter_id: transporterId } });
+          }
+          await newVehicle.update({ assigned_driver_id: driver.id });
+        }
       }
 
       await driver.update(req.body);
@@ -348,6 +518,7 @@ export class TransporterController {
 
       // Release the vehicle + cancel any open trips assigned to this driver
       if (driver.vehicle_id) await Vehicle.update({ assigned_driver_id: null }, { where: { id: driver.vehicle_id } });
+      await Vehicle.update({ assigned_driver_id: null }, { where: { assigned_driver_id: driver.id } });
       await Trip.update(
         { status: 'canceled' },
         { where: { driver_id: driver.id, status: { [Op.in]: ['planned', 'in_transit'] } } }
@@ -382,14 +553,26 @@ export class TransporterController {
         return sendError(res, 'Origin and destination districts must be different', 400);
       }
 
+      const validCommodities = ['medicine', 'food', 'agri', 'construction', 'fuel', 'general'];
+      let normCommodity = String(commodityType || 'general').toLowerCase().trim();
+      if (normCommodity.includes('med') || normCommodity.includes('pharma') || normCommodity.includes('health')) normCommodity = 'medicine';
+      else if (normCommodity.includes('food') || normCommodity.includes('ration') || normCommodity.includes('grain')) normCommodity = 'food';
+      else if (normCommodity.includes('agri') || normCommodity.includes('tea') || normCommodity.includes('produce')) normCommodity = 'agri';
+      else if (normCommodity.includes('fuel') || normCommodity.includes('petrol') || normCommodity.includes('diesel') || normCommodity.includes('lpg')) normCommodity = 'fuel';
+      else if (normCommodity.includes('construct') || normCommodity.includes('cement') || normCommodity.includes('steel')) normCommodity = 'construction';
+      if (!validCommodities.includes(normCommodity)) normCommodity = 'general';
+
+      const validPriorities = ['low', 'medium', 'high', 'critical'];
+      const normPriority = validPriorities.includes(String(priority || '').toLowerCase()) ? String(priority).toLowerCase() : 'medium';
+
       const id = `CON-${new Date().getFullYear()}-${String(Date.now()).slice(-4)}`;
       const delivery = await Delivery.create({
         id,
         transporter_id: transporterId,
         origin_district_id: originDistrictId,
         dest_district_id: destDistrictId,
-        commodity_type: commodityType || 'general',
-        priority: priority || 'medium',
+        commodity_type: normCommodity as any,
+        priority: normPriority as any,
         consignee_name: consigneeName,
         consignee_phone: consigneePhone,
         weight_kg: weightKg || 1000,

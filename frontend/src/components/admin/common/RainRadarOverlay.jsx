@@ -66,32 +66,36 @@ export const RainRadarOverlay = ({ onState, opacity = 0.5 }) => {
   }, []);
 
   // Animate forward through nowcast frames (rain movement preview), then hold.
+  // The timer increments the index; React re-renders on every index change,
+  // but the TileLayer key includes frame identity so a single frame that is
+  // reprojected on a zoom change does not force Leaflet to rebuild tiles.
   useEffect(() => {
     if (!frames || frames.list.length < 2) return undefined;
     timerRef.current = setInterval(() => {
       setActiveIdx(prev => {
         const next = prev + 1;
-        if (next >= frames.list.length) return prev;      // hold on the last nowcast frame
-        report('live', {
-          frameTime: frames.list[next]?.time,
-          frameKind: frames.list[next]?.kind,
-          total: frames.list.length,
-        });
+        if (!frames || next >= frames.list.length) return prev;
         return next;
       });
     }, FRAME_STEP_MS);
     return () => clearInterval(timerRef.current);
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [frames]);
 
-  if (!frames || !frames.list[activeIdx]) return null;
+  // Re-render only when the active frame identity changes. This prevents
+  // TileLayer key churn on every index increment when the frame list has
+  // been replaced, which would otherwise force Leaflet to rebuild tiles.
+  const currentFrame = frames && activeIdx >= 0 && activeIdx < frames.list.length ? frames.list[activeIdx] : null;
+  if (!currentFrame) return null;
 
-  const frame = frames.list[activeIdx];
+  const frame = currentFrame;
   const url = `${frames.host}${frame.path}/256/{z}/{x}/{y}/1/0_0.png`;
+  // Derive a stable display key from the frame identity so the animated radar
+  // does not force Leaflet to discard and reload tiles across each nowcast step.
+  const frameKey = `${frame.path}::${frame.kind}::${frame.time}`;
 
   return (
     <TileLayer
-      key={`radar-${frame.path}-${frame.kind}-${frame.time}`}
+      key={frameKey}
       url={url}
       opacity={opacity}
       zIndex={300}

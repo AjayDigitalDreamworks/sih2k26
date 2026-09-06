@@ -53,8 +53,12 @@ export const AuthProvider = ({ children }) => {
         const mappedRole =
           apiUser.role === "admin" || apiUser.role === "district_officer"
             ? "official"
-            : apiUser.role === "transporter" || apiUser.role === "driver"
+            : apiUser.role === "transporter"
             ? "operator"
+            : apiUser.role === "driver"
+            ? "driver"
+            : apiUser.role === "field_officer" || apiUser.role === "field_agent"
+            ? "field_officer"
             : "user";
 
         const loggedInUser = {
@@ -68,6 +72,10 @@ export const AuthProvider = ({ children }) => {
               ? "Regional Command Officer"
               : mappedRole === "operator"
               ? "Fleet Operations Manager"
+              : mappedRole === "driver"
+              ? "Commercial Fleet Driver"
+              : mappedRole === "field_officer"
+              ? "Field GIS Verification Officer"
               : "Consignee / Citizen User",
           agency:
             apiUser.agency ||
@@ -75,6 +83,10 @@ export const AuthProvider = ({ children }) => {
               ? "MDoNER Logistics Division"
               : apiUser.transporterId
                 ? "Registered Transporter"
+                : mappedRole === "driver"
+                ? "Fleet Logistics"
+                : mappedRole === "field_officer"
+                ? "State Disaster Response & GIS"
                 : "Independent Operator"),
         };
 

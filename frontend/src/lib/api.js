@@ -132,6 +132,13 @@ class ApiClient {
     return this.request('/admin/field-reports');
   }
 
+  static createFieldReport(payload) {
+    return this.request('/admin/field-reports', {
+      method: 'POST',
+      body: JSON.stringify(payload),
+    });
+  }
+
   static verifyFieldReport(id) {
     return this.request(`/admin/field-reports/${id}/verify`, { method: 'PATCH' });
   }
@@ -140,6 +147,24 @@ class ApiClient {
     return this.request(`/admin/field-reports/${id}/reject`, {
       method: 'PATCH',
       body: JSON.stringify({ reason }),
+    });
+  }
+
+  static uploadMedia(fileOrFormData) {
+    if (typeof FormData !== 'undefined' && fileOrFormData instanceof FormData) {
+      const url = `${API_BASE}/field-officer/media/upload`;
+      const token = this.getAccessToken();
+      return fetch(url, {
+        method: 'POST',
+        headers: {
+          ...(token ? { Authorization: `Bearer ${token}` } : {}),
+        },
+        body: fileOrFormData,
+      }).then((r) => r.json());
+    }
+    return this.request('/field-officer/media/upload', {
+      method: 'POST',
+      body: JSON.stringify(fileOrFormData),
     });
   }
 
@@ -296,6 +321,29 @@ class ApiClient {
   static getVehicleTrackingStatus(vehicleId) {
     return this.request(`/tracking/vehicles/${encodeURIComponent(vehicleId)}/current`);
   }
+
+  // ---- Driver-scope APIs (own profile / vehicle / trips / reports only) ----
+  static getDriverMe() {
+    return this.request('/driver/me');
+  }
+  static updateDriverMe(payload) {
+    return this.request('/driver/me', { method: 'PATCH', body: JSON.stringify(payload) });
+  }
+  static getDriverVehicle() {
+    return this.request('/driver/vehicle');
+  }
+  static getDriverTripsHistory() {
+    return this.request('/driver/trips/history');
+  }
+  static getDriverTripSummary(tripId) {
+    return this.request(`/driver/trips/${encodeURIComponent(tripId)}/summary`);
+  }
+  static postDriverIncident(payload) {
+    return this.request('/driver/incidents', { method: 'POST', body: JSON.stringify(payload) });
+  }
+  static postDriverRoadReport(payload) {
+    return this.request('/driver/road-reports', { method: 'POST', body: JSON.stringify(payload) });
+  }
   static getVehicleHistory(vehicleId, params = {}) {
     const qs = new URLSearchParams(params).toString();
     return this.request(`/tracking/vehicles/${encodeURIComponent(vehicleId)}/history${qs ? '?' + qs : ''}`);
@@ -303,6 +351,37 @@ class ApiClient {
   static getTripSummary(vehicleId, tripId) {
     const qs = tripId ? `?trip_id=${encodeURIComponent(tripId)}` : '';
     return this.request(`/tracking/vehicles/${encodeURIComponent(vehicleId)}/trip-summary${qs}`);
+  }
+  static startTrip(tripId) {
+    return this.request(`/tracking/trips/${encodeURIComponent(tripId)}/start`, {
+      method: 'POST',
+    });
+  }
+  static stopTrip(tripId) {
+    return this.request(`/tracking/trips/${encodeURIComponent(tripId)}/stop`, {
+      method: 'POST',
+    });
+  }
+  static sendSos(payload) {
+    return this.request('/tracking/sos', {
+      method: 'POST',
+      body: JSON.stringify(payload),
+    });
+  }
+  static cancelSos() {
+    return this.request('/tracking/sos/cancel', {
+      method: 'POST',
+    });
+  }
+  static postTrackingLocation(payload, isSync = false) {
+    return this.request('/tracking/location', {
+      method: 'POST',
+      headers: isSync ? { 'x-tracking-sync': '1' } : {},
+      body: JSON.stringify(payload),
+    });
+  }
+  static getVehicleTrackingStatus(vehicleId) {
+    return this.request(`/tracking/vehicles/${encodeURIComponent(vehicleId)}/live`);
   }
 
   // ---- Real-Time Integration Endpoints ----
@@ -454,6 +533,80 @@ class ApiClient {
   // Data Source Health
   static getDataSources() {
     return this.request('/admin/data-sources');
+  }
+
+  // ---- Field Officer & GIS Verification Endpoints ----
+  static getFieldOfficerMe() {
+    return this.request('/field-officer/me');
+  }
+
+  static getFieldOfficerDashboard() {
+    return this.request('/field-officer/dashboard');
+  }
+
+  static getFieldOfficerTasks(params = {}) {
+    const qs = new URLSearchParams(params).toString();
+    return this.request(`/field-officer/tasks${qs ? '?' + qs : ''}`);
+  }
+
+  static getFieldOfficerTask(id, params = {}) {
+    const qs = new URLSearchParams(params).toString();
+    return this.request(`/field-officer/tasks/${encodeURIComponent(id)}${qs ? '?' + qs : ''}`);
+  }
+
+  static updateFieldTaskStatus(id, payload) {
+    return this.request(`/field-officer/tasks/${encodeURIComponent(id)}/status`, {
+      method: 'POST',
+      body: JSON.stringify(payload),
+    });
+  }
+
+  static verifyFieldTask(id, payload) {
+    return this.request(`/field-officer/tasks/${encodeURIComponent(id)}/verify`, {
+      method: 'POST',
+      body: JSON.stringify(payload),
+    });
+  }
+
+  static createFieldOfficerReport(payload) {
+    return this.request('/field-officer/reports', {
+      method: 'POST',
+      body: JSON.stringify(payload),
+    });
+  }
+
+  static getFieldOfficerReports() {
+    return this.request('/field-officer/reports');
+  }
+
+  static getFieldOfficerNearbyAlerts(params = {}) {
+    const qs = new URLSearchParams(params).toString();
+    return this.request(`/field-officer/nearby-alerts${qs ? '?' + qs : ''}`);
+  }
+
+  static uploadFieldEvidence(fileOrPayload) {
+    if (typeof FormData !== 'undefined' && fileOrPayload instanceof FormData) {
+      const url = `${API_BASE}/field-officer/media/upload`;
+      const token = this.getAccessToken();
+      return fetch(url, {
+        method: 'POST',
+        headers: {
+          ...(token ? { Authorization: `Bearer ${token}` } : {}),
+        },
+        body: fileOrPayload,
+      }).then((r) => r.json());
+    }
+    return this.request('/field-officer/media/upload', {
+      method: 'POST',
+      body: JSON.stringify(fileOrPayload),
+    });
+  }
+
+  static syncFieldOfficerBatch(items) {
+    return this.request('/field-officer/sync', {
+      method: 'POST',
+      body: JSON.stringify({ items }),
+    });
   }
 }
 

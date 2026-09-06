@@ -8,6 +8,10 @@ import { Vehicle } from './Vehicle';
 import { Driver } from './Driver';
 import { Trip } from './Trip';
 import { Delivery } from './Delivery';
+import { FieldTask } from './FieldTask';
+import { FieldVerification } from './FieldVerification';
+import { FieldReportPostgres } from './FieldReportPostgres';
+import { FieldMedia } from './FieldMedia';
 
 // Define Associations
 District.hasMany(Road, { foreignKey: 'district_id', as: 'roads' });
@@ -37,6 +41,28 @@ Trip.belongsTo(Route, { foreignKey: 'route_id', as: 'route' });
 Trip.hasMany(Delivery, { foreignKey: 'trip_id', as: 'deliveries' });
 Delivery.belongsTo(Trip, { foreignKey: 'trip_id', as: 'trip' });
 
+// Field Officer Associations
+User.hasMany(FieldTask, { foreignKey: 'assigned_officer_id', as: 'assigned_tasks' });
+FieldTask.belongsTo(User, { foreignKey: 'assigned_officer_id', as: 'officer' });
+
+FieldTask.hasOne(FieldVerification, { foreignKey: 'task_id', as: 'verification' });
+FieldVerification.belongsTo(FieldTask, { foreignKey: 'task_id', as: 'task' });
+
+User.hasMany(FieldVerification, { foreignKey: 'officer_id', as: 'verifications' });
+FieldVerification.belongsTo(User, { foreignKey: 'officer_id', as: 'officer' });
+
+User.hasMany(FieldReportPostgres, { foreignKey: 'officer_id', as: 'field_reports' });
+FieldReportPostgres.belongsTo(User, { foreignKey: 'officer_id', as: 'officer' });
+
+FieldTask.hasMany(FieldMedia, { foreignKey: 'task_id', as: 'media' });
+FieldMedia.belongsTo(FieldTask, { foreignKey: 'task_id', as: 'task' });
+
+FieldReportPostgres.hasMany(FieldMedia, { foreignKey: 'report_id', as: 'media' });
+FieldMedia.belongsTo(FieldReportPostgres, { foreignKey: 'report_id', as: 'report' });
+
+FieldVerification.hasMany(FieldMedia, { foreignKey: 'verification_id', as: 'media' });
+FieldMedia.belongsTo(FieldVerification, { foreignKey: 'verification_id', as: 'verification' });
+
 export {
   User,
   District,
@@ -48,4 +74,8 @@ export {
   Driver,
   Trip,
   Delivery,
+  FieldTask,
+  FieldVerification,
+  FieldReportPostgres,
+  FieldMedia,
 };

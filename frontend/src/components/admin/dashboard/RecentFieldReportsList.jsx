@@ -17,7 +17,12 @@ export const RecentFieldReportsList = () => {
       </div>
 
       <div style={{ display: 'flex', flexDirection: 'column', gap: '10px', flex: 1, overflowY: 'auto' }}>
-        {displayList.map((rep) => (
+        {displayList.length === 0 ? (
+          <div style={{ textAlign: 'center', color: 'var(--text-muted)', fontSize: '12px', padding: '20px 0' }}>
+            No recent field reports
+          </div>
+        ) : (
+          displayList.map((rep) => (
           <div
             key={rep.id}
             onClick={() => openModal('reportDetail', rep)}
@@ -69,7 +74,7 @@ export const RecentFieldReportsList = () => {
               </div>
             </div>
           </div>
-        ))}
+        )))}
       </div>
     </div>
   );

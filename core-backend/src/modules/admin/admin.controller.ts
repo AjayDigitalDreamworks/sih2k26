@@ -15,6 +15,8 @@ import {
 import { FieldReport, Alert, AuditLog } from '../../models/mongo';
 import { sendSuccess, sendError } from '../../utils/response';
 import { notifyRiskRecalculation } from '../../utils/mlRiskTrigger';
+import { env } from '../../config/env';
+import { uploadImageToCloudinary } from '../../utils/cloudinary';
 import bcrypt from 'bcrypt';
 
 export class AdminController {
@@ -141,7 +143,7 @@ export class AdminController {
       // Try calling ML service for real alternate route suggestions
       let alternates: any[] = [];
       try {
-        const mlResponse = await fetch(`${process.env.ML_SERVICE_URL || 'http://localhost:8000'}/route/suggest`, {
+        const mlResponse = await fetch(`${env.mlServiceUrl}/route/suggest`, {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({
@@ -269,6 +271,57 @@ export class AdminController {
     }
   }
 
+  static async createFieldReport(req: Request, res: Response) {
+    try {
+      const { type, location, districtId, priority, description, reportedBy, image, photos, coordinates } = req.body || {};
+
+      let imageUrl = String(image || '').trim();
+      if (imageUrl && imageUrl.startsWith('data:image/')) {
+        const matches = imageUrl.match(/^data:([A-Za-z-+\/]+);base64,(.+)$/);
+        if (matches && matches.length === 3) {
+          const mimeType = matches[1];
+          const buffer = Buffer.from(matches[2], 'base64');
+          const uploadRes = await uploadImageToCloudinary(buffer, {
+            filename: `admin-report-${Date.now()}`,
+            mimetype: mimeType,
+          });
+          imageUrl = uploadRes.url;
+        }
+      }
+
+      const reportId = `FR-${Date.now().toString().slice(-6)}`;
+      const newReport = await FieldReport.create({
+        id: reportId,
+        type: String(type || 'Road Damage').trim(),
+        iconType: 'damage',
+        location: String(location || 'Regional Corridor').trim(),
+        districtId: String(districtId || 'kamrup').trim(),
+        reportedBy: String(reportedBy || req.user?.name || 'Command Center Admin').trim(),
+        priority: ['High', 'Medium', 'Low', 'Informational'].includes(priority) ? priority : 'Medium',
+        status: 'Pending',
+        reportedOn: new Date().toLocaleString(),
+        image: imageUrl,
+        photos: imageUrl ? [imageUrl] : (Array.isArray(photos) ? photos : []),
+        description: String(description || '').trim() || 'No additional details provided.',
+        coordinates: coordinates && typeof coordinates === 'object' ? coordinates : null,
+      });
+
+      // Audit Log
+      await AuditLog.create({
+        userId: req.user?.id || 'admin',
+        action: 'CREATE_FIELD_REPORT',
+        entityType: 'FieldReport',
+        entityId: reportId,
+        meta: { type: newReport.type, priority: newReport.priority, location: newReport.location },
+      });
+
+      notifyRiskRecalculation(`field report created: ${reportId}`);
+      return sendSuccess(res, newReport, 'Field inspection report created successfully', 201);
+    } catch (err: any) {
+      return sendError(res, err.message, 500);
+    }
+  }
+
   static async verifyFieldReport(req: Request, res: Response) {
     try {
       const report = await FieldReport.findOneAndUpdate(
@@ -379,6 +432,35 @@ export class AdminController {
           };
         })
       );
+
+      // Auto-generate alerts for critical essential supply disruptions
+      for (const g of gaps) {
+        if (g.status === 'critical' && ['Medicine', 'Food', 'Fuel'].includes(g.commodity) && g.affectedDistricts.length > 0) {
+          try {
+            const existingAlert = await Alert.findOne({
+              type: 'supply_disruption',
+              status: 'active',
+              message: { $regex: g.commodity, $options: 'i' },
+            });
+            if (!existingAlert) {
+              await Alert.create({
+                id: `ALT-SUP-${Date.now().toString().slice(-6)}`,
+                title: `CRITICAL SUPPLY GAP: ${g.commodity} Disruption`,
+                type: 'supply_disruption',
+                severity: 'High',
+                severityClass: 'high',
+                districtId: g.affectedDistricts[0],
+                location: g.affectedDistricts.join(', '),
+                time: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
+                message: `Critical delivery delay detected for ${g.commodity} across ${g.affectedDistricts.length} districts (${g.delayed} delayed / ${g.totalDeliveries} total). Logistics rerouting recommended.`,
+                channel: 'system',
+                status: 'active',
+              });
+            }
+          } catch {}
+        }
+      }
+
       return sendSuccess(res, gaps, 'Supply chain gap analysis retrieved');
     } catch (err: any) {
       return sendError(res, err.message);
@@ -503,25 +585,62 @@ export class AdminController {
     }
   }
 
+  // Driver-role accounts are TWO records by design: a login User and a fleet
+  // Driver profile (which is what transporter assignment lists + the Driver App
+  // resolve against). Keep them in sync so an onboarded driver is assignable.
+  private static makeDriverId(): string {
+    return `DRV-${Date.now().toString().slice(-6)}-${Math.floor(Math.random() * 90 + 10)}`;
+  }
+
+  private static async releaseDriverVehicle(driver: Driver) {
+    if (driver.vehicle_id) {
+      await Vehicle.update({ assigned_driver_id: null }, { where: { id: driver.vehicle_id } });
+    }
+  }
+
   static async createUser(req: Request, res: Response) {
     try {
       const { name, email, password, role, district_id, transporter_id, agency, phone } = req.body;
+      const finalRole = role || 'viewer';
 
       // Duplicate-email guard before insert so the UI gets a clean message
       const existing = await User.findOne({ where: { email: String(email).trim().toLowerCase() } });
       if (existing) return sendError(res, 'That email is already in use by another account', 409);
+
+      // A driver account must belong to a transporter so its fleet profile can
+      // be assigned to that transporter's vehicles/trips.
+      if (finalRole === 'driver' && !transporter_id) {
+        return sendError(res, 'Driver accounts must belong to a transporter (select one)', 400);
+      }
 
       const password_hash = await bcrypt.hash(password || 'raahi2026', 12);
       const user = await User.create({
         name,
         email: String(email).trim().toLowerCase(),
         password_hash,
-        role: role || 'viewer',
+        role: finalRole,
         district_id,
-        transporter_id,
+        transporter_id: finalRole === 'driver' ? transporter_id : transporter_id,
         agency,
         phone,
       });
+
+      // Keep the fleet side in sync: create the Driver profile linked to the account.
+      if (finalRole === 'driver') {
+        try {
+          await Driver.create({
+            id: AdminController.makeDriverId(),
+            name,
+            phone: phone || null,
+            transporter_id,
+            user_id: user.id,
+            status: 'active',
+          });
+        } catch (driverErr: any) {
+          await User.destroy({ where: { id: user.id } });
+          return sendError(res, `Account created but driver profile failed (${driverErr.message})`, 400);
+        }
+      }
 
       const json = user.toJSON();
       delete (json as any).password_hash;
@@ -540,6 +659,16 @@ export class AdminController {
       if (!user) return sendError(res, 'User not found', 404);
 
       const { name, email, role, district_id, transporter_id, agency, phone, password } = req.body;
+      const finalRole = role !== undefined ? role : user.role;
+
+      // A driver account must end up attached to a transporter.
+      if (finalRole === 'driver') {
+        const finalTransporterId = transporter_id !== undefined ? transporter_id : user.transporter_id;
+        if (!finalTransporterId) {
+          return sendError(res, 'Driver accounts must belong to a transporter (select one)', 400);
+        }
+      }
+
       if (password) {
         user.password_hash = await bcrypt.hash(password, 12);
       }
@@ -559,6 +688,36 @@ export class AdminController {
 
       await user.save();
 
+      // Sync the fleet Driver profile (if any) with the updated account.
+      const profile = await Driver.findOne({ where: { user_id: user.id } });
+      if (finalRole === 'driver') {
+        const finalTransporterId = user.transporter_id;
+        if (profile) {
+          await profile.update({
+            name: user.name,
+            phone: user.phone ?? null,
+            transporter_id: finalTransporterId,
+          });
+        } else {
+          try {
+            await Driver.create({
+              id: AdminController.makeDriverId(),
+              name: user.name,
+              phone: user.phone || null,
+              transporter_id: finalTransporterId,
+              user_id: user.id,
+              status: 'active',
+            });
+          } catch (driverErr: any) {
+            return sendError(res, `User updated but driver profile failed (${(driverErr as Error).message})`, 400);
+          }
+        }
+      } else if (profile) {
+        // Role changed away from driver — the fleet profile no longer applies.
+        await AdminController.releaseDriverVehicle(profile);
+        await profile.destroy();
+      }
+
       const json = user.toJSON();
       delete (json as any).password_hash;
       return sendSuccess(res, json, 'User updated successfully');
@@ -573,8 +732,17 @@ export class AdminController {
 
   static async deleteUser(req: Request, res: Response) {
     try {
-      const count = await User.destroy({ where: { id: req.params.id } });
-      if (!count) return sendError(res, 'User not found', 404);
+      const user = await User.findByPk(String(req.params.id));
+      if (!user) return sendError(res, 'User not found', 404);
+
+      // Remove the linked fleet Driver profile (releasing its vehicle) so the
+      // drivers directory / assignment lists never reference a deleted account.
+      const profile = await Driver.findOne({ where: { user_id: user.id } });
+      if (profile) {
+        await AdminController.releaseDriverVehicle(profile);
+        await profile.destroy();
+      }
+      await user.destroy();
       return sendSuccess(res, null, 'User deleted successfully');
     } catch (err: any) {
       return sendError(res, err.message);

@@ -21,10 +21,12 @@ import { RouteStatusChart } from '@/components/admin/dashboard/RouteStatusChart'
 import { DistrictConnectivityTable } from '@/components/admin/dashboard/DistrictConnectivityTable';
 import { useApp } from '@/contexts/AppContext';
 import { useAuth } from '@/contexts/AuthContext';
+import { useLang } from '@/contexts/LanguageContext';
 
 export const DashboardPage = () => {
   const { kpis, weather, mlHealth, vehicles } = useApp();
   const { user } = useAuth();
+  const { t } = useLang();
   
   const metrics = kpis || {};
   const todayDate = new Date().toLocaleDateString('en-GB', { day: 'numeric', month: 'short', year: 'numeric' });
@@ -35,8 +37,8 @@ export const DashboardPage = () => {
       {/* Page Header / Welcome Banner */}
       <div className="page-header-row">
         <div className="page-title-group">
-          <h1>Welcome back, {user?.name || 'Admin'} 👋</h1>
-          <p>Here's real-time intelligence across the North Eastern Region today.</p>
+          <h1>{t('dashboard.welcome')}, {user?.name || 'Admin'} 👋</h1>
+          <p>{t('dashboard.subtitle')}</p>
         </div>
 
         <div className="header-widgets-group">
@@ -68,28 +70,28 @@ export const DashboardPage = () => {
         background: '#F0F9FF', border: '1px solid #BAE6FD', fontSize: '12px',
         display: 'flex', alignItems: 'center', gap: '16px', flexWrap: 'wrap'
       }}>
-        <strong style={{ color: '#0369A1' }}>Data Sources:</strong>
-        <span>Weather: <strong style={{color: weather?.source && weather.source !== 'unavailable' ? '#059669' : '#94A3B8'}}>{weather?.source && weather.source !== 'unavailable' ? 'LIVE (' + weather.source + ')' : weather?.source === 'unavailable' ? 'OFFLINE' : 'Connecting...'}</strong></span>
-        <span>ML Models: <strong style={{color: mlHealth?.mlModels ? '#059669' : '#94A3B8'}}>{mlHealth?.mlModels ? Object.values(mlHealth.mlModels).filter(m => typeof m === 'string' && m.includes('loaded')).length + '/' + Object.values(mlHealth.mlModels).length + ' loaded' : 'Loading...'}</strong></span>
-        <span>Vehicles: <strong style={{color: '#059669'}}>{vehicles.length} in DB</strong></span>
-        <span>GPS: <strong style={{color: vehicles.some(v => v.lat && v.lng) ? '#059669' : '#94A3B8'}}>{vehicles.some(v => v.lat && v.lng) ? 'Positions available' : 'Awaiting GPS data'}</strong></span>
+        <strong style={{ color: '#0369A1' }}>{t('dashboard.dataSources')}:</strong>
+        <span>{t('dashboard.weather')}: <strong style={{color: weather?.source && weather.source !== 'unavailable' ? '#059669' : '#94A3B8'}}>{weather?.source && weather.source !== 'unavailable' ? 'LIVE (' + weather.source + ')' : weather?.source === 'unavailable' ? 'OFFLINE' : 'Connecting...'}</strong></span>
+        <span>{t('dashboard.mlModels')}: <strong style={{color: mlHealth?.mlModels ? '#059669' : '#94A3B8'}}>{mlHealth?.mlModels ? Object.values(mlHealth.mlModels).filter(m => typeof m === 'string' && m.includes('loaded')).length + '/' + Object.values(mlHealth.mlModels).length + ' loaded' : 'Loading...'}</strong></span>
+        <span>{t('dashboard.vehicles')}: <strong style={{color: '#059669'}}>{vehicles.length} in DB</strong></span>
+        <span>{t('dashboard.gps')}: <strong style={{color: vehicles.some(v => v.lat && v.lng) ? '#059669' : '#94A3B8'}}>{vehicles.some(v => v.lat && v.lng) ? 'Positions available' : 'Awaiting GPS data'}</strong></span>
       </div>
       <div className="stat-card-grid">
         <StatCard
-          title="Total Routes Monitored"
+          title={t('dashboard.totalRoutes')}
           value={metrics.totalRoutes?.value || 0}
           trend={metrics.totalRoutes?.trend || '+12.5%'}
-          period={metrics.totalRoutes?.period || 'vs yesterday'}
+          period={t(metrics.totalRoutes?.period || 'vs yesterday')}
           icon={Route}
           iconBg="#ECFDF5"
           iconColor="#059669"
         />
 
         <StatCard
-          title="Routes at Risk"
+          title={t('dashboard.routesAtRisk')}
           value={metrics.routesAtRisk?.value || 0}
           trend={metrics.routesAtRisk?.trend || '+8.3%'}
-          period={metrics.routesAtRisk?.period || 'vs yesterday'}
+          period={t(metrics.routesAtRisk?.period || 'vs yesterday')}
           isRisk={true}
           icon={AlertTriangle}
           iconBg="#FFFBEB"
@@ -97,10 +99,10 @@ export const DashboardPage = () => {
         />
 
         <StatCard
-          title="Blocked Routes"
+          title={t('dashboard.blockedRoutes')}
           value={metrics.blockedRoutes?.value || 0}
           trend={metrics.blockedRoutes?.trend || '+15.2%'}
-          period={metrics.blockedRoutes?.period || 'vs yesterday'}
+          period={t(metrics.blockedRoutes?.period || 'vs yesterday')}
           isDanger={true}
           icon={AlertOctagon}
           iconBg="#FEF2F2"
@@ -108,20 +110,20 @@ export const DashboardPage = () => {
         />
 
         <StatCard
-          title="Active Vehicles"
+          title={t('dashboard.activeVehicles')}
           value={metrics.activeVehicles?.value || 0}
           trend={metrics.activeVehicles?.trend || '+6.1%'}
-          period={metrics.activeVehicles?.period || 'vs yesterday'}
+          period={t(metrics.activeVehicles?.period || 'vs yesterday')}
           icon={Truck}
           iconBg="#EFF6FF"
           iconColor="#2563EB"
         />
 
         <StatCard
-          title="Deliveries in Transit"
+          title={t('dashboard.deliveriesInTransit')}
           value={metrics.deliveriesInTransit?.value || 0}
           trend={metrics.deliveriesInTransit?.trend || '+9.4%'}
-          period={metrics.deliveriesInTransit?.period || 'vs yesterday'}
+          period={t(metrics.deliveriesInTransit?.period || 'vs yesterday')}
           icon={Package}
           iconBg="#F5F3FF"
           iconColor="#7C3AED"

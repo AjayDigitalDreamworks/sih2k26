@@ -20,6 +20,7 @@ export const ModalManager = () => {
     addVehicle,
     addAlert,
     addFieldReport,
+    verifyReport,
     addToast,
   } = useApp();
 
@@ -39,6 +40,8 @@ export const ModalManager = () => {
   const [frLocation, setFrLocation] = useState('');
   const [frPriority, setFrPriority] = useState('High');
   const [frDesc, setFrDesc] = useState('');
+  const [frImage, setFrImage] = useState('');
+  const [frUploading, setFrUploading] = useState(false);
 
   // Support State
   const [supportMessage, setSupportMessage] = useState('');
@@ -73,16 +76,17 @@ export const ModalManager = () => {
 
   const handleCreateReportSubmit = async (e) => {
     e.preventDefault();
-    // Send only real user input — the backend assigns id / status / reportedOn.
     const ok = await addFieldReport({
       type: frType,
       location: frLocation,
       priority: frPriority,
       description: frDesc,
+      image: frImage || undefined,
     });
     if (ok) {
       setFrLocation('');
       setFrDesc('');
+      setFrImage('');
       closeModal();
     }
   };
@@ -319,10 +323,46 @@ export const ModalManager = () => {
               />
             </div>
 
+            <div>
+              <label className="query-field-label">Photo Evidence (Optional — Cloudinary Upload)</label>
+              <input
+                type="file"
+                accept="image/*"
+                onChange={async (e) => {
+                  const file = e.target.files?.[0];
+                  if (!file) return;
+                  setFrUploading(true);
+                  try {
+                    const formData = new FormData();
+                    formData.append('file', file);
+                    const res = await ApiClient.uploadMedia(formData);
+                    if (res?.success && (res.data?.url || res.data?.file_path)) {
+                      setFrImage(res.data.url || res.data.file_path);
+                      addToast('Photo Uploaded', 'Photo attached via Cloudinary/storage', 'success');
+                    } else {
+                      addToast('Upload Failed', res?.message || 'Could not upload photo', 'error');
+                    }
+                  } catch (err) {
+                    addToast('Upload Failed', err.message || 'Upload failed', 'error');
+                  } finally {
+                    setFrUploading(false);
+                  }
+                }}
+                style={{ width: '100%', marginTop: 4, fontSize: '12px' }}
+              />
+              {frUploading && <span style={{ fontSize: '11px', color: 'var(--primary-600)' }}>Uploading photo...</span>}
+              {frImage && (
+                <div style={{ marginTop: 6, display: 'flex', alignItems: 'center', gap: 8 }}>
+                  <img src={frImage} alt="Preview" style={{ width: 44, height: 44, objectFit: 'cover', borderRadius: 4, border: '1px solid var(--border-light)' }} />
+                  <span style={{ fontSize: '11px', color: '#059669', fontWeight: 600 }}>✓ Attached</span>
+                </div>
+              )}
+            </div>
+
             <div style={{ padding: '12px', border: '1px dashed var(--border-strong)', borderRadius: 'var(--radius-sm)', textAlign: 'center', backgroundColor: 'var(--bg-card-alt)' }}>
               <MapPin size={24} color="var(--primary-600)" style={{ margin: '0 auto 6px auto' }} />
               <span style={{ fontSize: '12px', color: 'var(--text-muted)', display: 'block' }}>
-                Report is tagged with the district/highway location you enter — photos can be attached by the field agent.
+                Report is tagged with the district/highway location you enter — photos are stored in Cloudinary/storage.
               </span>
             </div>
           </div>
@@ -335,82 +375,99 @@ export const ModalManager = () => {
       </Modal>
 
       {/* 4. Report Details Modal (with HD photo preview & full action buttons) */}
-      {activeModal === 'reportDetail' && selectedItem && (
-        <Modal isOpen={true} onClose={closeModal} title={`Report ${selectedItem.id} Details`}>
-          <div className="modal-body">
-            {/* Image is shown only when the report has a real attached image */}
-            {selectedItem.image && (
-              <div style={{ borderRadius: 'var(--radius-md)', overflow: 'hidden', maxHeight: '240px', border: '1px solid var(--border-light)' }}>
-                <img
-                  src={selectedItem.image}
-                  alt={selectedItem.title || selectedItem.type}
-                  style={{ width: '100%', height: '240px', objectFit: 'cover' }}
-                />
-              </div>
-            )}
-
-            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
-              <div>
-                <h3 style={{ fontSize: '16px', fontWeight: 700, color: 'var(--text-primary)' }}>
-                  {selectedItem.title || `${selectedItem.type} Incident`}
-                </h3>
-                <span style={{ fontSize: '12px', color: 'var(--text-muted)' }}>
-                  📍 {selectedItem.location} • 🕒 {selectedItem.reportedOn || selectedItem.time}
-                </span>
-              </div>
-
-              {selectedItem.priority && (
-                <span className={`badge badge-${selectedItem.priority.toLowerCase()}`}>
-                  {selectedItem.priority} Priority
-                </span>
+      {activeModal === 'reportDetail' && selectedItem && (() => {
+        const reportImg = selectedItem.image || selectedItem.photos?.[0];
+        const hasCoords = selectedItem.coordinates?.lat != null && selectedItem.coordinates?.lng != null;
+        return (
+          <Modal isOpen={true} onClose={closeModal} title={`Report ${selectedItem.id} Details`}>
+            <div className="modal-body">
+              {/* Real attached image preview */}
+              {reportImg && (
+                <div style={{ borderRadius: 'var(--radius-md)', overflow: 'hidden', maxHeight: '240px', border: '1px solid var(--border-light)' }}>
+                  <img
+                    src={reportImg}
+                    alt={selectedItem.title || selectedItem.type}
+                    style={{ width: '100%', height: '240px', objectFit: 'cover' }}
+                  />
+                </div>
               )}
+
+              <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+                <div>
+                  <h3 style={{ fontSize: '16px', fontWeight: 700, color: 'var(--text-primary)' }}>
+                    {selectedItem.title || `${selectedItem.type} Incident`}
+                  </h3>
+                  <span style={{ fontSize: '12px', color: 'var(--text-muted)' }}>
+                    📍 {selectedItem.location} • 🕒 {selectedItem.reportedOn || selectedItem.time}
+                  </span>
+                </div>
+
+                {selectedItem.priority && (
+                  <span className={`badge badge-${selectedItem.priority.toLowerCase()}`}>
+                    {selectedItem.priority} Priority
+                  </span>
+                )}
+              </div>
+
+              <p style={{ fontSize: '13px', color: 'var(--text-secondary)', lineHeight: 1.5 }}>
+                {selectedItem.description || 'No additional details provided.'}
+              </p>
+
+              <div style={{ padding: '12px', backgroundColor: 'var(--bg-card-alt)', borderRadius: 'var(--radius-sm)', fontSize: '12px' }}>
+                <strong>Reported By:</strong> {selectedItem.reportedBy || 'Field Driver / Agent'}
+                <br />
+                <strong>GPS Telemetry:</strong>{' '}
+                {hasCoords
+                  ? `${Number(selectedItem.coordinates.lat).toFixed(4)}° N, ${Number(selectedItem.coordinates.lng).toFixed(4)}° E`
+                  : selectedItem.location || 'Recorded on regional corridor'}
+                {selectedItem.status && (
+                  <>
+                    <br />
+                    <strong>Status:</strong> {selectedItem.status}
+                  </>
+                )}
+              </div>
             </div>
 
-            <p style={{ fontSize: '13px', color: 'var(--text-secondary)', lineHeight: 1.5 }}>
-              {selectedItem.description || 'Debris and road obstruction reported along mountain corridor with clearance team dispatched.'}
-            </p>
-
-            <div style={{ padding: '12px', backgroundColor: 'var(--bg-card-alt)', borderRadius: 'var(--radius-sm)', fontSize: '12px' }}>
-              <strong>Reported By:</strong> {selectedItem.reportedBy || 'Field Driver'}
-              <br />
-              <strong>GPS Telemetry:</strong> Lat 26.2006° N, Long 92.9376° E
-            </div>
-          </div>
-
-          <div className="modal-footer" style={{ display: 'flex', flexWrap: 'wrap', gap: '8px', justifyContent: 'space-between' }}>
-            <button
-              className="btn btn-outline"
-              onClick={() => {
-                addToast('Report Escalated', `Report ${selectedItem.id} escalated to SDRF / NDRF Command.`, 'danger');
-                closeModal();
-              }}
-            >
-              Escalate to NDRF
-            </button>
-            
-            <div style={{ display: 'flex', gap: '8px' }}>
+            <div className="modal-footer" style={{ display: 'flex', flexWrap: 'wrap', gap: '8px', justifyContent: 'space-between' }}>
               <button
                 className="btn btn-outline"
                 onClick={() => {
-                  addToast('Report Archived', `Report ${selectedItem.id} dismissed / archived.`, 'info');
+                  addToast('Report Escalated', `Report ${selectedItem.id} escalated to SDRF / NDRF Command.`, 'danger');
                   closeModal();
                 }}
               >
-                Dismiss
+                Escalate to NDRF
               </button>
-              <button
-                className="btn btn-primary"
-                onClick={() => {
-                  addToast('Status Updated', `Report ${selectedItem.id} verified and marked as Resolved.`, 'success');
-                  closeModal();
-                }}
-              >
-                Verify & Mark Resolved
-              </button>
+              
+              <div style={{ display: 'flex', gap: '8px' }}>
+                <button
+                  className="btn btn-outline"
+                  onClick={() => {
+                    addToast('Report Archived', `Report ${selectedItem.id} dismissed / archived.`, 'info');
+                    closeModal();
+                  }}
+                >
+                  Dismiss
+                </button>
+                <button
+                  className="btn btn-primary"
+                  onClick={async () => {
+                    if (verifyReport) {
+                      await verifyReport(selectedItem.id);
+                    } else {
+                      addToast('Status Updated', `Report ${selectedItem.id} verified and marked as Resolved.`, 'success');
+                    }
+                    closeModal();
+                  }}
+                >
+                  Verify & Mark Resolved
+                </button>
+              </div>
             </div>
-          </div>
-        </Modal>
-      )}
+          </Modal>
+        );
+      })()}
 
       {/* 5. Export Plan Modal */}
       <Modal isOpen={activeModal === 'exportPlan'} onClose={closeModal} title="Export Logistics & Route Manifest">

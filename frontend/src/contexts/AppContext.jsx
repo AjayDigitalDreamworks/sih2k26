@@ -312,7 +312,7 @@ export const AppProvider = ({ children, scope = 'admin' }) => {
   const addFieldReport = async (newReport) => {
     try {
       // Server is the source of truth — it assigns the real id/timestamp/status.
-      const res = await ApiClient.reportIncident(newReport);
+      const res = await ApiClient.createFieldReport(newReport);
       if (res?.success && res.data) {
         setReports(prev => [res.data, ...prev]);
         addToast('Report Created', `Report ${res.data.id || res.data._id} submitted.`, 'success');

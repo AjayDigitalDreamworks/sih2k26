@@ -211,9 +211,40 @@ async def plan_route(payload: Dict[str, Any]):
     OSRM road geometry, per-leg live conditions and risk, plus a recommended
     choice. No fake coordinates are ever generated.
     """
-    origin = (payload.get("originDistrictId") or payload.get("origin") or "").lower().strip()
-    dest = (payload.get("destDistrictId") or payload.get("destination") or "").lower().strip()
-    prefer = (payload.get("prefer") or "safest").lower()
+    def _extract_district(val) -> str:
+        if not val:
+            return ""
+        if isinstance(val, dict):
+            candidate = str(val.get("districtId") or val.get("district_id") or val.get("id") or val.get("district") or val.get("name") or "").lower().strip()
+            if candidate in DISTRICT_COORDS:
+                return candidate
+            for k, info in APIConfig.NER_DISTRICTS.items():
+                if info.get("name", "").lower() == candidate:
+                    return k
+            lat = val.get("lat")
+            lng = val.get("lng")
+            if lat is not None and lng is not None:
+                try:
+                    import math
+                    def _hav(a, b):
+                        la1, lo1, la2, lo2 = map(math.radians, [a[0], a[1], b[0], b[1]])
+                        h = math.sin((la2 - la1) / 2) ** 2 + math.cos(la1) * math.cos(la2) * math.sin((lo2 - lo1) / 2) ** 2
+                        return 6371 * 2 * math.asin(math.sqrt(h))
+                    return min(DISTRICT_COORDS, key=lambda k: _hav((float(lat), float(lng)), DISTRICT_COORDS[k]))
+                except Exception:
+                    pass
+            return candidate
+        s = str(val).lower().strip()
+        if s in DISTRICT_COORDS:
+            return s
+        for k, info in APIConfig.NER_DISTRICTS.items():
+            if info.get("name", "").lower() == s:
+                return k
+        return s
+
+    origin = _extract_district(payload.get("originDistrictId") or payload.get("origin"))
+    dest = _extract_district(payload.get("destDistrictId") or payload.get("destination"))
+    prefer = str(payload.get("prefer") or "safest").lower()
 
     if origin not in DISTRICT_COORDS or dest not in DISTRICT_COORDS:
         known = ", ".join(sorted(DISTRICT_COORDS.keys()))

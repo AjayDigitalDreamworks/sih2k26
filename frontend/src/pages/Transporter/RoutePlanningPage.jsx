@@ -244,18 +244,43 @@ export default function RoutePlanningPage() {
                 <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                   <div>
                     <label className="block text-xs font-bold text-slate-700 mb-1">Vehicle</label>
-                    <select value={vehicleId} onChange={(e) => setVehicleId(e.target.value)} className={inputCls}>
-                      {vehicles.length === 0 && <option value="">No vehicles in fleet</option>}
+                    <select
+                      value={vehicleId}
+                      onChange={(e) => {
+                        const vId = e.target.value;
+                        setVehicleId(vId);
+                        const selV = vehicles.find((v) => v.id === vId);
+                        const pairedDriverId = selV?.assigned_driver_id || selV?.driver?.id;
+                        if (pairedDriverId) setDriverId(pairedDriverId);
+                      }}
+                      className={inputCls}
+                    >
+                      {vehicles.length === 0 && <option value="">No vehicles registered</option>}
                       {vehicles.map((v) => (
-                        <option key={v.id} value={v.id}>{v.id}{v.status === 'moving' ? ' (moving)' : v.status === 'idle' ? ' (idle)' : ''}</option>
+                        <option key={v.id} value={v.id}>
+                          {v.id} {v.driver?.name ? `(${v.driver.name})` : '(unassigned)'}
+                        </option>
                       ))}
                     </select>
                   </div>
                   <div>
                     <label className="block text-xs font-bold text-slate-700 mb-1">Driver</label>
-                    <select value={driverId} onChange={(e) => setDriverId(e.target.value)} className={inputCls}>
+                    <select
+                      value={driverId}
+                      onChange={(e) => {
+                        const dId = e.target.value;
+                        setDriverId(dId);
+                        const selD = drivers.find((d) => d.id === dId);
+                        if (selD?.vehicle_id) setVehicleId(selD.vehicle_id);
+                      }}
+                      className={inputCls}
+                    >
                       {drivers.length === 0 && <option value="">No drivers onboarded</option>}
-                      {drivers.map((d) => <option key={d.id} value={d.id}>{d.name}</option>)}
+                      {drivers.map((d) => (
+                        <option key={d.id} value={d.id}>
+                          {d.name} {d.vehicle_id ? `(${d.vehicle_id})` : '(no vehicle)'}
+                        </option>
+                      ))}
                     </select>
                   </div>
                 </div>

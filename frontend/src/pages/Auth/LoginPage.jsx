@@ -1,5 +1,7 @@
 import React from 'react';
+import { Navigate } from 'react-router-dom';
 import { motion } from 'framer-motion';
+import { useAuth } from '../../contexts/AuthContext';
 import AuthBranding from '../../components/auth/AuthBranding';
 import LoginForm from '../../components/auth/LoginForm';
 import LanguageSelector from '../../components/common/LanguageSelector';
@@ -7,6 +9,22 @@ import AuthFooter from '../../components/auth/AuthFooter';
 import loginFooterImg from '../../assets/login-footer.jpeg';
 
 export default function LoginPage() {
+  const { user, isAuthenticated } = useAuth();
+
+  if (isAuthenticated && user) {
+    const role = user.backendRole || user.role;
+    if (role === 'admin' || role === 'district_officer' || role === 'official') {
+      return <Navigate to="/admin" replace />;
+    }
+    if (role === 'driver') {
+      return <Navigate to="/driver" replace />;
+    }
+    if (role === 'field_officer' || role === 'field_agent') {
+      return <Navigate to="/field-officer" replace />;
+    }
+    return <Navigate to="/transporter/dashboard" replace />;
+  }
+
   return (
     <div className="w-full min-h-screen flex flex-col justify-between bg-[#F8FAFC] selection:bg-emerald-500 selection:text-white relative overflow-x-hidden">
       {/* 2-Column Split Screen Layout */}

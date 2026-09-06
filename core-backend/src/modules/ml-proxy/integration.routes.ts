@@ -3,8 +3,9 @@ import { Op } from 'sequelize';
 import { authenticateJwt } from '../../middleware/auth.middleware';
 import { sendSuccess, sendError } from '../../utils/response';
 import { Vehicle, Trip, Route, District } from '../../models/postgres';
+import { env } from '../../config/env';
 
-const ML_URL = process.env.ML_SERVICE_URL || 'http://localhost:8000';
+const ML_URL = env.mlServiceUrl;
 
 // "2h 5m" / "45m" / "3h" / "90 min" -> minutes
 function parseDurationText(text?: string | null): number | null {
@@ -286,11 +287,12 @@ router.get('/live-route/:vehicleId', async (req: Request, res: Response) => {
     // snap the corridor graph start to the nearest real district hub, and let
     // the ML planner draw the first leg from the exact GPS coordinate.
     if (hasGps) {
-      const districts = await District.findAll({ attributes: ['id', 'lat', 'lng'], raw: true });
+      const districts = await District.findAll({ attributes: ['id', 'centroid_lat', 'centroid_lng'], raw: true });
       let bestId = originDistrictId;
       let bestKm = Infinity;
       for (const d of districts as any[]) {
-        const km = haversineKm(vehicle.current_lat, vehicle.current_lng, Number(d.lat), Number(d.lng));
+        if (d.centroid_lat == null || d.centroid_lng == null) continue;
+        const km = haversineKm(vehicle.current_lat, vehicle.current_lng, Number(d.centroid_lat), Number(d.centroid_lng));
         if (km < bestKm) { bestKm = km; bestId = d.id; }
       }
       originDistrictId = bestId;

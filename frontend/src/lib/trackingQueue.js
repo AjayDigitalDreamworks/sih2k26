@@ -78,6 +78,21 @@ export const trackingQueue = {
       console.warn('[TRACKING] Queue removal failed:', e.message);
     }
   },
+
+  // Purge everything pending. Used when a trip ends: observations collected for
+  // a finished trip are never valid again (the backend rejects them), so any
+  // leftover PENDING points are dropped instead of retried forever.
+  async clear() {
+    try {
+      const db = await openDb();
+      await new Promise((resolve, reject) => {
+        const tx = db.transaction(STORE, 'readwrite');
+        tx.objectStore(STORE).clear();
+        tx.oncomplete = resolve;
+        tx.onerror = () => reject(tx.error);
+      });
+    } catch { /* nothing to clear */ }
+  },
 };
 
 export const isOffline = () => typeof navigator !== 'undefined' && navigator.onLine === false;

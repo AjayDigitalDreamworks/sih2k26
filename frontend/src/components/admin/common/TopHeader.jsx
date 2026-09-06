@@ -19,11 +19,13 @@ import {
   LogOut,
   CheckCircle2,
   SlidersHorizontal,
+  Globe,
 } from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
 import { useApp } from '@/contexts/AppContext';
 import { useTheme } from '@/contexts/ThemeContext';
 import { useAuth } from '@/contexts/AuthContext';
+import { useLang } from '@/contexts/LanguageContext';
 import { toast } from 'sonner';
 
 export const TopHeader = () => {
@@ -41,15 +43,18 @@ export const TopHeader = () => {
     setCurrentPage,
   } = useApp();
   const { theme, toggleTheme } = useTheme();
+  const { lang, setLang, t, LANGUAGES, localizeAlert } = useLang();
 
   const [showNotifications, setShowNotifications] = useState(false);
   const [showProfileMenu, setShowProfileMenu] = useState(false);
+  const [showLangMenu, setShowLangMenu] = useState(false);
   const [isSearchFocused, setIsSearchFocused] = useState(false);
 
   const searchInputRef = useRef(null);
   const searchContainerRef = useRef(null);
   const notificationRef = useRef(null);
   const profileRef = useRef(null);
+  const langRef = useRef(null);
 
   const handleSignOut = async () => {
     try {
@@ -90,6 +95,9 @@ export const TopHeader = () => {
       }
       if (profileRef.current && !profileRef.current.contains(e.target)) {
         setShowProfileMenu(false);
+      }
+      if (langRef.current && !langRef.current.contains(e.target)) {
+        setShowLangMenu(false);
       }
     };
     document.addEventListener('mousedown', handleClickOutside);
@@ -149,7 +157,7 @@ export const TopHeader = () => {
             ref={searchInputRef}
             type="text"
             className="header-search-input"
-            placeholder="Search corridors, fleet vehicles, alerts (Ctrl + K)..."
+            placeholder={t('header.searchPlaceholder')}
             value={searchQuery}
             onChange={(e) => setSearchQuery(e.target.value)}
             onFocus={() => setIsSearchFocused(true)}
@@ -249,7 +257,7 @@ export const TopHeader = () => {
                     <div className="search-result-group">
                       <div className="search-group-title">
                         <FileText size={13} />
-                        <span>Field Incident Reports</span>
+                        <span>{t('header.fieldReports')}</span>
                       </div>
                       {matchedReports.map((r) => (
                         <div
@@ -282,7 +290,7 @@ export const TopHeader = () => {
                     setCurrentPage('live-map');
                   }}
                 >
-                  <span>Open GIS Live Map Navigator</span>
+                  <span>{t('header.openLiveMap')}</span>
                   <ExternalLink size={12} />
                 </button>
               </div>
@@ -296,8 +304,8 @@ export const TopHeader = () => {
         <div className="corridor-status-pill" title="Real-time connectivity to DoNER logistics gateway">
           <span className="corridor-pulse-dot" />
           <span className="corridor-text">
-            <strong>Raahi Logistics Grid</strong>
-            <span className="corridor-subtext">• 312 Vehicles Active</span>
+            <strong>{t('header.logisticsGrid')}</strong>
+            <span className="corridor-subtext">• 312 {t('header.vehiclesActive')}</span>
           </span>
         </div>
 
@@ -307,12 +315,59 @@ export const TopHeader = () => {
           title="Switch to Disaster / Emergency Response Mode"
         >
           <AlertTriangle size={14} />
-          <span>Emergency SOS</span>
+          <span>{t('header.emergencySOS')}</span>
         </button>
       </div>
 
       {/* Right Section: Theme Toggle, Notifications, Admin Profile */}
       <div className="header-right">
+        {/* Language Selector */}
+        <div className="header-popover-anchor" ref={langRef}>
+          <button
+            className={`header-btn ${showLangMenu ? 'active' : ''}`}
+            onClick={() => setShowLangMenu(!showLangMenu)}
+            title="Select Language / ভাষা বাছক / भाषा चुनें"
+            aria-label="Select Language"
+            style={{ display: 'flex', alignItems: 'center', gap: 4, padding: '0 8px', width: 'auto' }}
+          >
+            <Globe size={16} />
+            <span style={{ fontSize: 11, fontWeight: 700 }}>
+              {LANGUAGES.find((l) => l.code === lang)?.label.split(' ')[0] || 'English'}
+            </span>
+            <ChevronDown size={12} />
+          </button>
+
+          {showLangMenu && (
+            <div className="header-dropdown-menu" style={{ width: 170, right: 0, padding: 6, zIndex: 1100 }}>
+              {LANGUAGES.map((l) => (
+                <button
+                  key={l.code}
+                  onClick={() => {
+                    setLang(l.code);
+                    setShowLangMenu(false);
+                    toast.success(`Language: ${l.label}`);
+                  }}
+                  style={{
+                    display: 'block',
+                    width: '100%',
+                    textAlign: 'left',
+                    padding: '8px 10px',
+                    borderRadius: 6,
+                    border: 'none',
+                    background: lang === l.code ? 'var(--primary-50, #ECFDF5)' : 'transparent',
+                    color: lang === l.code ? 'var(--primary-700, #059669)' : 'inherit',
+                    fontWeight: lang === l.code ? 800 : 500,
+                    fontSize: 12,
+                    cursor: 'pointer',
+                  }}
+                >
+                  {l.label}
+                </button>
+              ))}
+            </div>
+          )}
+        </div>
+
         {/* Theme Toggle */}
         <button
           className="header-btn"
@@ -357,27 +412,30 @@ export const TopHeader = () => {
               </div>
 
               <div className="notifications-list">
-                {alerts.map((alt) => (
-                  <div
-                    key={alt.id}
-                    className="notification-item"
-                    onClick={() => {
-                      setShowNotifications(false);
-                      setCurrentPage('alerts');
-                    }}
-                  >
-                    <div className="notification-item-top">
-                      <span className={`badge badge-${alt.severityClass || 'medium'}`}>
-                        {alt.severity}
-                      </span>
-                      <span className="notification-time">{alt.time}</span>
+                {alerts.map((alt) => {
+                  const locAlt = localizeAlert ? localizeAlert(alt, lang) : alt;
+                  return (
+                    <div
+                      key={alt.id}
+                      className="notification-item"
+                      onClick={() => {
+                        setShowNotifications(false);
+                        setCurrentPage('alerts');
+                      }}
+                    >
+                      <div className="notification-item-top">
+                        <span className={`badge badge-${alt.severityClass || 'medium'}`}>
+                          {locAlt.severity || alt.severity}
+                        </span>
+                        <span className="notification-time">{alt.time}</span>
+                      </div>
+                      <p className="notification-title">{locAlt.title || alt.title}</p>
+                      {alt.location && (
+                        <span className="notification-location">{alt.location}</span>
+                      )}
                     </div>
-                    <p className="notification-title">{alt.title}</p>
-                    {alt.location && (
-                      <span className="notification-location">{alt.location}</span>
-                    )}
-                  </div>
-                ))}
+                  );
+                })}
               </div>
 
               <div className="dropdown-menu-footer">
@@ -450,7 +508,7 @@ export const TopHeader = () => {
                   }}
                 >
                   <Settings size={15} />
-                  <span>Account & System Settings</span>
+                  <span>{t('header.settingsProfile')}</span>
                 </button>
                 <button
                   className="dropdown-link-item"
@@ -460,7 +518,7 @@ export const TopHeader = () => {
                   }}
                 >
                   <HelpCircle size={15} />
-                  <span>Support & SOP Protocols</span>
+                  <span>{t('header.supportHelp')}</span>
                 </button>
               </div>
 
@@ -472,7 +530,7 @@ export const TopHeader = () => {
                   onClick={handleSignOut}
                 >
                   <LogOut size={15} />
-                  <span>Sign Out Session</span>
+                  <span>{t('header.signOut')}</span>
                 </button>
               </div>
             </div>

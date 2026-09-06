@@ -37,7 +37,7 @@ export const AlternativeRoutesTable = ({ routes }) => {
       setLoading(false);
     };
     fetchRoutes();
-  }, []);
+  }, [routes]);
 
   return (
     <div className="card" style={{ height: '100%' }}>

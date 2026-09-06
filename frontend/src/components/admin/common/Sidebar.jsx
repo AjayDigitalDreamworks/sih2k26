@@ -21,9 +21,11 @@ import {
   Users,
 } from 'lucide-react';
 import { useApp } from '@/contexts/AppContext';
+import { useLang } from '@/contexts/LanguageContext';
 
 export const Sidebar = () => {
   const { currentPage, setCurrentPage, sidebarCollapsed, openModal, alerts } = useApp();
+  const { t } = useLang();
   const [isOnline, setIsOnline] = useState(typeof navigator !== 'undefined' ? navigator.onLine : true);
 
   useEffect(() => {
@@ -89,7 +91,7 @@ export const Sidebar = () => {
           {!sidebarCollapsed && (
             <div className="brand-info">
               <span className="brand-name">RAAHI</span>
-              <span className="brand-tagline">Smart Routes, Safe Deliveries</span>
+              <span className="brand-tagline">{t('sidebar.brandTagline')}</span>
             </div>
           )}
         </a>
@@ -101,12 +103,13 @@ export const Sidebar = () => {
           {mainNavItems.map((item) => {
             const Icon = item.icon;
             const isActive = currentPage === item.id;
+            const translatedLabel = t(`nav.${item.id}`) || t(item.label) || item.label;
             return (
               <button
                 key={item.id}
                 onClick={() => setCurrentPage(item.id)}
                 className={`nav-item ${isActive ? 'active' : ''} ${item.isEmergency ? 'emergency' : ''}`}
-                title={sidebarCollapsed ? `${item.label}${item.badge ? ` (${item.badge})` : ''}` : undefined}
+                title={sidebarCollapsed ? `${translatedLabel}${item.badge ? ` (${item.badge})` : ''}` : undefined}
               >
                 <div className="nav-icon-wrapper">
                   <Icon className="nav-icon" />
@@ -114,7 +117,7 @@ export const Sidebar = () => {
                     <span className="nav-badge-dot" />
                   )}
                 </div>
-                {!sidebarCollapsed && <span className="nav-label">{item.label}</span>}
+                {!sidebarCollapsed && <span className="nav-label">{translatedLabel}</span>}
                 {!sidebarCollapsed && item.badge && (
                   <span className={`nav-badge ${item.badgeClass || ''}`}>{item.badge}</span>
                 )}
@@ -127,55 +130,55 @@ export const Sidebar = () => {
           <>
             {/* Quick Actions */}
             <div className="sidebar-section">
-              <span className="sidebar-section-title">Quick Actions</span>
+              <span className="sidebar-section-title">{t('sidebar.quickActions')}</span>
               <button className="quick-action-btn" onClick={() => openModal('addVehicle')}>
                 <PlusCircle size={15} color="#059669" />
-                <span>Add Vehicle</span>
+                <span>{t('sidebar.addVehicle')}</span>
               </button>
               <button className="quick-action-btn" onClick={() => openModal('createAlert')}>
                 <AlertOctagon size={15} color="#EF4444" />
-                <span>Create Alert</span>
+                <span>{t('sidebar.createAlert')}</span>
               </button>
               <button className="quick-action-btn" onClick={() => openModal('generateReport')}>
                 <FileSpreadsheet size={15} color="#059669" />
-                <span>Generate Report</span>
+                <span>{t('sidebar.generateReport')}</span>
               </button>
               <button className="quick-action-btn" onClick={() => openModal('importData')}>
                 <UploadCloud size={15} color="#D97706" />
-                <span>Import Data</span>
+                <span>{t('sidebar.importData')}</span>
               </button>
             </div>
 
             {/* System Status */}
             <div className="sidebar-section">
-              <span className="sidebar-section-title">System Status</span>
+              <span className="sidebar-section-title">{t('sidebar.systemStatus')}</span>
               <div className="system-status-list">
                 <div className="system-status-item">
-                  <span>GPS Tracking</span>
-                  <span className="status-dot-indicator">Online</span>
+                  <span>{t('sidebar.gpsTracking')}</span>
+                  <span className="status-dot-indicator">{t('sidebar.online')}</span>
                 </div>
                 <div className="system-status-item">
-                  <span>Data Sync</span>
-                  <span className="status-dot-indicator">Online</span>
+                  <span>{t('sidebar.dataSync')}</span>
+                  <span className="status-dot-indicator">{t('sidebar.online')}</span>
                 </div>
                 <div className="system-status-item">
-                  <span>AI Engine</span>
-                  <span className="status-dot-indicator">Online</span>
+                  <span>{t('sidebar.aiEngine')}</span>
+                  <span className="status-dot-indicator">{t('sidebar.online')}</span>
                 </div>
                 <div className="system-status-item">
-                  <span>Server Status</span>
-                  <span className="status-dot-indicator">Online</span>
+                  <span>{t('sidebar.serverStatus')}</span>
+                  <span className="status-dot-indicator">{t('sidebar.online')}</span>
                 </div>
               </div>
             </div>
 
             {/* Need Help Box */}
             <div className="need-help-card">
-              <span className="need-help-title">Need Help?</span>
-              <span className="need-help-desc">Our support team is available 24/7 to assist you.</span>
+              <span className="need-help-title">{t('sidebar.needHelp')}</span>
+              <span className="need-help-desc">{t('sidebar.supportDesc')}</span>
               <button className="support-btn" onClick={() => openModal('support')}>
                 <Headphones size={14} />
-                <span>Contact Support</span>
+                <span>{t('sidebar.contactSupport')}</span>
               </button>
             </div>
           </>
@@ -189,10 +192,10 @@ export const Sidebar = () => {
             <Radio size={14} color={isOnline ? '#166534' : '#b45309'} />
             <div>
               <strong style={{ display: 'block', fontSize: '11px', color: isOnline ? '#166534' : '#92400e' }}>
-                {isOnline ? 'Live Mode' : 'Offline Mode'}
+                {isOnline ? t('sidebar.liveMode') : t('sidebar.offlineMode')}
               </strong>
               <span style={{ fontSize: '10px', color: isOnline ? '#15803d' : '#b45309' }}>
-                {isOnline ? 'Real-time data active' : 'Data will sync when online'}
+                {isOnline ? t('sidebar.liveDesc') : t('sidebar.offlineDesc')}
               </span>
             </div>
           </div>
@@ -211,8 +214,8 @@ export const Sidebar = () => {
           {!sidebarCollapsed && (
             <>
               <div className="user-details">
-                <div className="user-name">Admin User</div>
-                <div className="user-role">Government Admin</div>
+                <div className="user-name">{t('sidebar.adminUser')}</div>
+                <div className="user-role">{t('sidebar.adminRole')}</div>
               </div>
               <ChevronRight size={16} color="var(--text-muted)" />
             </>

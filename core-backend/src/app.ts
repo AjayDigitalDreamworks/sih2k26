@@ -16,9 +16,12 @@ import vehiclesRoutes from './modules/vehicles/vehicles.routes';
 import mlProxyRoutes from './modules/ml-proxy/ml-proxy.routes';
 import integrationRoutes from './modules/ml-proxy/integration.routes';
 import trackingRoutes from './modules/tracking/tracking.routes';
+import driverRoutes from './modules/driver/driver.routes';
 import gisRoutes from './modules/gis/gis.routes';
 import internalRoutes from './modules/internal/internal.routes';
 import publicRoutes from './modules/public/public.routes';
+import fieldOfficerRoutes from './modules/field-officer/field-officer.routes';
+import path from 'path';
 
 const app = express();
 
@@ -103,6 +106,9 @@ app.get('/ready', async (req, res) => {
   }
 });
 
+// Static file serving for evidence photos
+app.use('/uploads', express.static(path.join(__dirname, '../uploads')));
+
 // API Routes Mounting
 app.use('/api/public', publicRoutes);
 app.use('/api/auth', authRoutes);
@@ -112,8 +118,10 @@ app.use('/api/vehicles', vehiclesRoutes);
 app.use('/api/ml', mlProxyRoutes);
 app.use('/api/integrations', integrationRoutes);
 app.use('/api/tracking', trackingRoutes);
+app.use('/api/driver', driverRoutes);
 app.use('/api/gis', gisRoutes);
 app.use('/api/internal', internalRoutes);
+app.use('/api/field-officer', fieldOfficerRoutes);
 
 // Global Error Handler
 app.use(errorHandler);

@@ -4,6 +4,7 @@ import { sendSuccess, sendError } from '../../utils/response';
 import { sequelize } from '../../config/db';
 import { Vehicle, District, Road, Route, RiskScore } from '../../models/postgres';
 import { redisClient } from '../../config/redis';
+import { env } from '../../config/env';
 import { Op } from 'sequelize';
 
 const router = Router();
@@ -52,6 +53,16 @@ router.get('/layers', async (_req: Request, res: Response) => {
  * GET /api/gis/districts
  * Get all districts as GeoJSON-compatible features with spatial data
  */
+function parseGeometry(geom: string, fallbackPoint?: [number, number]): any {
+  try {
+    const parsed = JSON.parse(geom);
+    return parsed.geometry || parsed;
+  } catch {
+    // Legacy/empty geometry rows degrade to their centroid point marker.
+    return { type: 'Point', coordinates: fallbackPoint || [0, 0] };
+  }
+}
+
 router.get('/districts', async (req: Request, res: Response) => {
   try {
     const { state, bbox } = req.query;
@@ -62,10 +73,7 @@ router.get('/districts', async (req: Request, res: Response) => {
 
     const features = districts.map((d: any) => ({
       type: 'Feature',
-      geometry: {
-        type: 'Point',
-        coordinates: [d.lng, d.lat],
-      },
+      geometry: parseGeometry(d.geom, [d.centroid_lng, d.centroid_lat]),
       properties: {
         id: d.id,
         name: d.name,
@@ -73,6 +81,7 @@ router.get('/districts', async (req: Request, res: Response) => {
         connectivity_status: d.connectivity_status,
         connectivity_score: d.connectivity_score,
         population: d.population,
+        centroid: [d.centroid_lng, d.centroid_lat],
       },
     }));
 
@@ -119,6 +128,7 @@ router.get('/routes', async (req: Request, res: Response) => {
 
     const features = routes.map((r: any) => ({
       type: 'Feature',
+      geometry: parseGeometry(r.geom),
       properties: {
         id: r.id,
         name: r.name,
@@ -233,15 +243,20 @@ router.get('/nearby', async (req: Request, res: Response) => {
     } else if (layer === 'districts') {
       const districts = await District.findAll({ raw: true });
       for (const d of districts) {
-        const dist = haversineKm(lat, lng, d.lat, d.lng);
+        // Distance measured from the district centroid (kept as lat/lng in the
+        // response for API compatibility with the old point-based rows).
+        const dLat = d.centroid_lat;
+        const dLng = d.centroid_lng;
+        if (dLat == null || dLng == null) continue;
+        const dist = haversineKm(lat, lng, dLat, dLng);
         if (dist <= radius_km) {
           results.push({
             id: d.id,
             name: d.name,
             type: 'district',
             distance_km: Math.round(dist * 10) / 10,
-            lat: d.lat,
-            lng: d.lng,
+            lat: dLat,
+            lng: dLng,
             connectivity: d.connectivity_status,
           });
         }
@@ -263,7 +278,7 @@ router.get('/nearby', async (req: Request, res: Response) => {
  */
 router.get('/risk/flood', async (_req: Request, res: Response) => {
   try {
-    const mlUrl = process.env.ML_SERVICE_URL || 'http://localhost:8000';
+    const mlUrl = env.mlServiceUrl;
     const response = await fetch(`${mlUrl}/realtime/flood/all`);
     if (response.ok) {
       const data = await response.json();
@@ -281,7 +296,7 @@ router.get('/risk/flood', async (_req: Request, res: Response) => {
  */
 router.get('/risk/landslide', async (_req: Request, res: Response) => {
   try {
-    const mlUrl = process.env.ML_SERVICE_URL || 'http://localhost:8000';
+    const mlUrl = env.mlServiceUrl;
     const response = await fetch(`${mlUrl}/realtime/summary`);
     if (response.ok) {
       const data = await response.json();
@@ -364,11 +379,11 @@ router.get('/viewport', async (req: Request, res: Response) => {
       raw: true,
     });
 
-    // Query districts whose center is within bbox
+    // Query districts whose centroid is within bbox
     const districts = await District.findAll({
       where: {
-        lat: { [Op.between]: [south, north] },
-        lng: { [Op.between]: [west, east] },
+        centroid_lat: { [Op.between]: [south, north] },
+        centroid_lng: { [Op.between]: [west, east] },
       },
       raw: true,
     });
@@ -388,7 +403,7 @@ router.get('/viewport', async (req: Request, res: Response) => {
       })),
       districtFeatures: districts.map((d: any) => ({
         type: 'Feature',
-        geometry: { type: 'Point', coordinates: [d.lng, d.lat] },
+        geometry: { type: 'Point', coordinates: [d.centroid_lng, d.centroid_lat] },
         properties: { id: d.id, name: d.name, state: d.state, connectivity: d.connectivity_status },
       })),
     }, 'Viewport data retrieved');
