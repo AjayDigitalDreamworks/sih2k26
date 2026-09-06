@@ -75,11 +75,12 @@ export default function FieldGisMap({
   onSelectTask,
 }) {
   const defaultCenter = [26.1445, 91.7362]; // Guwahati, Assam
-  const mapCenter = officerGps ? [officerGps.latitude, officerGps.longitude] : defaultCenter;
+  const hasValidGps = officerGps && Number.isFinite(officerGps.latitude) && Number.isFinite(officerGps.longitude);
+  const mapCenter = hasValidGps ? [officerGps.latitude, officerGps.longitude] : defaultCenter;
   const [recenterTarget, setRecenterTarget] = useState(null);
 
   const handleRecenter = () => {
-    if (officerGps) {
+    if (hasValidGps) {
       setRecenterTarget([officerGps.latitude, officerGps.longitude]);
     }
   };
@@ -94,13 +95,18 @@ export default function FieldGisMap({
         scrollWheelZoom={true}
         className="w-full h-full z-0"
       >
-        {/* Resilient tile layer with maxNativeZoom=17 to eliminate Esri watermark errors */}
-        <ResilientTileLayer maxNativeZoom={17} maxZoom={19} />
+        {/* Resilient tile layer with explicit OpenStreetMap URL and native zoom */}
+        <ResilientTileLayer
+          url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png"
+          attribution='&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors'
+          maxNativeZoom={18}
+          maxZoom={19}
+        />
 
         {recenterTarget && <MapRecenter center={recenterTarget} />}
 
         {/* Officer Live Location */}
-        {officerGps && (
+        {hasValidGps && (
           <>
             <Marker position={[officerGps.latitude, officerGps.longitude]} icon={officerIcon}>
               <Popup>
@@ -109,7 +115,9 @@ export default function FieldGisMap({
                   <span className="text-slate-600 font-mono">
                     {officerGps.latitude.toFixed(5)}, {officerGps.longitude.toFixed(5)}
                   </span>
-                  <div className="text-[11px] text-slate-500 mt-1">Accuracy: ±{Math.round(officerGps.accuracy)}m</div>
+                  {officerGps.accuracy && (
+                    <div className="text-[11px] text-slate-500 mt-1">Accuracy: ±{Math.round(officerGps.accuracy)}m</div>
+                  )}
                 </div>
               </Popup>
             </Marker>
@@ -125,12 +133,14 @@ export default function FieldGisMap({
 
         {/* Assigned Tasks */}
         {tasks.map((task) => {
-          if (!task.latitude || !task.longitude) return null;
+          const lat = parseFloat(task.latitude);
+          const lng = parseFloat(task.longitude);
+          if (!Number.isFinite(lat) || !Number.isFinite(lng)) return null;
           const isVerified = task.status === 'VERIFIED';
           return (
             <Marker
               key={task.id}
-              position={[task.latitude, task.longitude]}
+              position={[lat, lng]}
               icon={getTaskIcon(task.priority, isVerified)}
             >
               <Popup>
@@ -157,9 +167,11 @@ export default function FieldGisMap({
 
         {/* Nearby Hazards / Damaged Bridges / Alerts */}
         {nearbyHazards.map((h, i) => {
-          if (!h.latitude || !h.longitude) return null;
+          const hLat = parseFloat(h.latitude);
+          const hLng = parseFloat(h.longitude);
+          if (!Number.isFinite(hLat) || !Number.isFinite(hLng)) return null;
           return (
-            <Marker key={`h-${i}`} position={[h.latitude, h.longitude]} icon={getHazardIcon(h.type)}>
+            <Marker key={`h-${i}`} position={[hLat, hLng]} icon={getHazardIcon(h.type)}>
               <Popup>
                 <div className="p-1 text-xs">
                   <strong className="text-rose-800 font-bold block mb-0.5">{h.title}</strong>

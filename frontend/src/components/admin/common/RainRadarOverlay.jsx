@@ -84,8 +84,8 @@ export const RainRadarOverlay = ({ onState, opacity = 0.5 }) => {
   // Re-render only when the active frame identity changes. This prevents
   // TileLayer key churn on every index increment when the frame list has
   // been replaced, which would otherwise force Leaflet to rebuild tiles.
-  const currentFrame = frames && activeIdx >= 0 && activeIdx < frames.list.length ? frames.list[activeIdx] : null;
-  if (!currentFrame) return null;
+  const currentFrame = frames && activeIdx >= 0 && activeIdx < frames.list?.length ? frames.list[activeIdx] : null;
+  if (!currentFrame || !frames?.host || !currentFrame?.path) return null;
 
   const frame = currentFrame;
   const url = `${frames.host}${frame.path}/256/{z}/{x}/{y}/1/0_0.png`;
