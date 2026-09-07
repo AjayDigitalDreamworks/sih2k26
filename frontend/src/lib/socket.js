@@ -98,6 +98,14 @@ export const subscribeToTripUpdates = (callback) => {
   };
 };
 
+export const subscribeToRouteCleared = (callback) => {
+  const s = getSocket();
+  s.on('route:cleared', callback);
+  return () => {
+    s.off('route:cleared', callback);
+  };
+};
+
 export const disconnectSocket = () => {
   if (socket) {
     socket.disconnect();

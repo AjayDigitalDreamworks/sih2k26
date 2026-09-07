@@ -132,45 +132,31 @@ export default function RoutePlanningPage() {
 
   const handleOriginChange = (newOrigin) => {
     setOriginId(newOrigin);
+    setPlan(null);
+    setRoadPlan(null);
     const d = districtById(newOrigin);
     if (d) setFocusedPoint([d.lat, d.lng]);
   };
 
   const handleDestChange = (newDest) => {
     setDestId(newDest);
+    setPlan(null);
+    setRoadPlan(null);
     const d = districtById(newDest);
     if (d) setFocusedPoint([d.lat, d.lng]);
   };
 
-  // Real road geometry (OSRM via ML planner) for the selected pair - debounced with 150ms
   const [roadPlan, setRoadPlan] = useState(null);
   const [roadLoading, setRoadLoading] = useState(false);
-  const roadSeq = useRef(0);
-  useEffect(() => {
-    if (!originId || !destId || originId === destId) {
-      setRoadPlan(null);
-      return;
-    }
-    const mySeq = ++roadSeq.current;
-    const t = setTimeout(async () => {
-      setRoadLoading(true);
-      try {
-        const res = await ApiClient.planRoute({ originDistrictId: originId, destDistrictId: destId, prefer: 'safest' });
-        if (mySeq !== roadSeq.current) return;
-        if (res?.success && (res.data?.success || res.data?.recommended)) {
-          setRoadPlan(res.data);
-          setActiveRouteId(res.data.preferred || res.data.alternatives?.[0]?.id || 'safest');
-        } else {
-          setRoadPlan(null);
-        }
-      } catch (e) {
-        if (mySeq === roadSeq.current) setRoadPlan(null);
-      } finally {
-        if (mySeq === roadSeq.current) setRoadLoading(false);
-      }
-    }, 150);
-    return () => clearTimeout(t);
-  }, [originId, destId]);
+
+  const handleClearRoute = () => {
+    setPlan(null);
+    setRoadPlan(null);
+    setRoadLoading(false);
+    setFocusedPoint(null);
+    setPlanError('');
+    triggerToast('Route corridors cleared. Ready to plan new route.');
+  };
 
   // Synchronized available alternatives across ML / OSRM and backend trip evaluations
   const availableAlternatives = useMemo(() => {
@@ -239,34 +225,49 @@ export default function RoutePlanningPage() {
   }, [availableAlternatives, currentSelectedRoute, roadPlan, activeRouteId]);
 
   const handlePlan = async (e) => {
-    e.preventDefault();
+    if (e?.preventDefault) e.preventDefault();
     if (originId === destId) {
       setPlanError('Origin and destination must be different districts.');
       return;
     }
     setPlanning(true);
+    setRoadLoading(true);
     setPlanError('');
     setPlan(null);
+    setRoadPlan(null);
     try {
-      const res = await ApiClient.planTrip({
-        originDistrictId: originId,
-        destDistrictId: destId,
-        commodityType: commodity,
-        weightKg: parseInt(String(weightKg).replace(/[^\d]/g, ''), 10) || 1000,
-      });
-      if (!res?.success) {
-        setPlanError(res?.message || 'Could not plan this route.');
-      } else {
-        setPlan(res.data);
-        const preferredId = res.data?.primary?.id || res.data?.alternatives?.[0]?.id || 'safest';
+      const [tripRes, roadRes] = await Promise.allSettled([
+        ApiClient.planTrip({
+          originDistrictId: originId,
+          destDistrictId: destId,
+          commodityType: commodity,
+          weightKg: parseInt(String(weightKg).replace(/[^\d]/g, ''), 10) || 1000,
+        }),
+        ApiClient.planRoute({ originDistrictId: originId, destDistrictId: destId, prefer: 'safest' }),
+      ]);
+
+      if (roadRes.status === 'fulfilled' && roadRes.value?.success && (roadRes.value.data?.success || roadRes.value.data?.recommended)) {
+        setRoadPlan(roadRes.value.data);
+      }
+
+      if (tripRes.status === 'fulfilled' && tripRes.value?.success) {
+        setPlan(tripRes.value.data);
+        const preferredId = tripRes.value.data?.primary?.id || tripRes.value.data?.alternatives?.[0]?.id || 'safest';
         setActiveRouteId(preferredId);
-        triggerToast(`Evaluated corridor options. Recommended: ${res.data?.primary?.name || 'Safest route'}`);
+        triggerToast(`Evaluated corridor options. Recommended: ${tripRes.value.data?.primary?.name || 'Safest route'}`);
+      } else if (roadRes.status === 'fulfilled' && roadRes.value?.success) {
+        const preferredId = roadRes.value.data?.preferred || roadRes.value.data?.alternatives?.[0]?.id || 'safest';
+        setActiveRouteId(preferredId);
+        triggerToast('Evaluated corridor geometry and risk options.');
+      } else {
+        setPlanError(tripRes.status === 'fulfilled' ? tripRes.value?.message : 'Could not plan this route.');
       }
     } catch (err) {
       console.error(err);
       setPlanError('Server error while planning the route.');
     } finally {
       setPlanning(false);
+      setRoadLoading(false);
     }
   };
 
@@ -313,7 +314,11 @@ export default function RoutePlanningPage() {
         } else {
           triggerToast(`Corridor "${targetRoute.name}" assigned to driver ${selD?.name || driverId}. Driver can now start the trip!`);
         }
+        // Completely clear old evaluated routes after assigning
         setPlan(null);
+        setRoadPlan(null);
+        setRoadLoading(false);
+        setFocusedPoint(null);
         await loadFleet();
       }
     } catch (err) {
@@ -491,14 +496,26 @@ export default function RoutePlanningPage() {
                   <p className="text-[11px] font-bold text-rose-600 bg-rose-50 border border-rose-100 rounded-xl px-3 py-2">{planError}</p>
                 )}
 
-                <button
-                  type="submit"
-                  disabled={planning || vehicles.length === 0}
-                  className="w-full py-2.5 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-xs font-bold text-white shadow-sm shadow-emerald-600/25 transition-colors cursor-pointer disabled:opacity-50 flex items-center justify-center gap-2"
-                >
-                  <Route className="w-4 h-4" />
-                  <span>{planning ? 'Evaluating corridor options…' : 'Evaluate Route Corridors'}</span>
-                </button>
+                <div className="flex gap-2">
+                  <button
+                    type="submit"
+                    disabled={planning || vehicles.length === 0}
+                    className="flex-1 py-2.5 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-xs font-bold text-white shadow-sm shadow-emerald-600/25 transition-colors cursor-pointer disabled:opacity-50 flex items-center justify-center gap-2"
+                  >
+                    <Route className="w-4 h-4" />
+                    <span>{planning ? 'Evaluating corridor options…' : 'Evaluate Route Corridors'}</span>
+                  </button>
+                  {(plan || roadPlan) && (
+                    <button
+                      type="button"
+                      onClick={handleClearRoute}
+                      className="px-3 py-2.5 rounded-xl border border-slate-200 hover:bg-slate-50 text-xs font-bold text-slate-600 transition-colors cursor-pointer"
+                      title="Clear plotted routes from map"
+                    >
+                      Clear
+                    </button>
+                  )}
+                </div>
               </form>
 
               {/* Plan result */}

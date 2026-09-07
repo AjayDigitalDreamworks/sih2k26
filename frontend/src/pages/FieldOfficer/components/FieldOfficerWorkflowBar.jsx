@@ -8,10 +8,9 @@ import {
   Camera,
   CheckCircle2,
   Radio,
-  ChevronRight,
   ShieldCheck,
   Compass,
-  AlertTriangle,
+  ChevronRight,
 } from 'lucide-react';
 
 export default function FieldOfficerWorkflowBar({
@@ -29,35 +28,35 @@ export default function FieldOfficerWorkflowBar({
       step: 1,
       id: 'tasks',
       title: 'Assigned Tasks',
-      description: 'Review alerts & dispatches',
-      metric: `${kpis.totalAssigned || 0} Tasks`,
-      metricSub: `${kpis.activeTasks || 0} in progress`,
+      short: 'Tasks',
       icon: ListTodo,
-      color: 'text-blue-700 bg-blue-50 border-blue-200',
+      accent: 'blue',
+      metric: kpis.totalAssigned || 0,
+      metricLabel: 'assigned',
       action: () => onSelectTab('tasks'),
       active: activeTab === 'tasks',
     },
     {
       step: 2,
       id: 'accept',
-      title: 'Task Accept',
-      description: 'Claim assignment to officer',
-      metric: 'Accept Task',
-      metricSub: 'Self-assign to start',
+      title: 'Accept Task',
+      short: 'Accept',
       icon: UserCheck,
-      color: 'text-indigo-700 bg-indigo-50 border-indigo-200',
+      accent: 'indigo',
+      metric: kpis.activeTasks || 0,
+      metricLabel: 'active',
       action: () => onSelectTab('tasks'),
       active: activeTab === 'tasks',
     },
     {
       step: 3,
       id: 'navigate',
-      title: 'Navigate to Site',
-      description: 'Live OSRM corridor route',
-      metric: navigatingTask ? 'En Route Active' : 'Start Navigation',
-      metricSub: navigatingTask ? navigatingTask.title?.slice(0, 20) + '…' : 'GIS Route HUD',
+      title: 'Navigate',
+      short: 'Route',
       icon: Navigation,
-      color: navigatingTask ? 'text-emerald-700 bg-emerald-50 border-emerald-300' : 'text-teal-700 bg-teal-50 border-teal-200',
+      accent: 'teal',
+      metric: navigatingTask ? '●' : '—',
+      metricLabel: navigatingTask ? 'en route' : 'standby',
       action: () => onSelectTab('map'),
       isLive: !!navigatingTask,
       active: activeTab === 'map',
@@ -66,162 +65,159 @@ export default function FieldOfficerWorkflowBar({
       step: 4,
       id: 'arrive',
       title: 'Arrive at Site',
-      description: 'Proximity arrival check',
-      metric: 'Mark Arrived',
-      metricSub: 'Within 1km of hazard',
+      short: 'Arrive',
       icon: MapPin,
-      color: 'text-purple-700 bg-purple-50 border-purple-200',
+      accent: 'purple',
+      metric: '—',
+      metricLabel: 'proximity',
       action: () => onSelectTab('tasks'),
       active: false,
     },
     {
       step: 5,
       id: 'assessment',
-      title: 'Safety Assessment',
-      description: 'Passability & road hazard',
-      metric: 'Safety Check',
-      metricSub: 'Lanes, trucks, severity',
+      title: 'Safety Check',
+      short: 'Safety',
       icon: ShieldAlert,
-      color: 'text-amber-700 bg-amber-50 border-amber-200',
+      accent: 'amber',
+      metric: '—',
+      metricLabel: 'assess',
       action: () => onSelectTab('tasks'),
       active: false,
     },
     {
       step: 6,
       id: 'evidence',
-      title: 'Photo + GPS Capture',
-      description: 'Sub-meter ground-truth',
-      metric: hasGps ? `GPS ±${Math.round(officerGps.accuracy)}m` : 'Acquiring GPS',
-      metricSub: 'Geotagged photos',
+      title: 'Photo + GPS',
+      short: 'Capture',
       icon: Camera,
-      color: 'text-rose-700 bg-rose-50 border-rose-200',
+      accent: 'rose',
+      metric: hasGps ? `±${Math.round(officerGps.accuracy)}m` : '—',
+      metricLabel: 'accuracy',
       action: () => onOpenReportModal(),
       active: false,
     },
     {
       step: 7,
       id: 'verify',
-      title: 'Verify Decision',
-      description: 'Confirm, false alarm, cleared',
-      metric: `${kpis.verifiedToday || 0} Verified Today`,
-      metricSub: 'Official ground verdict',
+      title: 'Verify',
+      short: 'Verify',
       icon: CheckCircle2,
-      color: 'text-emerald-700 bg-emerald-50 border-emerald-200',
+      accent: 'emerald',
+      metric: kpis.verifiedToday || 0,
+      metricLabel: 'today',
       action: () => onSelectTab('tasks'),
       active: false,
     },
     {
       step: 8,
       id: 'broadcast',
-      title: 'Submit & Broadcast',
-      description: 'Live alerts to Transporters & Drivers',
-      metric: 'PostGIS + ML Reroute',
-      metricSub: 'Instant corridor sync',
+      title: 'Broadcast',
+      short: 'Report',
       icon: Radio,
-      color: 'text-cyan-700 bg-cyan-50 border-cyan-200',
+      accent: 'cyan',
+      metric: kpis.myReportsCount || 0,
+      metricLabel: 'reports',
       action: () => onSelectTab('history'),
       active: activeTab === 'history',
     },
   ];
 
+  const accentMap = {
+    blue:    { dot: 'bg-blue-500',    ring: 'ring-blue-200',    icon: 'text-blue-600 bg-blue-50',     active: 'bg-blue-600 text-white',   text: 'text-blue-700' },
+    indigo:  { dot: 'bg-indigo-500',  ring: 'ring-indigo-200',  icon: 'text-indigo-600 bg-indigo-50', active: 'bg-indigo-600 text-white', text: 'text-indigo-700' },
+    teal:    { dot: 'bg-teal-500',    ring: 'ring-teal-200',    icon: 'text-teal-600 bg-teal-50',     active: 'bg-teal-600 text-white',   text: 'text-teal-700' },
+    purple:  { dot: 'bg-purple-500',  ring: 'ring-purple-200',  icon: 'text-purple-600 bg-purple-50', active: 'bg-purple-600 text-white', text: 'text-purple-700' },
+    amber:   { dot: 'bg-amber-500',   ring: 'ring-amber-200',   icon: 'text-amber-600 bg-amber-50',   active: 'bg-amber-600 text-white',  text: 'text-amber-700' },
+    rose:    { dot: 'bg-rose-500',    ring: 'ring-rose-200',    icon: 'text-rose-600 bg-rose-50',     active: 'bg-rose-600 text-white',   text: 'text-rose-700' },
+    emerald: { dot: 'bg-emerald-500', ring: 'ring-emerald-200', icon: 'text-emerald-600 bg-emerald-50', active: 'bg-emerald-600 text-white', text: 'text-emerald-700' },
+    cyan:    { dot: 'bg-cyan-500',    ring: 'ring-cyan-200',    icon: 'text-cyan-600 bg-cyan-50',     active: 'bg-cyan-600 text-white',   text: 'text-cyan-700' },
+  };
+
   return (
-    <div className="bg-white rounded-2xl border border-slate-200/90 shadow-2xs p-4 sm:p-5 relative overflow-hidden select-none">
-      {/* Top Banner Header */}
-      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 pb-3.5 border-b border-slate-100">
-        <div className="flex items-center gap-3">
-          <div className="w-10 h-10 rounded-xl bg-gradient-to-br from-emerald-50 to-teal-100 border border-emerald-200 flex items-center justify-center text-[#0D7A48] shadow-xs">
-            <ShieldCheck className="w-5 h-5 stroke-[2.3]" />
+    <div className="bg-white rounded-2xl border border-slate-100 shadow-sm overflow-hidden">
+      {/* Header Strip */}
+      <div className="flex items-center justify-between px-4 pt-4 pb-3 border-b border-slate-100">
+        <div className="flex items-center gap-2.5">
+          <div className="w-8 h-8 rounded-xl bg-[#0D7A48]/10 flex items-center justify-center">
+            <ShieldCheck className="w-4 h-4 text-[#0D7A48]" />
           </div>
           <div>
-            <div className="flex items-center gap-2">
-              <span className="text-[10px] font-black tracking-wider uppercase px-2 py-0.5 rounded bg-emerald-50 text-emerald-800 border border-emerald-100">
-                Ground-Truth Pipeline
-              </span>
-              <span className="text-[11px] text-slate-400 font-bold hidden sm:inline">
-                8 Integrated Field Verification Stages
-              </span>
-            </div>
-            <h2 className="text-base sm:text-lg font-black text-[#0B1E36] tracking-tight leading-tight mt-0.5">
-              Field Officer Operational Workflow
-            </h2>
+            <p className="text-[10px] font-bold tracking-widest uppercase text-slate-400">Ground-Truth Pipeline</p>
+            <h2 className="text-sm font-black text-[#0B1E36] leading-tight">8-Stage Field Workflow</h2>
           </div>
         </div>
-
-        {/* Live Status Indicators & Quick Action */}
-        <div className="flex items-center gap-2 flex-wrap">
+        <div className="flex items-center gap-2">
           <div
-            className={`inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl border text-xs font-bold shadow-2xs ${
+            className={`flex items-center gap-1.5 px-2.5 py-1 rounded-full text-[11px] font-bold border ${
               hasGps
-                ? 'bg-emerald-50 text-emerald-800 border-emerald-200'
-                : 'bg-amber-50 text-amber-800 border-amber-200'
+                ? 'bg-emerald-50 text-emerald-700 border-emerald-200'
+                : 'bg-amber-50 text-amber-700 border-amber-200'
             }`}
           >
-            <Compass className="w-3.5 h-3.5" />
-            <span>{hasGps ? `GPS Active (±${Math.round(officerGps.accuracy)}m)` : 'Locating GPS…'}</span>
+            <Compass className="w-3 h-3" />
+            <span>{hasGps ? `±${Math.round(officerGps.accuracy)}m` : 'No GPS'}</span>
           </div>
-
           <button
             type="button"
             onClick={onOpenReportModal}
-            className="inline-flex items-center gap-1.5 px-3.5 py-1.5 rounded-xl bg-[#0D7A48] hover:bg-[#0A633A] text-white text-xs font-bold shadow-xs transition-all cursor-pointer"
+            className="flex items-center gap-1.5 px-3 py-1.5 rounded-full bg-[#0D7A48] hover:bg-[#0A633A] text-white text-[11px] font-bold shadow-sm shadow-emerald-600/25 transition-all cursor-pointer active:scale-95"
           >
-            <Camera className="w-3.5 h-3.5" />
-            <span>+ Report Ground Hazard</span>
+            <Camera className="w-3 h-3" />
+            <span>Report Hazard</span>
           </button>
         </div>
       </div>
 
-      {/* 8-Stage Interactive Workflow Horizontal Reel (Mobile Snap Carousel / Desktop Grid) */}
-      <div className="mt-3 flex overflow-x-auto gap-2.5 pb-1 sm:grid sm:grid-cols-2 md:grid-cols-4 lg:grid-cols-8 scrollbar-none snap-x snap-mandatory">
-        {steps.map((s) => {
+      {/* Steps Reel */}
+      <div className="flex overflow-x-auto gap-0 scrollbar-none">
+        {steps.map((s, i) => {
           const IconComp = s.icon;
+          const a = accentMap[s.accent];
           return (
-            <div
+            <button
               key={s.id}
+              type="button"
               onClick={s.action}
-              className={`min-w-[136px] max-w-[150px] sm:min-w-0 sm:max-w-none snap-start flex-shrink-0 sm:flex-shrink p-3 rounded-2xl border transition-all cursor-pointer flex flex-col justify-between group relative overflow-hidden active:scale-95 ${
-                s.active
-                  ? 'border-emerald-500 bg-emerald-50/60 shadow-xs ring-1 ring-emerald-500/40'
-                  : 'border-slate-200/90 bg-white hover:border-emerald-300 hover:bg-emerald-50/20'
+              className={`relative flex-none flex flex-col items-center gap-1.5 px-3 pt-3 pb-3.5 min-w-[72px] cursor-pointer transition-all select-none group border-r border-slate-100 last:border-r-0 ${
+                s.active ? 'bg-slate-50' : 'hover:bg-slate-50/70'
               }`}
             >
-              {/* Step indicator */}
-              <div className="flex items-center justify-between gap-1 mb-2">
-                <span className="text-[10px] font-black text-slate-400 group-hover:text-emerald-700 transition-colors">
-                  Step {s.step}
-                </span>
+              {/* Step number */}
+              <span className={`text-[9px] font-black tracking-widest ${s.active ? 'text-slate-700' : 'text-slate-400'} uppercase mb-0.5`}>
+                {String(s.step).padStart(2, '0')}
+              </span>
+
+              {/* Icon bubble */}
+              <div
+                className={`w-9 h-9 rounded-xl flex items-center justify-center transition-transform group-hover:scale-105 ${
+                  s.active ? a.active + ' shadow-md' : a.icon
+                } ${s.isLive ? 'ring-2 ' + a.ring : ''}`}
+              >
+                <IconComp className="w-4 h-4" />
                 {s.isLive && (
-                  <span className="w-2 h-2 rounded-full bg-emerald-500 animate-ping" />
+                  <span className="absolute -top-0.5 -right-0.5 w-2.5 h-2.5 rounded-full bg-emerald-500 border-2 border-white animate-pulse" />
                 )}
               </div>
 
-              {/* Icon & Title */}
-              <div className="space-y-1">
-                <div
-                  className={`w-7 h-7 rounded-lg flex items-center justify-center border ${s.color} transition-transform group-hover:scale-105`}
-                >
-                  <IconComp className="w-3.5 h-3.5" />
-                </div>
-                <h4 className="text-xs font-black text-[#0B1E36] leading-snug line-clamp-1 group-hover:text-emerald-800 transition-colors mt-1.5">
-                  {s.title}
-                </h4>
-                <p className="text-[10px] text-slate-500 font-medium leading-tight line-clamp-1">
-                  {s.description}
-                </p>
-              </div>
+              {/* Label */}
+              <span className={`text-[10px] font-bold leading-tight text-center ${s.active ? 'text-slate-900' : 'text-slate-500'}`}>
+                {s.short}
+              </span>
 
-              {/* Metric & Action Footer */}
-              <div className="mt-2.5 pt-2 border-t border-slate-100 flex items-center justify-between">
-                <span className="text-[10px] font-black text-slate-800 truncate max-w-[85%]">
-                  {s.metric}
-                </span>
-                <ChevronRight className="w-3.5 h-3.5 text-slate-400 group-hover:text-emerald-600 group-hover:translate-x-0.5 transition-all flex-shrink-0" />
-              </div>
-            </div>
+              {/* Metric */}
+              <span className={`text-[10px] font-black ${s.active ? a.text : 'text-slate-400'}`}>
+                {s.metric}
+              </span>
+
+              {/* Active underline */}
+              {s.active && (
+                <span className={`absolute bottom-0 left-1/2 -translate-x-1/2 h-0.5 w-8 rounded-full ${a.dot}`} />
+              )}
+            </button>
           );
         })}
       </div>
     </div>
   );
 }
-

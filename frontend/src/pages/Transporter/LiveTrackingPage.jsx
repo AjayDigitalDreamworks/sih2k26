@@ -20,7 +20,7 @@ import TransporterSidebar from '../../components/transporter/TransporterSidebar'
 import TransporterHeader from '../../components/transporter/TransporterHeader';
 import TrackingMap from '../../components/tracking/TrackingMap';
 import ApiClient from '../../lib/api';
-import { subscribeToVehiclePositions } from '../../lib/socket';
+import { subscribeToVehiclePositions, subscribeToTripUpdates, subscribeToRouteCleared } from '../../lib/socket';
 
 const STATUS_LABEL = {
   moving: 'In Transit',
@@ -83,8 +83,18 @@ export default function LiveTrackingPage() {
     const unsub = subscribeToVehiclePositions((p) => {
       if (p && p.lat && p.lng) setLivePos((prev) => ({ ...prev, [p.id || p.vehicleId]: p }));
     });
-    return () => unsub();
-  }, []);
+    const unsubTrip = subscribeToTripUpdates(() => {
+      load();
+    });
+    const unsubClear = subscribeToRouteCleared(() => {
+      load();
+    });
+    return () => {
+      unsub();
+      unsubTrip();
+      unsubClear();
+    };
+  }, [load]);
 
   const stats = useMemo(() => {
     const total = vehicles.length;

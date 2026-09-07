@@ -242,19 +242,18 @@ export default function FieldOfficerApp() {
                 </span>
               </div>
               <p className="text-[11px] text-slate-300 truncate">
-                {user?.name || 'Field Officer'} • {user?.agency || 'PWD Safety Div.'}
+                {user?.name || 'Field Officer'} • {user?.agency || 'State Disaster Response & GIS'}
               </p>
             </div>
           </div>
 
           {/* Right Status Controls */}
           <div className="flex items-center gap-2">
-            {/* GPS Accuracy Pill (Tap to Refix) */}
             <button
               type="button"
               onClick={forceGpsFix}
               disabled={isLocating}
-              title="Tap to acquire instant GPS fix"
+              title="Tap to reacquire GPS fix"
               className={`flex items-center gap-1 px-2.5 py-1.5 rounded-xl text-[11px] font-bold border transition-all active:scale-95 cursor-pointer ${
                 officerGps
                   ? 'bg-emerald-950/70 border-emerald-700/80 text-emerald-300'
@@ -264,14 +263,12 @@ export default function FieldOfficerApp() {
               <Satellite className={`w-3.5 h-3.5 ${isLocating ? 'animate-spin text-emerald-400' : 'text-emerald-400'}`} />
               <span>{officerGps ? `±${Math.round(officerGps.accuracy)}m` : 'GPS…'}</span>
             </button>
-
-            {/* Quick Refresh */}
             <button
               type="button"
               onClick={loadData}
               disabled={isLoading}
               className="p-2 rounded-xl bg-slate-800/80 hover:bg-slate-700 text-slate-300 transition-colors cursor-pointer active:scale-95"
-              title="Refresh Live Data"
+              title="Refresh"
             >
               <RefreshCw className={`w-3.5 h-3.5 ${isLoading ? 'animate-spin' : ''}`} />
             </button>
@@ -279,107 +276,107 @@ export default function FieldOfficerApp() {
         </div>
       </header>
 
-      {/* Offline sync banner if offline or pending */}
       <OfflineSyncBanner />
 
-      {/* ── Main Mobile Content ── */}
+      {/* ── Main Content ── */}
       <main className="max-w-2xl w-full mx-auto px-3.5 sm:px-4 py-3.5 space-y-3.5 flex-1">
-        {/* End-to-End Field Officer Operational Lifecycle Carousel */}
-        <section>
-          <FieldOfficerWorkflowBar
-            kpis={kpis}
-            officerGps={officerGps}
-            navigatingTask={navigatingTask}
-            activeTab={activeTab}
-            onSelectTab={(tab) => setActiveTab(tab)}
-            onOpenReportModal={() => setIsNewHazardModalOpen(true)}
-          />
-        </section>
 
-        {/* Mobile Quick KPI Strip */}
-        <section className="grid grid-cols-2 gap-2.5 sm:grid-cols-4">
-          <div
-            onClick={() => {
-              setActiveTab('tasks');
-              setStatusFilter('ALL');
-            }}
-            className="bg-white rounded-2xl p-3 border border-slate-200/90 shadow-2xs cursor-pointer active:scale-95 transition-transform"
-          >
-            <div className="flex items-center justify-between text-slate-400 mb-0.5">
-              <span className="text-[10px] font-bold uppercase tracking-wider">Assigned Tasks</span>
-              <ListTodo className="w-3.5 h-3.5 text-blue-600" />
-            </div>
-            <div className="text-xl font-black text-slate-900">{kpis.totalAssigned || 0}</div>
-            <div className="text-[10px] text-slate-500 font-medium">{kpis.activeTasks || 0} active now</div>
-          </div>
+        {/* Workflow Stepper */}
+        <FieldOfficerWorkflowBar
+          kpis={kpis}
+          officerGps={officerGps}
+          navigatingTask={navigatingTask}
+          activeTab={activeTab}
+          onSelectTab={(tab) => setActiveTab(tab)}
+          onOpenReportModal={() => setIsNewHazardModalOpen(true)}
+        />
 
-          <div
-            onClick={() => {
-              setActiveTab('tasks');
-              setStatusFilter('ACTIVE');
-            }}
-            className="bg-white rounded-2xl p-3 border border-slate-200/90 shadow-2xs cursor-pointer active:scale-95 transition-transform"
-          >
-            <div className="flex items-center justify-between text-slate-400 mb-0.5">
-              <span className="text-[10px] font-bold uppercase tracking-wider">En Route / Active</span>
-              <Clock className="w-3.5 h-3.5 text-indigo-600" />
-            </div>
-            <div className="text-xl font-black text-indigo-700">{kpis.activeTasks || 0}</div>
-            <div className="text-[10px] text-indigo-600 font-medium">In patrol progress</div>
-          </div>
+        {/* KPI Strip */}
+        <div className="grid grid-cols-2 gap-2.5 sm:grid-cols-4">
+          {[
+            {
+              label: 'Assigned Tasks',
+              value: kpis.totalAssigned || 0,
+              sub: `${kpis.activeTasks || 0} active now`,
+              icon: ListTodo,
+              color: 'text-blue-600',
+              bg: 'bg-blue-50',
+              border: 'border-blue-100',
+              onClick: () => { setActiveTab('tasks'); setStatusFilter('ALL'); },
+            },
+            {
+              label: 'En Route / Active',
+              value: kpis.activeTasks || 0,
+              sub: 'In patrol progress',
+              icon: Clock,
+              color: 'text-indigo-600',
+              bg: 'bg-indigo-50',
+              border: 'border-indigo-100',
+              onClick: () => { setActiveTab('tasks'); setStatusFilter('ACTIVE'); },
+            },
+            {
+              label: 'Verified Today',
+              value: kpis.verifiedToday || 0,
+              sub: 'Ground-truth logged',
+              icon: CheckCircle2,
+              color: 'text-emerald-600',
+              bg: 'bg-emerald-50',
+              border: 'border-emerald-100',
+              onClick: () => { setActiveTab('tasks'); setStatusFilter('VERIFIED'); },
+            },
+            {
+              label: 'District Alerts',
+              value: kpis.districtActiveAlerts || 0,
+              sub: 'Live sensor / GIS',
+              icon: AlertTriangle,
+              color: 'text-amber-600',
+              bg: 'bg-amber-50',
+              border: 'border-amber-100',
+              onClick: () => setActiveTab('map'),
+            },
+          ].map((kpi) => (
+            <button
+              key={kpi.label}
+              type="button"
+              onClick={kpi.onClick}
+              className="bg-white rounded-2xl p-3.5 border border-slate-100 shadow-sm hover:shadow-md cursor-pointer active:scale-95 transition-all text-left group"
+            >
+              <div className="flex items-center justify-between mb-2">
+                <span className="text-[10px] font-bold uppercase tracking-wider text-slate-400 leading-tight">{kpi.label}</span>
+                <div className={`w-7 h-7 rounded-xl ${kpi.bg} ${kpi.border} border flex items-center justify-center group-hover:scale-105 transition-transform`}>
+                  <kpi.icon className={`w-3.5 h-3.5 ${kpi.color}`} />
+                </div>
+              </div>
+              <div className={`text-2xl font-black ${kpi.color} leading-none`}>{kpi.value}</div>
+              <div className="text-[10px] text-slate-400 font-medium mt-1">{kpi.sub}</div>
+            </button>
+          ))}
+        </div>
 
-          <div
-            onClick={() => {
-              setActiveTab('tasks');
-              setStatusFilter('VERIFIED');
-            }}
-            className="bg-white rounded-2xl p-3 border border-slate-200/90 shadow-2xs cursor-pointer active:scale-95 transition-transform"
-          >
-            <div className="flex items-center justify-between text-slate-400 mb-0.5">
-              <span className="text-[10px] font-bold uppercase tracking-wider">Verified Today</span>
-              <CheckCircle2 className="w-3.5 h-3.5 text-emerald-600" />
-            </div>
-            <div className="text-xl font-black text-emerald-700">{kpis.verifiedToday || 0}</div>
-            <div className="text-[10px] text-emerald-600 font-medium">Ground-truth recorded</div>
-          </div>
-
-          <div
-            onClick={() => setActiveTab('map')}
-            className="bg-white rounded-2xl p-3 border border-slate-200/90 shadow-2xs cursor-pointer active:scale-95 transition-transform"
-          >
-            <div className="flex items-center justify-between text-slate-400 mb-0.5">
-              <span className="text-[10px] font-bold uppercase tracking-wider">District Alerts</span>
-              <AlertTriangle className="w-3.5 h-3.5 text-amber-600" />
-            </div>
-            <div className="text-xl font-black text-amber-700">{kpis.districtActiveAlerts || 0}</div>
-            <div className="text-[10px] text-amber-600 font-medium">Live sensor / GIS</div>
-          </div>
-        </section>
-
-        {/* ── Tab 1: Tasks View ── */}
+        {/* ── Tab 1: Tasks ── */}
         {activeTab === 'tasks' && (
           <div className="space-y-3">
-            {/* Filter Pills (Horizontal Scroll) */}
-            <div className="flex items-center gap-1.5 overflow-x-auto no-scrollbar py-0.5">
+            {/* Filter Pills */}
+            <div className="flex items-center gap-2 overflow-x-auto no-scrollbar py-0.5">
               {[
                 { id: 'ALL', label: 'All Tasks', count: tasks.length },
                 { id: 'URGENT', label: 'Urgent', count: tasks.filter((t) => t.priority === 'CRITICAL' || t.priority === 'HIGH').length },
-                { id: 'ACTIVE', label: 'Active / En-Route', count: tasks.filter((t) => ['ACCEPTED', 'EN_ROUTE', 'ARRIVED'].includes(t.status)).length },
+                { id: 'ACTIVE', label: 'Active', count: tasks.filter((t) => ['ACCEPTED', 'EN_ROUTE', 'ARRIVED'].includes(t.status)).length },
                 { id: 'VERIFIED', label: 'Verified', count: tasks.filter((t) => t.status === 'VERIFIED').length },
               ].map((f) => (
                 <button
                   key={f.id}
                   onClick={() => setStatusFilter(f.id)}
-                  className={`px-3 py-1.5 rounded-xl text-xs font-bold whitespace-nowrap cursor-pointer transition-all active:scale-95 flex items-center gap-1.5 ${
+                  className={`flex-none flex items-center gap-1.5 px-3.5 py-1.5 rounded-full text-xs font-bold whitespace-nowrap cursor-pointer transition-all active:scale-95 border ${
                     statusFilter === f.id
-                      ? 'bg-slate-900 text-white shadow-xs'
-                      : 'bg-white text-slate-600 hover:bg-slate-100 border border-slate-200'
+                      ? 'bg-[#0B1E36] text-white border-[#0B1E36] shadow-sm'
+                      : 'bg-white text-slate-500 border-slate-200 hover:border-slate-300 hover:text-slate-700'
                   }`}
                 >
                   <span>{f.label}</span>
                   <span
-                    className={`px-1.5 py-0.2 rounded-full text-[10px] ${
-                      statusFilter === f.id ? 'bg-emerald-500 text-slate-950 font-black' : 'bg-slate-100 text-slate-500'
+                    className={`px-1.5 py-0.5 rounded-full text-[9px] font-black leading-none ${
+                      statusFilter === f.id ? 'bg-white/20 text-white' : 'bg-slate-100 text-slate-500'
                     }`}
                   >
                     {f.count}
@@ -388,23 +385,25 @@ export default function FieldOfficerApp() {
               ))}
             </div>
 
-            {/* Task Cards Stack */}
+            {/* Task Cards */}
             {filteredTasks.length === 0 ? (
-              <div className="bg-white rounded-3xl border border-slate-200/90 p-8 text-center shadow-xs">
-                <CheckCircle2 className="w-10 h-10 text-emerald-500 mx-auto mb-2.5" />
-                <h3 className="text-sm font-bold text-slate-800">No tasks in this category</h3>
-                <p className="text-xs text-slate-500 mt-1 max-w-xs mx-auto">
-                  All assigned verification tasks have been inspected, or no incidents match the current filter.
+              <div className="bg-white rounded-2xl border border-slate-100 p-10 text-center shadow-sm">
+                <div className="w-14 h-14 rounded-2xl bg-emerald-50 border border-emerald-100 flex items-center justify-center mx-auto mb-3">
+                  <CheckCircle2 className="w-7 h-7 text-emerald-500" />
+                </div>
+                <h3 className="text-sm font-bold text-slate-800">No tasks in this filter</h3>
+                <p className="text-xs text-slate-400 mt-1 max-w-xs mx-auto">
+                  All assigned verification tasks have been handled, or no incidents match the selected filter.
                 </p>
                 <button
                   onClick={() => setIsNewHazardModalOpen(true)}
-                  className="mt-3.5 px-4 py-2 bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-bold rounded-xl shadow-xs cursor-pointer active:scale-95 transition-transform"
+                  className="mt-4 px-4 py-2 bg-[#0D7A48] hover:bg-[#0A633A] text-white text-xs font-bold rounded-xl shadow-sm cursor-pointer active:scale-95 transition-transform"
                 >
-                  Report an Incident Now
+                  Report an Incident
                 </button>
               </div>
             ) : (
-              <div className="space-y-3">
+              <div className="space-y-2.5">
                 {filteredTasks.map((t) => (
                   <TaskCard
                     key={t.id}
@@ -420,9 +419,9 @@ export default function FieldOfficerApp() {
           </div>
         )}
 
-        {/* ── Tab 2: GIS Live Map ── */}
+        {/* ── Tab 2: GIS Map ── */}
         {activeTab === 'map' && (
-          <div className="h-[calc(100vh-230px)] min-h-[460px] w-full rounded-2xl overflow-hidden shadow-xs border border-slate-200 relative">
+          <div className="h-[calc(100vh-230px)] min-h-[460px] w-full rounded-2xl overflow-hidden shadow-sm border border-slate-200 relative">
             <FieldGisMap
               officerGps={officerGps}
               tasks={tasks}
@@ -435,44 +434,48 @@ export default function FieldOfficerApp() {
           </div>
         )}
 
-        {/* ── Tab 3: Reports & Sync Queue ── */}
+        {/* ── Tab 3: Reports ── */}
         {activeTab === 'history' && (
           <div className="space-y-3">
-            <div className="bg-white rounded-2xl border border-slate-200/90 p-4 shadow-xs">
-              <div className="flex items-center justify-between mb-3">
+            <div className="bg-white rounded-2xl border border-slate-100 p-4 shadow-sm">
+              <div className="flex items-center justify-between mb-4">
                 <div>
-                  <h3 className="text-sm font-black text-slate-900">Ground-Truth Incident Reports</h3>
-                  <p className="text-[11px] text-slate-500">Hazards logged during your patrol</p>
+                  <h3 className="text-sm font-black text-slate-900">Ground-Truth Reports</h3>
+                  <p className="text-[11px] text-slate-400 mt-0.5">Hazards logged during your patrol session</p>
                 </div>
                 <button
                   onClick={() => setIsNewHazardModalOpen(true)}
-                  className="px-3 py-1.5 bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-bold rounded-xl shadow-xs cursor-pointer active:scale-95 transition-transform"
+                  className="flex items-center gap-1.5 px-3.5 py-1.5 bg-[#0D7A48] hover:bg-[#0A633A] text-white text-xs font-bold rounded-xl shadow-sm cursor-pointer active:scale-95 transition-transform"
                 >
-                  + Report
+                  <Plus className="w-3.5 h-3.5" />
+                  Report
                 </button>
               </div>
 
               {reports.length === 0 ? (
-                <div className="text-center py-8 text-slate-400 text-xs">
-                  <FileCheck2 className="w-8 h-8 text-slate-300 mx-auto mb-2" />
-                  <p>No ground-truth reports submitted yet.</p>
+                <div className="text-center py-10 text-slate-400">
+                  <div className="w-12 h-12 rounded-xl bg-slate-100 flex items-center justify-center mx-auto mb-3">
+                    <FileCheck2 className="w-6 h-6 text-slate-300" />
+                  </div>
+                  <p className="text-xs font-medium">No reports submitted yet</p>
                 </div>
               ) : (
                 <div className="divide-y divide-slate-100">
                   {reports.map((r) => (
-                    <div key={r.id} className="py-2.5 flex items-start justify-between gap-3">
+                    <div key={r.id} className="py-3 flex items-start justify-between gap-3">
                       <div className="min-w-0">
                         <div className="flex items-center gap-1.5 mb-1 flex-wrap">
                           <span className="text-xs font-black text-slate-900">{r.issue_type}</span>
-                          <span className="text-[9px] font-bold px-1.5 py-0.2 rounded bg-slate-100 text-slate-700">
+                          <span className="text-[9px] font-bold px-1.5 py-0.5 rounded-full bg-slate-100 text-slate-600">
                             {r.road_status}
                           </span>
-                          <span className="text-[9px] font-bold px-1.5 py-0.2 rounded bg-emerald-50 text-emerald-700 border border-emerald-100">
+                          <span className="text-[9px] font-bold px-1.5 py-0.5 rounded-full bg-emerald-50 text-emerald-700 border border-emerald-100">
                             {r.status}
                           </span>
                         </div>
-                        <p className="text-xs text-slate-600 line-clamp-2">{r.description}</p>
+                        <p className="text-xs text-slate-500 line-clamp-2">{r.description}</p>
                         <div className="text-[10px] text-slate-400 mt-1 flex items-center gap-1.5">
+                          <Clock className="w-2.5 h-2.5" />
                           <span>{new Date(r.createdAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}</span>
                           <span>•</span>
                           <span className="font-mono">{r.latitude?.toFixed(4)}, {r.longitude?.toFixed(4)}</span>
@@ -482,7 +485,7 @@ export default function FieldOfficerApp() {
                         <img
                           src={r.media[0].file_path}
                           alt="Hazard"
-                          className="w-12 h-12 object-cover rounded-xl border border-slate-200 flex-shrink-0"
+                          className="w-12 h-12 object-cover rounded-xl border border-slate-100 flex-shrink-0"
                         />
                       )}
                     </div>
@@ -493,94 +496,106 @@ export default function FieldOfficerApp() {
           </div>
         )}
 
-        {/* ── Tab 4: Officer Profile & Hardware Diagnostics ── */}
+        {/* ── Tab 4: Profile ── */}
         {activeTab === 'profile' && (
           <div className="space-y-3">
-            {/* Officer Credentials Card */}
-            <div className="bg-white rounded-2xl border border-slate-200/90 p-4 shadow-xs space-y-3.5">
-              <div className="flex items-center gap-3 pb-3 border-b border-slate-100">
-                <div className="w-12 h-12 rounded-2xl bg-emerald-600 text-white flex items-center justify-center font-black text-base shadow-md shadow-emerald-600/30 flex-shrink-0">
-                  {user?.name ? user.name.slice(0, 2).toUpperCase() : 'FO'}
-                </div>
-                <div className="min-w-0">
-                  <h3 className="text-sm font-black text-slate-900 truncate">{user?.name || 'Field Officer'}</h3>
-                  <p className="text-xs text-slate-500 truncate">{user?.email || 'officer1@raahi.gov.in'}</p>
-                  <span className="inline-block mt-1 px-2 py-0.5 rounded-md bg-emerald-50 text-emerald-800 text-[10px] font-bold uppercase tracking-wider border border-emerald-200">
-                    Official Field Agent • {user?.districtId || 'kamrup'}
-                  </span>
+            {/* Officer Credentials */}
+            <div className="bg-white rounded-2xl border border-slate-100 shadow-sm overflow-hidden">
+              {/* Profile Header Band */}
+              <div className="bg-gradient-to-r from-[#0B1E36] to-emerald-950 px-5 pt-5 pb-8 relative">
+                <div className="flex items-center gap-3">
+                  <div className="w-13 h-13 rounded-2xl bg-emerald-500 text-white flex items-center justify-center font-black text-base shadow-lg shadow-emerald-700/40 flex-shrink-0 border-2 border-white/20">
+                    {user?.name ? user.name.slice(0, 2).toUpperCase() : 'FO'}
+                  </div>
+                  <div>
+                    <h3 className="text-base font-black text-white">{user?.name || 'Field Officer'}</h3>
+                    <p className="text-xs text-emerald-200">{user?.email || 'officer1@raahi.gov.in'}</p>
+                    <span className="inline-block mt-1 px-2 py-0.5 rounded-full bg-emerald-500/20 text-emerald-300 text-[10px] font-bold border border-emerald-500/30 uppercase tracking-wider">
+                      PostGIS Verifier · {user?.districtId || 'kamrup'}
+                    </span>
+                  </div>
                 </div>
               </div>
 
-              <div className="space-y-2 text-xs">
-                <div className="flex justify-between py-1 border-b border-slate-50">
-                  <span className="text-slate-500 font-medium">Assigned Agency:</span>
-                  <span className="font-bold text-slate-800 text-right">{user?.agency || 'PWD Road Safety Division'}</span>
-                </div>
-                <div className="flex justify-between py-1 border-b border-slate-50">
-                  <span className="text-slate-500 font-medium">Jurisdiction District:</span>
-                  <span className="font-bold text-slate-800 capitalize">{user?.districtId || 'kamrup'}</span>
-                </div>
-                <div className="flex justify-between py-1 border-b border-slate-50">
-                  <span className="text-slate-500 font-medium">Contact Phone:</span>
-                  <span className="font-bold text-slate-800">{user?.phone || '+91 90000 00007'}</span>
-                </div>
-                <div className="flex justify-between py-1">
-                  <span className="text-slate-500 font-medium">Role Authorization:</span>
-                  <span className="font-bold text-emerald-700">POSTGIS VERIFIER</span>
+              {/* Details */}
+              <div className="px-5 -mt-4 pb-5">
+                <div className="bg-white rounded-xl border border-slate-100 shadow-sm divide-y divide-slate-100">
+                  {[
+                    { label: 'Assigned Agency', value: user?.agency || 'PWD Road Safety Division' },
+                    { label: 'Jurisdiction District', value: user?.districtId || 'Kamrup', className: 'capitalize' },
+                    { label: 'Contact Phone', value: user?.phone || '+91 90000 00007' },
+                    { label: 'Role Authorization', value: 'PostGIS Field Verifier', valueClass: 'text-emerald-700' },
+                  ].map((row) => (
+                    <div key={row.label} className="flex items-center justify-between px-4 py-3 text-xs">
+                      <span className="text-slate-400 font-medium">{row.label}</span>
+                      <span className={`font-bold text-slate-800 text-right ${row.valueClass || ''} ${row.className || ''}`}>
+                        {row.value}
+                      </span>
+                    </div>
+                  ))}
                 </div>
               </div>
             </div>
 
-            {/* GPS Telemetry & Sensor Diagnostics */}
-            <div className="bg-white rounded-2xl border border-slate-200/90 p-4 shadow-xs">
+            {/* GPS Telemetry */}
+            <div className="bg-white rounded-2xl border border-slate-100 p-4 shadow-sm">
               <div className="flex items-center justify-between mb-3">
                 <div className="flex items-center gap-2">
-                  <Satellite className="w-4 h-4 text-emerald-600" />
-                  <h4 className="text-xs font-black uppercase tracking-wider text-slate-800">
-                    Live GPS Telemetry
-                  </h4>
+                  <div className="w-7 h-7 rounded-lg bg-emerald-50 border border-emerald-100 flex items-center justify-center">
+                    <Satellite className="w-3.5 h-3.5 text-emerald-600" />
+                  </div>
+                  <h4 className="text-xs font-black text-slate-800 uppercase tracking-wider">Live GPS Telemetry</h4>
                 </div>
                 <button
                   type="button"
                   onClick={forceGpsFix}
                   disabled={isLocating}
-                  className="px-2.5 py-1 bg-emerald-50 hover:bg-emerald-100 text-emerald-700 rounded-lg text-[11px] font-bold transition-colors cursor-pointer flex items-center gap-1 active:scale-95"
+                  className="flex items-center gap-1 px-2.5 py-1 bg-emerald-50 hover:bg-emerald-100 text-emerald-700 rounded-lg text-[11px] font-bold transition-colors cursor-pointer active:scale-95"
                 >
                   <RefreshCw className={`w-3 h-3 ${isLocating ? 'animate-spin' : ''}`} />
-                  <span>{isLocating ? 'Acquiring…' : 'Refix GPS'}</span>
+                  <span>{isLocating ? 'Acquiring…' : 'Refix'}</span>
                 </button>
               </div>
 
-              <div className="grid grid-cols-2 gap-2 text-xs">
-                <div className="bg-slate-50 p-2.5 rounded-xl border border-slate-100">
-                  <span className="text-[10px] font-bold text-slate-400 block uppercase">Latitude</span>
-                  <span className="font-mono font-bold text-slate-800">{officerGps?.latitude ? officerGps.latitude.toFixed(6) : '—'}</span>
-                </div>
-                <div className="bg-slate-50 p-2.5 rounded-xl border border-slate-100">
-                  <span className="text-[10px] font-bold text-slate-400 block uppercase">Longitude</span>
-                  <span className="font-mono font-bold text-slate-800">{officerGps?.longitude ? officerGps.longitude.toFixed(6) : '—'}</span>
-                </div>
-                <div className="bg-slate-50 p-2.5 rounded-xl border border-slate-100">
-                  <span className="text-[10px] font-bold text-slate-400 block uppercase">Horizontal Accuracy</span>
-                  <span className={`font-mono font-bold ${officerGps?.accuracy && officerGps.accuracy < 15 ? 'text-emerald-700' : 'text-amber-700'}`}>
-                    {officerGps?.accuracy ? `±${Math.round(officerGps.accuracy)} m` : 'Acquiring…'}
-                  </span>
-                </div>
-                <div className="bg-slate-50 p-2.5 rounded-xl border border-slate-100">
-                  <span className="text-[10px] font-bold text-slate-400 block uppercase">Sensor State</span>
-                  <span className="font-bold text-emerald-700 flex items-center gap-1">
-                    <span className="w-2 h-2 rounded-full bg-emerald-500 animate-ping" />
-                    Continuous Lock
-                  </span>
-                </div>
+              <div className="grid grid-cols-2 gap-2">
+                {[
+                  { label: 'Latitude', value: officerGps?.latitude ? officerGps.latitude.toFixed(6) : '—', mono: true },
+                  { label: 'Longitude', value: officerGps?.longitude ? officerGps.longitude.toFixed(6) : '—', mono: true },
+                  {
+                    label: 'Accuracy',
+                    value: officerGps?.accuracy ? `±${Math.round(officerGps.accuracy)} m` : 'Acquiring…',
+                    mono: true,
+                    colorClass: officerGps?.accuracy && officerGps.accuracy < 15 ? 'text-emerald-700' : 'text-amber-700',
+                  },
+                  {
+                    label: 'Sensor State',
+                    node: (
+                      <span className="flex items-center gap-1 font-bold text-xs text-emerald-700">
+                        <span className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse" />
+                        Continuous Lock
+                      </span>
+                    ),
+                  },
+                ].map((stat) => (
+                  <div key={stat.label} className="bg-slate-50 border border-slate-100 rounded-xl p-3">
+                    <span className="text-[9px] font-bold text-slate-400 block uppercase tracking-wider mb-1">{stat.label}</span>
+                    {stat.node ? (
+                      stat.node
+                    ) : (
+                      <span className={`text-xs font-bold ${stat.colorClass || 'text-slate-800'} ${stat.mono ? 'font-mono' : ''}`}>
+                        {stat.value}
+                      </span>
+                    )}
+                  </div>
+                ))}
               </div>
             </div>
 
-            {/* Sign Out Action Button */}
+            {/* Sign Out */}
             <button
               type="button"
               onClick={handleLogout}
-              className="w-full py-3 px-4 rounded-xl bg-rose-50 hover:bg-rose-100 border border-rose-200 text-rose-700 font-bold text-xs shadow-xs transition-colors cursor-pointer flex items-center justify-center gap-2 active:scale-98"
+              className="w-full py-3.5 px-4 rounded-2xl bg-white hover:bg-rose-50 border border-slate-200 hover:border-rose-200 text-rose-600 font-bold text-sm shadow-sm transition-all cursor-pointer flex items-center justify-center gap-2 active:scale-98"
             >
               <LogOut className="w-4 h-4" />
               <span>Sign Out of Field Officer App</span>
@@ -589,118 +604,114 @@ export default function FieldOfficerApp() {
         )}
       </main>
 
-      {/* ── Native-Style Fixed Bottom Navigation Bar ── */}
-      <nav className="fixed bottom-0 left-0 right-0 z-40 bg-white/95 backdrop-blur-md border-t border-slate-200/90 shadow-2xl">
-        <div className="max-w-2xl mx-auto flex items-center justify-around px-2 py-1.5">
-          {/* Tab 1: Tasks */}
+      {/* ── Fixed Bottom Navigation Bar ── */}
+      <nav className="fixed bottom-0 left-0 right-0 z-40 bg-white/95 backdrop-blur-xl border-t border-slate-200/80 shadow-2xl">
+        <div className="max-w-2xl mx-auto flex items-center justify-around px-2 py-2">
+
+          {/* Tasks */}
           <button
             type="button"
             onClick={() => setActiveTab('tasks')}
-            className={`flex-1 py-1.5 flex flex-col items-center gap-0.5 transition-colors cursor-pointer ${
-              activeTab === 'tasks' ? 'text-emerald-700 font-black' : 'text-slate-400 hover:text-slate-600 font-medium'
+            className={`flex-1 py-1.5 flex flex-col items-center gap-0.5 cursor-pointer transition-colors ${
+              activeTab === 'tasks' ? 'text-[#0D7A48]' : 'text-slate-400 hover:text-slate-600'
             }`}
           >
             <div className="relative">
-              <ListTodo className={`w-5 h-5 ${activeTab === 'tasks' ? 'text-emerald-700' : 'text-slate-400'}`} />
+              <ListTodo className="w-5 h-5" />
               {kpis.totalAssigned > 0 && (
-                <span className="absolute -top-1.5 -right-2.5 px-1.5 py-0.2 rounded-full text-[9px] font-black bg-blue-600 text-white shadow-xs">
+                <span className="absolute -top-1.5 -right-2 px-1 py-px rounded-full text-[8px] font-black bg-blue-600 text-white leading-tight min-w-[14px] text-center">
                   {kpis.totalAssigned}
                 </span>
               )}
             </div>
-            <span className="text-[10px] leading-tight">Tasks</span>
-            {activeTab === 'tasks' && <span className="w-5 h-0.5 rounded-full bg-emerald-600 -mb-0.5" />}
+            <span className="text-[10px] font-bold">Tasks</span>
+            {activeTab === 'tasks' && <span className="w-4 h-0.5 rounded-full bg-[#0D7A48]" />}
           </button>
 
-          {/* Tab 2: GIS Map */}
+          {/* GIS Map */}
           <button
             type="button"
             onClick={() => setActiveTab('map')}
-            className={`flex-1 py-1.5 flex flex-col items-center gap-0.5 transition-colors cursor-pointer ${
-              activeTab === 'map' ? 'text-emerald-700 font-black' : 'text-slate-400 hover:text-slate-600 font-medium'
+            className={`flex-1 py-1.5 flex flex-col items-center gap-0.5 cursor-pointer transition-colors ${
+              activeTab === 'map' ? 'text-[#0D7A48]' : 'text-slate-400 hover:text-slate-600'
             }`}
           >
             <div className="relative">
-              <Layers className={`w-5 h-5 ${activeTab === 'map' ? 'text-emerald-700' : 'text-slate-400'}`} />
+              <Layers className="w-5 h-5" />
               {navigatingTask && (
-                <span className="absolute -top-1 -right-1 w-2 h-2 rounded-full bg-emerald-500 animate-ping" />
+                <span className="absolute -top-1 -right-1 w-2.5 h-2.5 rounded-full bg-emerald-500 border-2 border-white animate-pulse" />
               )}
             </div>
-            <span className="text-[10px] leading-tight">GIS Map</span>
-            {activeTab === 'map' && <span className="w-5 h-0.5 rounded-full bg-emerald-600 -mb-0.5" />}
+            <span className="text-[10px] font-bold">GIS Map</span>
+            {activeTab === 'map' && <span className="w-4 h-0.5 rounded-full bg-[#0D7A48]" />}
           </button>
 
-          {/* Center Action: Floating Quick Report FAB */}
-          <div className="flex-1 flex justify-center -mt-6">
+          {/* Center FAB */}
+          <div className="flex-1 flex justify-center -mt-5">
             <button
               type="button"
               onClick={() => setIsNewHazardModalOpen(true)}
-              className="w-13 h-13 rounded-full bg-gradient-to-tr from-emerald-700 to-emerald-500 hover:from-emerald-600 hover:to-emerald-400 text-white shadow-xl shadow-emerald-700/40 flex items-center justify-center transition-transform active:scale-90 cursor-pointer border-2 border-white"
+              className="w-14 h-14 rounded-2xl bg-[#0D7A48] hover:bg-[#0A633A] text-white shadow-xl shadow-emerald-700/40 flex items-center justify-center transition-all active:scale-90 cursor-pointer border-[3px] border-white"
               title="Report New Hazard"
             >
-              <Plus className="w-6 h-6 stroke-[2.6]" />
+              <Plus className="w-6 h-6 stroke-[2.5]" />
             </button>
           </div>
 
-          {/* Tab 3: Reports / History */}
+          {/* Reports */}
           <button
             type="button"
             onClick={() => setActiveTab('history')}
-            className={`flex-1 py-1.5 flex flex-col items-center gap-0.5 transition-colors cursor-pointer ${
-              activeTab === 'history' ? 'text-emerald-700 font-black' : 'text-slate-400 hover:text-slate-600 font-medium'
+            className={`flex-1 py-1.5 flex flex-col items-center gap-0.5 cursor-pointer transition-colors ${
+              activeTab === 'history' ? 'text-[#0D7A48]' : 'text-slate-400 hover:text-slate-600'
             }`}
           >
             <div className="relative">
-              <FileCheck2 className={`w-5 h-5 ${activeTab === 'history' ? 'text-emerald-700' : 'text-slate-400'}`} />
+              <FileCheck2 className="w-5 h-5" />
               {reports.length > 0 && (
-                <span className="absolute -top-1.5 -right-2.5 px-1.5 py-0.2 rounded-full text-[9px] font-black bg-purple-600 text-white shadow-xs">
+                <span className="absolute -top-1.5 -right-2 px-1 py-px rounded-full text-[8px] font-black bg-purple-600 text-white leading-tight min-w-[14px] text-center">
                   {reports.length}
                 </span>
               )}
             </div>
-            <span className="text-[10px] leading-tight">Reports</span>
-            {activeTab === 'history' && <span className="w-5 h-0.5 rounded-full bg-emerald-600 -mb-0.5" />}
+            <span className="text-[10px] font-bold">Reports</span>
+            {activeTab === 'history' && <span className="w-4 h-0.5 rounded-full bg-[#0D7A48]" />}
           </button>
 
-          {/* Tab 4: Profile */}
+          {/* Profile */}
           <button
             type="button"
             onClick={() => setActiveTab('profile')}
-            className={`flex-1 py-1.5 flex flex-col items-center gap-0.5 transition-colors cursor-pointer ${
-              activeTab === 'profile' ? 'text-emerald-700 font-black' : 'text-slate-400 hover:text-slate-600 font-medium'
+            className={`flex-1 py-1.5 flex flex-col items-center gap-0.5 cursor-pointer transition-colors ${
+              activeTab === 'profile' ? 'text-[#0D7A48]' : 'text-slate-400 hover:text-slate-600'
             }`}
           >
-            <User className={`w-5 h-5 ${activeTab === 'profile' ? 'text-emerald-700' : 'text-slate-400'}`} />
-            <span className="text-[10px] leading-tight">Profile</span>
-            {activeTab === 'profile' && <span className="w-5 h-0.5 rounded-full bg-emerald-600 -mb-0.5" />}
+            <User className="w-5 h-5" />
+            <span className="text-[10px] font-bold">Profile</span>
+            {activeTab === 'profile' && <span className="w-4 h-0.5 rounded-full bg-[#0D7A48]" />}
           </button>
         </div>
       </nav>
 
-      {/* ── Verification Modal ── */}
+      {/* Verification Modal */}
       {selectedTaskForVerify && (
         <VerificationModal
           task={selectedTaskForVerify}
           isOpen={Boolean(selectedTaskForVerify)}
           onClose={() => setSelectedTaskForVerify(null)}
-          onComplete={() => {
-            loadData();
-          }}
+          onComplete={() => { loadData(); }}
         />
       )}
 
-      {/* ── New Hazard Report Modal ── */}
+      {/* New Hazard Report Modal */}
       {isNewHazardModalOpen && (
         <NewHazardReportModal
           isOpen={isNewHazardModalOpen}
           onClose={() => setIsNewHazardModalOpen(false)}
           defaultDistrict={user?.districtId || 'kamrup'}
-          onReportCreated={() => {
-            loadData();
-          }}
+          onReportCreated={() => { loadData(); }}
         />
       )}
     </div>
   );
 }
-

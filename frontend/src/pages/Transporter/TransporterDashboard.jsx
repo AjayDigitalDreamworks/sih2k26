@@ -13,6 +13,7 @@ import TransporterFooter from '../../components/transporter/TransporterFooter';
 import NewConsignmentModal from '../../components/consignments/NewConsignmentModal';
 import DynamicRerouteModal from '../../components/transporter/DynamicRerouteModal';
 import ApiClient from '../../lib/api';
+import { subscribeToTripUpdates, subscribeToRouteCleared } from '../../lib/socket';
 
 export default function TransporterDashboard() {
   const [sidebarOpen, setSidebarOpen] = useState(false);
@@ -35,6 +36,16 @@ export default function TransporterDashboard() {
 
   useEffect(() => {
     loadVehicles();
+    const unsubTrip = subscribeToTripUpdates(() => {
+      loadVehicles();
+    });
+    const unsubClear = subscribeToRouteCleared(() => {
+      loadVehicles();
+    });
+    return () => {
+      unsubTrip();
+      unsubClear();
+    };
   }, []);
 
   return (

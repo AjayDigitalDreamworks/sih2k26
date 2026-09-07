@@ -34,7 +34,7 @@ import DriverLiveMap from '@/components/driver/DriverLiveMap';
 import DriverReportForm from '@/components/driver/DriverReportForm';
 import DriverHistory from '@/components/driver/DriverHistory';
 import ApiClient from '@/lib/api';
-import { subscribeToDynamicReroute } from '@/lib/socket';
+import { subscribeToDynamicReroute, subscribeToRouteCleared } from '@/lib/socket';
 import { toast } from 'sonner';
 
 const TABS = [
@@ -81,12 +81,14 @@ export default function DriverDashboardApp() {
 
   // Live map data: real-time road route with alert-avoidance, or GIS fallback
   const loadRoute = useCallback(async () => {
-    if (!trip?.route_id && !vehicle?.id) {
+    // If trip is completed/canceled or no active trip, clear route immediately
+    if (!trip || trip.status === 'completed' || trip.status === 'canceled' || (!trip?.route_id && !vehicle?.id)) {
       setRouteCoords(null);
+      setReroutedNotice(null);
       return;
     }
     // 1. Try alert-aware live road route first
-    if (vehicle?.id) {
+    if (vehicle?.id && (trip.status === 'in_transit' || trip.status === 'planned')) {
       try {
         const liveRes = await ApiClient.getLiveRoute(vehicle.id);
         const d = liveRes?.data || {};
@@ -96,29 +98,36 @@ export default function DriverDashboardApp() {
             setReroutedNotice(d.rerouteReason || 'Dynamic safe detour active');
           }
           return;
+        } else {
+          setRouteCoords(null);
+          setReroutedNotice(null);
         }
       } catch {
         // Fallback to GIS routes below
       }
     }
-    // 2. Fallback to GIS corridor geometries
-    try {
-      const res = await ApiClient.getGisRoutes();
-      const feats = res?.success ? res.data?.features || [] : [];
-      const feat = feats.find((f) => f.properties?.id === trip?.route_id) ||
-        feats.find(
-          (f) =>
-            (f.properties?.name || '').toLowerCase().includes(
-              String((vehicle?.current_route || '').toLowerCase().split('(')[0].trim() || '').toLowerCase()
-            ) && f.properties?.name
-        );
-      if (feat?.geometry?.coordinates?.length) {
-        setRouteCoords(feat.geometry.coordinates);
+    // 2. Fallback to GIS corridor geometries only if trip is active
+    if (trip?.status === 'in_transit' || trip?.status === 'planned') {
+      try {
+        const res = await ApiClient.getGisRoutes();
+        const feats = res?.success ? res.data?.features || [] : [];
+        const feat = feats.find((f) => f.properties?.id === trip?.route_id) ||
+          feats.find(
+            (f) =>
+              (f.properties?.name || '').toLowerCase().includes(
+                String((vehicle?.current_route || '').toLowerCase().split('(')[0].trim() || '').toLowerCase()
+              ) && f.properties?.name
+          );
+        if (feat?.geometry?.coordinates?.length) {
+          setRouteCoords(feat.geometry.coordinates);
+        }
+      } catch {
+        // GIS unavailable — map will show GPS trail only
       }
-    } catch {
-      // GIS unavailable — map will show GPS trail only
+    } else {
+      setRouteCoords(null);
     }
-  }, [trip?.route_id, vehicle?.id, vehicle?.current_route]);
+  }, [trip, vehicle?.id, vehicle?.current_route]);
 
   const loadTrail = useCallback(async () => {
     if (!vehicle?.id) {
@@ -165,14 +174,30 @@ export default function DriverDashboardApp() {
   }, [t.tripStarted, vehicle?.id, loadLive, loadTrail]);
 
   useEffect(() => {
-    if (trip?.id && vehicle?.id) {
+    if (trip?.id && vehicle?.id && trip.status !== 'completed' && trip.status !== 'canceled') {
       loadRoute();
       loadTrail();
     } else {
       setRouteCoords(null);
       setTrail([]);
+      setReroutedNotice(null);
+      setLive(null);
     }
-  }, [trip?.id, vehicle?.id, loadRoute, loadTrail, t.lastCompleted]);
+  }, [trip?.id, trip?.status, vehicle?.id, loadRoute, loadTrail, t.lastCompleted]);
+
+  // Real-time route clearing listener when trip ends
+  useEffect(() => {
+    const unsub = subscribeToRouteCleared((data) => {
+      if (!data) return;
+      if (data.vehicleId === vehicle?.id || data.tripId === trip?.id) {
+        setRouteCoords(null);
+        setTrail([]);
+        setReroutedNotice(null);
+        setLive(null);
+      }
+    });
+    return () => unsub();
+  }, [vehicle?.id, trip?.id]);
 
   // Real-time dynamic reroute push listener for in-transit hazards
   useEffect(() => {
@@ -247,7 +272,11 @@ export default function DriverDashboardApp() {
     if (!window.confirm('Stop tracking and complete this trip? All telemetry will be finalized.')) return;
     const ok = await t.stopTrip();
     if (ok) {
-      toast.success('Trip completed — tracking stopped');
+      setRouteCoords(null);
+      setTrail([]);
+      setLive(null);
+      setReroutedNotice(null);
+      toast.success('Trip completed — tracking stopped and route cleared');
     }
   };
 

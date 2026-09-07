@@ -7,7 +7,14 @@ import { toast } from 'sonner';
 import { ResilientTileLayer } from '../admin/common/ResilientTileLayer';
 import { RiskHeatLayer } from '../admin/common/RiskHeatLayer';
 import ApiClient from '../../lib/api';
-import { subscribeToVehiclePositions, subscribeToEmergency, subscribeToEmergencyCancelled, subscribeToDynamicReroute } from '../../lib/socket';
+import {
+  subscribeToVehiclePositions,
+  subscribeToEmergency,
+  subscribeToEmergencyCancelled,
+  subscribeToDynamicReroute,
+  subscribeToTripUpdates,
+  subscribeToRouteCleared,
+} from '../../lib/socket';
 import { DISTRICTS } from '../../data/geoMaster';
 import { VehicleMarker } from '../admin/common/VehicleMarker';
 import RainRadarOverlay from '../admin/common/RainRadarOverlay';
@@ -385,6 +392,57 @@ export default function LiveTrackingMap({ embedded = false, selectedId, onSelect
     () => vehicles.filter((v) => v.current_lat != null && v.current_lng != null && (v.current_trip_id || (v.tracking_active && v.current_route))),
     [vehicles]
   );
+
+  // Automatically purge route polylines whenever a vehicle's trip completes or becomes inactive
+  useEffect(() => {
+    const activeVehicleIds = new Set(trackable.map((v) => v.id));
+    setLiveRoutes((prev) => {
+      let changed = false;
+      const next = { ...prev };
+      for (const vid of Object.keys(next)) {
+        if (!activeVehicleIds.has(vid)) {
+          delete next[vid];
+          liveRouteCache.delete(vid);
+          changed = true;
+        }
+      }
+      return changed ? next : prev;
+    });
+  }, [trackable]);
+
+  // Real-time trip completion & route clearing socket subscriptions
+  useEffect(() => {
+    const clearVehicleRoute = (vehicleId) => {
+      if (!vehicleId) return;
+      liveRouteCache.delete(vehicleId);
+      setLiveRoutes((prev) => {
+        if (!prev[vehicleId]) return prev;
+        const next = { ...prev };
+        delete next[vehicleId];
+        return next;
+      });
+    };
+
+    const unsubClear = subscribeToRouteCleared((data) => {
+      if (data?.vehicleId) {
+        clearVehicleRoute(data.vehicleId);
+      }
+    });
+
+    const unsubTrip = subscribeToTripUpdates((data) => {
+      if (!data) return;
+      if (data.status === 'completed' || data.event === 'trip_completed' || data.status === 'canceled') {
+        const vid = data.vehicleId;
+        if (vid) clearVehicleRoute(vid);
+      }
+    });
+
+    return () => {
+      unsubClear();
+      unsubTrip();
+    };
+  }, []);
+
   useEffect(() => {
     if (!trackable.length) return undefined;
     let cancelled = false;
@@ -415,6 +473,17 @@ export default function LiveTrackingMap({ embedded = false, selectedId, onSelect
           };
           liveRouteCache.set(key, { at: Date.now(), data: entry });
           if (!cancelled) setLiveRoutes((p) => ({ ...p, [key]: entry }));
+        } else {
+          // If server reports vehicle has no active route / completed, clear immediately
+          liveRouteCache.delete(key);
+          if (!cancelled) {
+            setLiveRoutes((p) => {
+              if (!p[key]) return p;
+              const n = { ...p };
+              delete n[key];
+              return n;
+            });
+          }
         }
       } catch { /* keep previous */ }
     };
@@ -451,6 +520,14 @@ export default function LiveTrackingMap({ embedded = false, selectedId, onSelect
         };
         liveRouteCache.set(selId, { at: Date.now(), data: entry });
         setLiveRoutes((p) => ({ ...p, [selId]: entry }));
+      } else {
+        liveRouteCache.delete(selId);
+        setLiveRoutes((p) => {
+          if (!p[selId]) return p;
+          const n = { ...p };
+          delete n[selId];
+          return n;
+        });
       }
     }).catch(() => {});
     return () => { alive = false; };

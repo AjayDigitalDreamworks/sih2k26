@@ -1061,17 +1061,30 @@ export class TrackingService {
     } catch {}
     if (vehicle) {
       await vehicle.update({
-        tracking_active: false, current_trip_id: null,
-        live_status: 'OFFLINE', status: 'idle', speed: 0,
+        tracking_active: false,
+        current_trip_id: null,
+        current_route: null,
+        live_status: 'OFFLINE',
+        status: 'idle',
+        speed: 0,
       });
       await redisClient.del(`vehicle:live:${vehicle.id}`);
+      await redisClient.del(`vehicle:history:${vehicle.id}`);
+      await redisClient.del(`vehicle:route:${vehicle.id}`);
+      await redisClient.del(`vehicle:reroute:${vehicle.id}`);
     }
     const io = getSocketServer();
     if (io) {
+      const clearPayload = { vehicleId: trip.vehicle_id, tripId: trip.id, timestamp: new Date().toISOString() };
+      io.emit('route:cleared', clearPayload);
+      io.to('admin:all').emit('route:cleared', clearPayload);
+      if (vehicle?.transporter_id) io.to(`transporter:${vehicle.transporter_id}`).emit('route:cleared', clearPayload);
+      if (trip.driver_id) io.to(`driver:${trip.driver_id}`).emit('route:cleared', clearPayload);
+
       io.emit('vehicle.status.updated', { vehicleId: trip.vehicle_id, event: 'trip_completed', tripId: trip.id, timestamp: new Date().toISOString() });
       io.emit('trip.status.updated', { tripId: trip.id, status: 'completed', vehicleId: trip.vehicle_id, driverId: trip.driver_id, timestamp: new Date().toISOString() });
     }
-    console.log(`[TRACKING] Trip ${trip.id} COMPLETED by ${user.role}:${user.id}`);
+    console.log(`[TRACKING] Trip ${trip.id} COMPLETED by ${user.role}:${user.id} — routes & telemetry cleared`);
     return { ok: true, trip };
   }
 
@@ -1478,7 +1491,7 @@ export class TrackingService {
     const vehicle = await Vehicle.findByPk(vehicleId);
     if (!vehicle) throw new Error('Vehicle not found');
 
-    let trip = await Trip.findOne({
+    const trip = await Trip.findOne({
       where: {
         vehicle_id: vehicle.id,
         status: { [Op.in]: ['planned', 'in_transit', 'delayed'] },
@@ -1486,14 +1499,6 @@ export class TrackingService {
       order: [['createdAt', 'DESC']],
       raw: true,
     });
-    if (!trip) {
-      // Fallback: check if the vehicle has a recent trip or assigned route so the corridor can still be tracked
-      trip = await Trip.findOne({
-        where: { vehicle_id: vehicle.id },
-        order: [['createdAt', 'DESC']],
-        raw: true,
-      });
-    }
     if (!trip) {
       return {
         vehicleId: vehicle.id,
