@@ -21,6 +21,7 @@ import gisRoutes from './modules/gis/gis.routes';
 import internalRoutes from './modules/internal/internal.routes';
 import publicRoutes from './modules/public/public.routes';
 import fieldOfficerRoutes from './modules/field-officer/field-officer.routes';
+import mediaRoutes from './modules/media/media.routes';
 import path from 'path';
 
 const app = express();
@@ -122,6 +123,7 @@ app.use('/api/driver', driverRoutes);
 app.use('/api/gis', gisRoutes);
 app.use('/api/internal', internalRoutes);
 app.use('/api/field-officer', fieldOfficerRoutes);
+app.use('/api/media', mediaRoutes);
 
 // Global Error Handler
 app.use(errorHandler);

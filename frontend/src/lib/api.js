@@ -647,6 +647,24 @@ class ApiClient {
     });
   }
 
+  static uploadMedia(fileOrPayload) {
+    if (typeof FormData !== 'undefined' && fileOrPayload instanceof FormData) {
+      const url = `${API_BASE}/media/upload`;
+      const token = this.getAccessToken();
+      return fetch(url, {
+        method: 'POST',
+        headers: {
+          ...(token ? { Authorization: `Bearer ${token}` } : {}),
+        },
+        body: fileOrPayload,
+      }).then((r) => r.json());
+    }
+    return this.request('/media/upload', {
+      method: 'POST',
+      body: JSON.stringify(fileOrPayload),
+    });
+  }
+
   static syncFieldOfficerBatch(items) {
     return this.request('/field-officer/sync', {
       method: 'POST',

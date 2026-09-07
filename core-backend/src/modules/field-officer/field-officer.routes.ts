@@ -30,11 +30,11 @@ const upload = multer({
   storage,
   limits: { fileSize: 10 * 1024 * 1024 }, // 10MB limit
   fileFilter: (_req, file, cb) => {
-    const allowed = ['image/jpeg', 'image/png', 'image/webp', 'image/jpg'];
+    const allowed = ['image/jpeg', 'image/png', 'image/webp', 'image/jpg', 'image/gif'];
     if (allowed.includes(file.mimetype.toLowerCase())) {
       cb(null, true);
     } else {
-      cb(new Error('Invalid image type. Only JPEG, PNG, and WebP evidence photos are accepted.'));
+      cb(new Error('Invalid image type. Only JPEG, PNG, WebP, and GIF photos are accepted.'));
     }
   },
 });

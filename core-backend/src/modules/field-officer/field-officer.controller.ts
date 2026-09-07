@@ -467,13 +467,27 @@ export class FieldOfficerController {
       // Link any media attachments
       if (Array.isArray(photos) && photos.length > 0) {
         for (const photo of photos) {
-          if (photo.file_path) {
+          let filePath = photo.file_path || photo.url || (typeof photo === 'string' ? photo : null);
+          if (filePath && filePath.startsWith('data:image/')) {
+            const matches = filePath.match(/^data:([A-Za-z-+\/]+);base64,(.+)$/);
+            if (matches && matches.length === 3) {
+              const mimeType = matches[1];
+              const buffer = Buffer.from(matches[2], 'base64');
+              const uploadRes = await uploadImageToCloudinary(buffer, {
+                folder: 'raahi/field-officer',
+                filename: `fo-verification-${Date.now()}`,
+                mimetype: mimeType,
+              });
+              filePath = uploadRes.url;
+            }
+          }
+          if (filePath) {
             await FieldMedia.create({
               id: `MED-${Date.now()}-${uuidv4().substring(0, 6)}`,
               task_id: task.id,
               verification_id: verification.id,
-              file_path: photo.file_path,
-              file_name: photo.file_name || path.basename(photo.file_path),
+              file_path: filePath,
+              file_name: photo.file_name || path.basename(filePath),
               mime_type: photo.mime_type || 'image/jpeg',
               file_size: photo.file_size || 0,
               caption: photo.caption || null,
@@ -691,12 +705,26 @@ export class FieldOfficerController {
       const savedMedia: any[] = [];
       if (Array.isArray(photos) && photos.length > 0) {
         for (const photo of photos) {
-          if (photo.file_path) {
+          let filePath = photo.file_path || photo.url || (typeof photo === 'string' ? photo : null);
+          if (filePath && filePath.startsWith('data:image/')) {
+            const matches = filePath.match(/^data:([A-Za-z-+\/]+);base64,(.+)$/);
+            if (matches && matches.length === 3) {
+              const mimeType = matches[1];
+              const buffer = Buffer.from(matches[2], 'base64');
+              const uploadRes = await uploadImageToCloudinary(buffer, {
+                folder: 'raahi/field-officer',
+                filename: `fo-report-${Date.now()}`,
+                mimetype: mimeType,
+              });
+              filePath = uploadRes.url;
+            }
+          }
+          if (filePath) {
             const media = await FieldMedia.create({
               id: `MED-${Date.now()}-${uuidv4().substring(0, 6)}`,
               report_id: pgReport.id,
-              file_path: photo.file_path,
-              file_name: photo.file_name || path.basename(photo.file_path),
+              file_path: filePath,
+              file_name: photo.file_name || path.basename(filePath),
               mime_type: photo.mime_type || 'image/jpeg',
               file_size: photo.file_size || 0,
               caption: photo.caption || null,
@@ -991,6 +1019,7 @@ export class FieldOfficerController {
       if ((req as any).file) {
         const file = (req as any).file;
         const uploadRes = await uploadImageToCloudinary(file.path, {
+          folder: 'raahi/field-officer',
           filename: file.originalname,
           mimetype: file.mimetype,
         });
@@ -1024,15 +1053,16 @@ export class FieldOfficerController {
           buffer = Buffer.from(image, 'base64');
         }
 
-        const allowedMimes = ['image/jpeg', 'image/png', 'image/webp', 'image/jpg'];
+        const allowedMimes = ['image/jpeg', 'image/png', 'image/webp', 'image/jpg', 'image/gif'];
         if (!allowedMimes.includes(mimeType)) {
-          return sendError(res, `Unsupported image type: ${mimeType}. Allowed: JPEG, PNG, WebP`, 400);
+          return sendError(res, `Unsupported image type: ${mimeType}. Allowed: JPEG, PNG, WebP, GIF`, 400);
         }
 
         const ext = mimeType.split('/')[1] === 'jpeg' ? 'jpg' : mimeType.split('/')[1];
         const generatedFilename = `evidence-${Date.now()}-${uuidv4().substring(0, 8)}.${ext}`;
 
         const uploadRes = await uploadImageToCloudinary(buffer, {
+          folder: 'raahi/field-officer',
           filename: fileName || generatedFilename,
           mimetype: mimeType,
         });
