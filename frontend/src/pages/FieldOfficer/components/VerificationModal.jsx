@@ -195,10 +195,15 @@ export default function VerificationModal({ task, isOpen, onClose, onComplete })
   if (!isOpen || !task) return null;
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center p-3 sm:p-4 bg-slate-900/60 backdrop-blur-xs overflow-y-auto">
-      <div className="bg-white rounded-3xl border border-slate-200/90 shadow-2xl w-full max-w-2xl my-auto overflow-hidden animate-in fade-in zoom-in-95">
+    <div className="fixed inset-0 z-50 flex items-end sm:items-center justify-center p-0 sm:p-4 bg-slate-950/70 backdrop-blur-xs overflow-y-auto">
+      <div className="bg-white rounded-t-3xl sm:rounded-3xl border border-slate-200/90 shadow-2xl w-full max-w-2xl max-h-[92vh] sm:max-h-[85vh] flex flex-col overflow-hidden animate-in slide-in-from-bottom sm:fade-in sm:zoom-in-95">
+        {/* Mobile Drag Pill */}
+        <div className="sm:hidden pt-2.5 pb-1 flex justify-center bg-slate-900">
+          <div className="w-10 h-1 bg-slate-600 rounded-full" />
+        </div>
+
         {/* Modal Header */}
-        <div className="bg-slate-900 px-5 py-4 text-white flex items-center justify-between">
+        <div className="bg-slate-900 px-5 py-3.5 text-white flex items-center justify-between">
           <div>
             <span className="text-[11px] font-bold uppercase tracking-wider text-emerald-400">
               Field Officer Verification Protocol

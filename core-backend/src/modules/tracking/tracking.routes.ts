@@ -1,6 +1,7 @@
 import { Router, Request, Response } from 'express';
 import { authenticateJwt } from '../../middleware/auth.middleware';
-import { Vehicle, Driver } from '../../models/postgres';
+import { Vehicle, Driver, Delivery } from '../../models/postgres';
+import { getSocketServer } from '../../sockets/socket.gateway';
 
 /**
  * Vehicle-scoped reads must respect ownership: admin/district officer may read
@@ -277,6 +278,32 @@ router.post('/vehicles/:vehicleId/trips/:tripId/stop', authenticateJwt, async (r
     return sendSuccess(res, result, 'Trip completed');
   } catch (err: any) {
     logger.error(`Tracking route failed (${req.method} ${req.originalUrl})`, err);
+    return sendError(res, err.message);
+  }
+});
+
+/** POST /api/tracking/deliveries/:id/delivered — driver confirms delivery/pickup handover */
+router.post('/deliveries/:id/delivered', authenticateJwt, async (req: Request, res: Response) => {
+  try {
+    const del = await Delivery.findByPk(String(req.params.id));
+    if (!del) return sendError(res, 'Consignment not found', 404);
+    await del.update({
+      status: 'delivered',
+      delivered_at: new Date(),
+      pod_url: req.body.podUrl || null,
+    });
+    const io = getSocketServer();
+    if (io) {
+      io.emit('delivery.status.updated', {
+        deliveryId: del.id,
+        status: 'delivered',
+        tripId: del.trip_id,
+        timestamp: new Date().toISOString(),
+      });
+    }
+    return sendSuccess(res, del, 'Consignment delivery confirmed successfully');
+  } catch (err: any) {
+    logger.error(`Delivery confirm failed (${req.method} ${req.originalUrl})`, err);
     return sendError(res, err.message);
   }
 });

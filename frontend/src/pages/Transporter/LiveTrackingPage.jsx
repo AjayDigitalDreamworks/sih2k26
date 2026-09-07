@@ -185,12 +185,12 @@ export default function LiveTrackingPage() {
 
           {/* Map + Live vehicle panel */}
           <section className="grid grid-cols-1 lg:grid-cols-12 gap-5 items-stretch">
-            <div className="lg:col-span-8">
+            <div className="lg:col-span-9">
               <TrackingMap selectedId={selectedId} onSelect={setSelectedId} />
             </div>
 
             {/* Right: live selected vehicle */}
-            <div className="lg:col-span-4 bg-white rounded-2xl border border-slate-200/80 shadow-2xs flex flex-col overflow-hidden">
+            <div className="lg:col-span-3 bg-white rounded-2xl border border-slate-200/80 shadow-2xs flex flex-col overflow-hidden">
               <div className="px-4 py-3 border-b border-slate-100 bg-slate-50/50 flex items-center justify-between">
                 <h3 className="text-xs font-black text-slate-700 uppercase tracking-wider flex items-center gap-1.5">
                   <Radio className="w-3.5 h-3.5 text-emerald-600" /> Live Vehicle

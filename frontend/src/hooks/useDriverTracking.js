@@ -1,6 +1,7 @@
 import { useState, useEffect, useRef, useCallback } from 'react';
 import ApiClient from '@/lib/api';
 import { trackingQueue, isOffline } from '@/lib/trackingQueue';
+import { subscribeToTripUpdates } from '@/lib/socket';
 
 // Tracking policy — tunable at build/runtime via config (mirrors backend env).
 const TRACKING_INTERVAL_MS = 1000 * (Number(import.meta.env.VITE_TRACKING_INTERVAL_SECONDS) || 5);
@@ -98,6 +99,24 @@ export function useDriverTracking() {
 
   // Keep the ref of the context so listeners/effects can check trip state.
   useEffect(() => { ctxRef.current = ctx; }, [ctx]);
+
+  // Real-time trip & vehicle assignment updates via WebSocket
+  useEffect(() => {
+    const unsub = subscribeToTripUpdates((data) => {
+      if (!data) return;
+      const curDriverId = ctxRef.current?.driver?.id;
+      const curVehicleId = ctxRef.current?.vehicle?.id;
+      const curTripId = ctxRef.current?.trip?.id;
+      if (
+        (data.driverId && data.driverId === curDriverId) ||
+        (data.vehicleId && data.vehicleId === curVehicleId) ||
+        (data.tripId && (data.tripId === curTripId || !curTripId))
+      ) {
+        loadContext();
+      }
+    });
+    return () => unsub();
+  }, [loadContext]);
 
   // ---- Connectivity ----
   useEffect(() => {

@@ -2,7 +2,8 @@ import React, { useState, useEffect, useMemo, useRef, useCallback } from 'react'
 import { MapContainer, Polyline, Marker, Popup, CircleMarker, useMapEvents, useMap } from 'react-leaflet';
 import 'leaflet/dist/leaflet.css';
 import L from 'leaflet';
-import { Plus, Minus, Target, MapPin, CloudRain, ChevronDown, Crosshair } from 'lucide-react';
+import { Plus, Minus, Target, MapPin, CloudRain, ChevronDown, Crosshair, RefreshCw } from 'lucide-react';
+import { toast } from 'sonner';
 import { ResilientTileLayer } from '../admin/common/ResilientTileLayer';
 import { RiskHeatLayer } from '../admin/common/RiskHeatLayer';
 import ApiClient from '../../lib/api';
@@ -164,16 +165,50 @@ const hhmm = (iso) => {
   return Number.isNaN(d.getTime()) ? '—' : d.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
 };
 
-function FlyToSelected({ target }) {
+function FlyToSelected({ target, routeGeom }) {
   const map = useMap();
+  const prevIdRef = useRef(null);
+  const prevPosRef = useRef(null);
+  const fittedRouteRef = useRef(null);
+
   useEffect(() => {
-    if (!target || !Number.isFinite(target.lat) || !Number.isFinite(target.lng)) return;
-    try {
-      if (map.getSize().x < 10 || map.getSize().y < 10) return; // map not sized yet
-      map.flyTo([target.lat, target.lng], Math.max(map.getZoom(), 9), { duration: 0.8 });
-    } catch { /* map not ready */ }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [target && target.id]);
+    if (!target || !Number.isFinite(target.lat) || !Number.isFinite(target.lng)) {
+      prevIdRef.current = null;
+      fittedRouteRef.current = null;
+      return;
+    }
+    const isNew = prevIdRef.current !== target.id;
+    prevIdRef.current = target.id;
+
+    if (routeGeom && routeGeom.length > 1 && fittedRouteRef.current !== routeGeom) {
+      fittedRouteRef.current = routeGeom;
+      try {
+        const bounds = L.latLngBounds(routeGeom);
+        bounds.extend([target.lat, target.lng]);
+        map.fitBounds(bounds, { padding: [60, 60], maxZoom: 14, animate: true, duration: 0.8 });
+        prevPosRef.current = [target.lat, target.lng];
+        return;
+      } catch {}
+    }
+
+    if (isNew) {
+      try {
+        map.flyTo([target.lat, target.lng], Math.max(map.getZoom(), 13), { duration: 0.8 });
+        prevPosRef.current = [target.lat, target.lng];
+      } catch {}
+      return;
+    }
+
+    // Follow moving vehicle
+    const prev = prevPosRef.current;
+    if (!prev || Math.abs(prev[0] - target.lat) > 0.0001 || Math.abs(prev[1] - target.lng) > 0.0001) {
+      prevPosRef.current = [target.lat, target.lng];
+      try {
+        map.panTo([target.lat, target.lng], { animate: true, duration: 0.5 });
+      } catch {}
+    }
+  }, [target, target?.lat, target?.lng, routeGeom, map]);
+
   return null;
 }
 
@@ -241,6 +276,39 @@ export default function LiveTrackingMap({ embedded = false, selectedId, onSelect
   const [liveRoutes, setLiveRoutes] = useState({}); // vehicleId -> { coords, destName, score, level, distanceKm }
   const [trafficByRoute, setTrafficByRoute] = useState({});
   const [cursorLatLng, setCursorLatLng] = useState(null);
+  const [reroutingId, setReroutingId] = useState(null);
+
+  const handleRecalculateRoute = async (vehicleId) => {
+    if (!vehicleId) return;
+    setReroutingId(vehicleId);
+    try {
+      const res = await ApiClient.rerouteVehicle(vehicleId, {
+        reason: 'Operator triggered dynamic detour calculation',
+        forceAlternative: true,
+      });
+      if (res?.success && res.data) {
+        toast.success(`Dynamic detour recalculated for ${vehicleId}!`);
+        const d = res.data;
+        if (d.geometry && d.geometry.length > 1) {
+          setLiveRoutes((prev) => ({
+            ...prev,
+            [vehicleId]: {
+              ...(prev[vehicleId] || {}),
+              coords: d.geometry,
+              rerouted: true,
+              rerouteReason: d.rerouteReason || 'Dynamic reroute: bypassing hazard via alternate corridor',
+            },
+          }));
+        }
+      } else {
+        toast.error(res?.message || 'Could not recalculate route.');
+      }
+    } catch (err) {
+      toast.error(err?.message || 'Failed to recalculate route.');
+    } finally {
+      setReroutingId(null);
+    }
+  };
 
   // Vehicles with an ACTIVE SOS (server-side truth, refreshed every 20s + live socket events).
   const [sosMap, setSosMap] = useState({});
@@ -356,6 +424,38 @@ export default function LiveTrackingMap({ embedded = false, selectedId, onSelect
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [trackable.length]);
 
+  // Immediate route fetch for selected vehicle
+  useEffect(() => {
+    if (!selId) return;
+    let alive = true;
+    ApiClient.getLiveRoute(selId).then((res) => {
+      if (!alive || !res?.data) return;
+      const d = res.data;
+      if (d.hasRoute && Array.isArray(d.geometry) && d.geometry.length > 1) {
+        const entry = {
+          coords: d.geometry,
+          destName: d.destination_district || d.destinationName || (d.destination && d.destination.name) || '',
+          routeName: d.routeName || null,
+          score: d.riskScore?.score ?? d.score ?? d.riskScore ?? null,
+          level: d.riskScore?.level ?? d.riskLevel ?? null,
+          distanceKm: d.distance_km ?? d.distanceKm ?? d.totalDistanceKm ?? null,
+          legs: Array.isArray(d.legs) ? d.legs : [],
+          provider: d.routingProvider || null,
+          etaMinutes: d.etaMinutes ?? null,
+          etaAt: d.etaAt ?? null,
+          etaLabel: d.etaLabel ?? null,
+          trafficDelayMinutes: d.trafficDelayMinutes ?? 0,
+          rerouted: Boolean(d.rerouted),
+          rerouteReason: d.rerouteReason || null,
+          rerouteAlert: d.rerouteAlert || null,
+        };
+        liveRouteCache.set(selId, { at: Date.now(), data: entry });
+        setLiveRoutes((p) => ({ ...p, [selId]: entry }));
+      }
+    }).catch(() => {});
+    return () => { alive = false; };
+  }, [selId]);
+
   // Real-time Dynamic Reroute socket subscription (auto-updates when mid-transit hazard arises)
   useEffect(() => {
     const unsub = subscribeToDynamicReroute((data) => {
@@ -468,7 +568,7 @@ export default function LiveTrackingMap({ embedded = false, selectedId, onSelect
         </div>
       )}
 
-      <div className={`relative w-full rounded-2xl overflow-hidden border border-slate-200/80 select-none bg-slate-100 z-0 ${embedded ? 'h-[420px] lg:h-[500px]' : 'h-[340px] sm:h-[370px] lg:h-[400px]'}`}>
+      <div className={`relative w-full rounded-2xl overflow-hidden border border-slate-200/80 select-none bg-slate-100 z-0 ${embedded ? 'h-[520px] lg:h-[580px]' : 'h-[400px] sm:h-[450px] lg:h-[520px]'}`}>
         <MapContainer center={centerPos} zoom={7} maxZoom={19} zoomControl={false} scrollWheelZoom className="w-full h-full z-0" ref={mapRef}>
           <ResilientTileLayer key={activeLayer} url={tile.url} attribution={tile.attribution} maxNativeZoom={tile.maxNativeZoom || 16} maxZoom={19} />
 
@@ -506,7 +606,17 @@ export default function LiveTrackingMap({ embedded = false, selectedId, onSelect
             return (
               <React.Fragment key={`lr-${vid}`}>
                 {showCasing && <Polyline positions={r.coords} pathOptions={{ color: 'rgba(255,255,255,0.85)', weight: 7, opacity: 0.9, lineCap: 'round', lineJoin: 'round' }} />}
-                <Polyline positions={r.coords} pathOptions={{ color, weight: 4, opacity: 0.92, lineCap: 'round', lineJoin: 'round' }}>
+                <Polyline
+                  positions={r.coords}
+                  pathOptions={{
+                    color: r.rerouted ? '#D97706' : color,
+                    weight: r.rerouted ? 5 : 4,
+                    opacity: 0.95,
+                    lineCap: 'round',
+                    lineJoin: 'round',
+                    dashArray: r.rerouted ? '8, 6' : undefined,
+                  }}
+                >
                   <Popup>
                     <div className="text-xs min-w-[220px] max-w-[300px]">
                       <div className="font-black text-slate-900">{r.routeName || `${vid} live route`}</div>
@@ -660,7 +770,7 @@ export default function LiveTrackingMap({ embedded = false, selectedId, onSelect
             );
           })}
 
-          {selMarker && <FlyToSelected target={selMarker} />}
+          {selMarker && <FlyToSelected target={selMarker} routeGeom={liveRoutes[selId]?.coords} />}
           <MapControlsTicks zoomInTick={zoomIn} zoomOutTick={zoomOut} centerTick={centerT} centerPos={centerPos} />
           <MapMinimap mapRef={mapRef} tile={tile} />
         </MapContainer>
@@ -752,7 +862,19 @@ export default function LiveTrackingMap({ embedded = false, selectedId, onSelect
                 </span>
               )}
             </div>
-            <div className="text-[9px] text-slate-400 mt-0.5">Map centered on vehicle · marker arrow follows live GPS heading</div>
+            <div className="flex items-center justify-between gap-2 mt-2 pt-1.5 border-t border-slate-100">
+              <span className="text-[9px] text-slate-400">Map centered · live heading</span>
+              <button
+                type="button"
+                onClick={() => handleRecalculateRoute(selMarker.id)}
+                disabled={reroutingId === selMarker.id}
+                className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg bg-amber-50 hover:bg-amber-100 text-amber-900 border border-amber-200 text-[10px] font-bold shadow-2xs transition-colors cursor-pointer disabled:opacity-50"
+                title="Trigger ML dynamic detour calculation"
+              >
+                <RefreshCw className={`w-3 h-3 text-amber-700 ${reroutingId === selMarker.id ? 'animate-spin' : ''}`} />
+                <span>{reroutingId === selMarker.id ? 'Recalculating…' : 'Recalculate Route'}</span>
+              </button>
+            </div>
           </div>
         )}
 

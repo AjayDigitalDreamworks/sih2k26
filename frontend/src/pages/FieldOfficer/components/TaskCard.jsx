@@ -16,6 +16,7 @@ export default function TaskCard({
   officerGps,
   onUpdateStatus,
   onOpenVerifyModal,
+  onStartNavigation,
   isProcessing = false,
 }) {
   const [showUnsafeDialog, setShowUnsafeDialog] = useState(false);
@@ -162,31 +163,35 @@ export default function TaskCard({
           <span>Updated: {new Date(task.updatedAt || task.createdAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}</span>
         </div>
 
-        <div className="flex items-center gap-2">
+        <div className="flex flex-wrap items-center gap-2 w-full sm:w-auto">
           {task.status === 'ASSIGNED' && (
             <button
               onClick={() => onUpdateStatus(task.id, 'ACCEPTED')}
               disabled={isProcessing}
-              className="px-3.5 py-1.5 bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-bold rounded-xl shadow-xs transition-all cursor-pointer disabled:opacity-50"
+              className="flex-1 sm:flex-none px-4 py-2.5 bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-bold rounded-xl shadow-xs transition-all cursor-pointer flex items-center justify-center gap-1.5 active:scale-95 disabled:opacity-50"
             >
-              Accept Task
+              <CheckCircle className="w-3.5 h-3.5" />
+              <span>Claim / Accept Task</span>
             </button>
           )}
 
           {task.status === 'ACCEPTED' && (
             <>
               <button
-                onClick={() => onUpdateStatus(task.id, 'EN_ROUTE')}
+                onClick={() => {
+                  if (onStartNavigation) onStartNavigation(task);
+                  else onUpdateStatus(task.id, 'EN_ROUTE');
+                }}
                 disabled={isProcessing}
-                className="px-3.5 py-1.5 bg-indigo-600 hover:bg-indigo-700 text-white text-xs font-bold rounded-xl shadow-xs transition-all cursor-pointer flex items-center gap-1.5 disabled:opacity-50"
+                className="flex-1 sm:flex-none px-4 py-2.5 bg-[#0D7A48] hover:bg-[#0A633A] text-white text-xs font-bold rounded-xl shadow-xs transition-all cursor-pointer flex items-center justify-center gap-1.5 active:scale-95 disabled:opacity-50"
               >
                 <Navigation className="w-3.5 h-3.5" />
-                <span>Start En Route</span>
+                <span>Navigate to Location</span>
               </button>
               <button
                 onClick={() => onOpenVerifyModal(task)}
                 disabled={isProcessing}
-                className="px-3 py-1.5 bg-slate-800 hover:bg-slate-900 text-white text-xs font-bold rounded-xl shadow-xs transition-all cursor-pointer"
+                className="px-3.5 py-2.5 bg-slate-800 hover:bg-slate-900 text-white text-xs font-bold rounded-xl shadow-xs transition-all cursor-pointer active:scale-95"
               >
                 Verify Directly
               </button>
@@ -195,6 +200,15 @@ export default function TaskCard({
 
           {task.status === 'EN_ROUTE' && (
             <>
+              {onStartNavigation && (
+                <button
+                  onClick={() => onStartNavigation(task)}
+                  className="px-3 py-2.5 bg-emerald-50 text-emerald-800 border border-emerald-200 text-xs font-bold rounded-xl shadow-xs transition-all cursor-pointer flex items-center justify-center gap-1.5 active:scale-95"
+                >
+                  <Navigation className="w-3.5 h-3.5 text-emerald-600" />
+                  <span>Route HUD</span>
+                </button>
+              )}
               <button
                 onClick={() =>
                   onUpdateStatus(task.id, 'ARRIVED', {
@@ -204,14 +218,14 @@ export default function TaskCard({
                   })
                 }
                 disabled={isProcessing}
-                className="px-3.5 py-1.5 bg-purple-600 hover:bg-purple-700 text-white text-xs font-bold rounded-xl shadow-xs transition-all cursor-pointer flex items-center gap-1.5 disabled:opacity-50"
+                className="flex-1 sm:flex-none px-4 py-2.5 bg-purple-600 hover:bg-purple-700 text-white text-xs font-bold rounded-xl shadow-xs transition-all cursor-pointer flex items-center justify-center gap-1.5 active:scale-95 disabled:opacity-50"
               >
                 <MapPin className="w-3.5 h-3.5" />
-                <span>Mark Arrived</span>
+                <span>Arrived at Site</span>
               </button>
               <button
                 onClick={() => onOpenVerifyModal(task)}
-                className="px-3.5 py-1.5 bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-bold rounded-xl shadow-xs transition-all cursor-pointer"
+                className="px-3.5 py-2.5 bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-bold rounded-xl shadow-xs transition-all cursor-pointer active:scale-95"
               >
                 Inspect
               </button>
@@ -221,7 +235,7 @@ export default function TaskCard({
           {task.status === 'ARRIVED' && (
             <button
               onClick={() => onOpenVerifyModal(task)}
-              className="px-4 py-2 bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-bold rounded-xl shadow-md shadow-emerald-600/20 transition-all cursor-pointer flex items-center gap-1.5"
+              className="w-full sm:w-auto px-4 py-2.5 bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-bold rounded-xl shadow-md shadow-emerald-600/20 transition-all cursor-pointer flex items-center justify-center gap-1.5 active:scale-95"
             >
               <CheckCircle className="w-4 h-4" />
               <span>Perform Physical Verification</span>
@@ -231,7 +245,7 @@ export default function TaskCard({
           {task.status !== 'VERIFIED' && task.status !== 'UNSAFE_TO_VERIFY' && (
             <button
               onClick={() => setShowUnsafeDialog(true)}
-              className="px-2.5 py-1.5 text-[11px] font-semibold text-rose-600 hover:text-rose-800 hover:bg-rose-50 rounded-lg transition-colors cursor-pointer"
+              className="px-3 py-2 text-[11px] font-semibold text-rose-600 hover:text-rose-800 hover:bg-rose-50 rounded-lg transition-colors cursor-pointer active:scale-95 ml-auto sm:ml-0"
             >
               Cannot Verify / Unsafe
             </button>

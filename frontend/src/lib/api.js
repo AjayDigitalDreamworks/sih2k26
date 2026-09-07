@@ -283,6 +283,13 @@ class ApiClient {
     });
   }
 
+  static confirmDelivery(deliveryId, payload = {}) {
+    return this.request(`/tracking/deliveries/${deliveryId}/delivered`, {
+      method: 'POST',
+      body: JSON.stringify(payload),
+    });
+  }
+
   static getTransporterAlerts() {
     return this.request('/transporter/alerts');
   }
@@ -464,6 +471,14 @@ class ApiClient {
   // Live route from a vehicle's real GPS fix to its active trip destination
   static getLiveRoute(vehicleId) {
     return this.request(`/integrations/live-route/${encodeURIComponent(vehicleId)}`);
+  }
+
+  // Dynamic Route Recalculation for an in-transit vehicle
+  static rerouteVehicle(vehicleId, options = {}) {
+    return this.request(`/integrations/live-route/${encodeURIComponent(vehicleId)}/reroute`, {
+      method: 'POST',
+      body: JSON.stringify(options),
+    });
   }
 
   // Full Context

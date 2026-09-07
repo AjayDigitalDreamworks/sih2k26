@@ -1,9 +1,9 @@
-import React, { useEffect, useState } from 'react';
-import { MapContainer, Marker, Popup, Circle, useMap } from 'react-leaflet';
+import React, { useEffect, useState, useMemo } from 'react';
+import { MapContainer, Marker, Popup, Circle, Polyline, useMap } from 'react-leaflet';
 import L from 'leaflet';
 import 'leaflet/dist/leaflet.css';
 import ResilientTileLayer from '@/components/admin/common/ResilientTileLayer';
-import { Crosshair, Navigation, AlertTriangle, ShieldCheck } from 'lucide-react';
+import { Crosshair, Navigation, AlertTriangle, ShieldCheck, MapPin, X, CheckCircle } from 'lucide-react';
 
 // Fix Leaflet's default marker icons
 delete L.Icon.Default.prototype._getIconUrl;
@@ -73,6 +73,9 @@ export default function FieldGisMap({
   tasks = [],
   nearbyHazards = [],
   onSelectTask,
+  navigatingTask = null,
+  onCancelNavigation,
+  onMarkArrived,
 }) {
   const defaultCenter = [26.1445, 91.7362]; // Guwahati, Assam
   const hasValidGps = officerGps && Number.isFinite(officerGps.latitude) && Number.isFinite(officerGps.longitude);
@@ -84,6 +87,36 @@ export default function FieldGisMap({
       setRecenterTarget([officerGps.latitude, officerGps.longitude]);
     }
   };
+
+  // Compute navigation metrics when actively navigating to a task
+  const navMetrics = useMemo(() => {
+    if (!navigatingTask || !hasValidGps || !navigatingTask.latitude || !navigatingTask.longitude) {
+      return null;
+    }
+    const R = 6371; // km
+    const dLat = ((navigatingTask.latitude - officerGps.latitude) * Math.PI) / 180;
+    const dLon = ((navigatingTask.longitude - officerGps.longitude) * Math.PI) / 180;
+    const a =
+      Math.sin(dLat / 2) * Math.sin(dLat / 2) +
+      Math.cos((officerGps.latitude * Math.PI) / 180) *
+        Math.cos((navigatingTask.latitude * Math.PI) / 180) *
+        Math.sin(dLon / 2) *
+        Math.sin(dLon / 2);
+    const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
+    const dKm = R * c;
+    const distLabel = dKm < 1 ? `${Math.round(dKm * 1000)}m away` : `${dKm.toFixed(1)} km away`;
+    const etaMins = Math.max(1, Math.round((dKm / 35) * 60));
+
+    return {
+      distanceKm: dKm,
+      distLabel,
+      etaMins,
+      polyline: [
+        [officerGps.latitude, officerGps.longitude],
+        [parseFloat(navigatingTask.latitude), parseFloat(navigatingTask.longitude)],
+      ],
+    };
+  }, [navigatingTask, hasValidGps, officerGps?.latitude, officerGps?.longitude]);
 
   return (
     <div className="relative w-full h-full min-h-[400px] rounded-3xl overflow-hidden border border-slate-200/90 shadow-xs">
@@ -184,7 +217,60 @@ export default function FieldGisMap({
             </Marker>
           );
         })}
+
+        {/* Navigation Route Line when navigating to an incident */}
+        {navMetrics?.polyline && (
+          <Polyline
+            positions={navMetrics.polyline}
+            pathOptions={{ color: '#0D7A48', weight: 4.5, dashArray: '8, 6', opacity: 0.9 }}
+          />
+        )}
       </MapContainer>
+
+      {/* Floating Tactical Navigation HUD */}
+      {navigatingTask && navMetrics && (
+        <div className="absolute top-4 left-1/2 -translate-x-1/2 z-[400] w-[min(94%,460px)] bg-slate-900/95 backdrop-blur-md rounded-2xl border border-emerald-500/50 shadow-2xl p-3.5 text-white">
+          <div className="flex items-start justify-between gap-3">
+            <div className="min-w-0">
+              <div className="flex items-center gap-2">
+                <span className="w-2 h-2 rounded-full bg-emerald-400 animate-ping" />
+                <span className="text-[10px] font-black uppercase tracking-wider text-emerald-400">
+                  En Route Navigation Active
+                </span>
+              </div>
+              <h4 className="text-sm font-bold truncate text-white mt-0.5">{navigatingTask.title}</h4>
+              <p className="text-[11px] text-slate-300">
+                Target: {navigatingTask.location_name || `${navigatingTask.latitude}, ${navigatingTask.longitude}`}
+              </p>
+            </div>
+            <div className="text-right flex-shrink-0">
+              <div className="text-base font-black text-emerald-400">{navMetrics.distLabel || '—'}</div>
+              <div className="text-[10px] text-slate-400 font-bold">ETA: ~{navMetrics.etaMins} min</div>
+            </div>
+          </div>
+          <div className="flex items-center justify-end gap-2 mt-3 pt-2.5 border-t border-slate-800">
+            {onCancelNavigation && (
+              <button
+                type="button"
+                onClick={onCancelNavigation}
+                className="px-3 py-1.5 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-300 text-xs font-bold transition-colors cursor-pointer"
+              >
+                Cancel
+              </button>
+            )}
+            {onMarkArrived && (
+              <button
+                type="button"
+                onClick={() => onMarkArrived(navigatingTask)}
+                className="px-4 py-1.5 rounded-xl bg-[#0D7A48] hover:bg-[#0A633A] text-white text-xs font-bold shadow-md shadow-emerald-600/30 transition-all flex items-center gap-1.5 cursor-pointer"
+              >
+                <MapPin className="w-3.5 h-3.5" />
+                <span>I Have Arrived at Site</span>
+              </button>
+            )}
+          </div>
+        </div>
+      )}
 
       {/* Recenter Button */}
       {officerGps && (

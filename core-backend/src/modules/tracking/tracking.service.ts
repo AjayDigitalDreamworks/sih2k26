@@ -243,6 +243,8 @@ export class TrackingService {
     if (io) {
       io.to('admin:all').emit('vehicle:position', broadcastPayload);
       io.to(`transporter:${vehicle.transporter_id}`).emit('vehicle:position', broadcastPayload);
+      io.emit('vehicle:position', broadcastPayload);
+      io.emit('vehicle.location.updated', broadcastPayload);
 
       // Emit route deviation alert if needed
       if (status.routeDeviation?.isDeviated) {
@@ -958,6 +960,8 @@ export class TrackingService {
         io.to(room).emit('vehicle:position', broadcast);       // legacy dashboards
         io.to(room).emit('vehicle.location.updated', broadcast); // tracking contract event
       });
+      io.emit('vehicle:position', broadcast);
+      io.emit('vehicle.location.updated', broadcast);
       io.emit('vehicle.status.updated', {
         vehicleId: vehicle.id, liveStatus, movement, speed, timestamp: new Date().toISOString(),
       });
@@ -992,6 +996,11 @@ export class TrackingService {
     const vehicle = await Vehicle.findByPk(trip.vehicle_id);
     if (!vehicle) return { error: 'Vehicle not found', statusCode: 404 };
 
+    // Strict guard: route corridor MUST be evaluated and assigned by transporter before trip can start
+    if (!trip.route_id || !trip.transporter_id) {
+      return { error: 'Trip cannot be started: route corridor has not been evaluated or assigned by transporter', statusCode: 400 };
+    }
+
     if (user.role === 'driver') {
       const driver = await this.resolveDriverForUser(user.id);
       if (!driver || trip.driver_id !== driver.id) return { error: 'Trip not assigned to this driver', statusCode: 403 };
@@ -1004,6 +1013,9 @@ export class TrackingService {
 
     if (trip.status === 'completed' || trip.status === 'canceled') return { error: 'Trip already closed', statusCode: 409 };
     if (trip.status === 'in_transit') return { ok: true, alreadyStarted: true, trip };
+    if (trip.status !== 'planned') {
+      return { error: `Trip cannot be started: current status is "${trip.status}" (must be "planned")`, statusCode: 400 };
+    }
 
     await trip.update({ status: 'in_transit', started_at: new Date() });
     await vehicle.update({
@@ -1021,7 +1033,10 @@ export class TrackingService {
     await redisClient.del(`vehicle:history:${vehicle.id}`);
     await redisClient.del(`vehicle:live:${vehicle.id}`);
     const io = getSocketServer();
-    if (io) io.emit('vehicle.status.updated', { vehicleId: vehicle.id, event: 'trip_started', tripId: trip.id, timestamp: new Date().toISOString() });
+    if (io) {
+      io.emit('vehicle.status.updated', { vehicleId: vehicle.id, event: 'trip_started', tripId: trip.id, timestamp: new Date().toISOString() });
+      io.emit('trip.status.updated', { tripId: trip.id, status: 'in_transit', vehicleId: vehicle.id, driverId: trip.driver_id, origin: trip.origin, destination: trip.destination, timestamp: new Date().toISOString() });
+    }
     console.log(`[TRACKING] Trip ${trip.id} STARTED by ${user.role}:${user.id} on ${vehicle.id}`);
     return { ok: true, trip };
   }
@@ -1052,7 +1067,10 @@ export class TrackingService {
       await redisClient.del(`vehicle:live:${vehicle.id}`);
     }
     const io = getSocketServer();
-    if (io) io.emit('vehicle.status.updated', { vehicleId: trip.vehicle_id, event: 'trip_completed', tripId: trip.id, timestamp: new Date().toISOString() });
+    if (io) {
+      io.emit('vehicle.status.updated', { vehicleId: trip.vehicle_id, event: 'trip_completed', tripId: trip.id, timestamp: new Date().toISOString() });
+      io.emit('trip.status.updated', { tripId: trip.id, status: 'completed', vehicleId: trip.vehicle_id, driverId: trip.driver_id, timestamp: new Date().toISOString() });
+    }
     console.log(`[TRACKING] Trip ${trip.id} COMPLETED by ${user.role}:${user.id}`);
     return { ok: true, trip };
   }
@@ -1263,10 +1281,26 @@ export class TrackingService {
       vehicle = await Vehicle.findOne({ where: { assigned_driver_id: driver.id } });
       if (vehicle) await driver.update({ vehicle_id: vehicle.id });
     }
-    const activeTrip = vehicle?.current_trip_id
-      ? await Trip.findByPk(vehicle.current_trip_id)
-      : await Trip.findOne({ where: { driver_id: driver.id, status: { [Op.in]: ['planned', 'in_transit'] } }, order: [['createdAt', 'DESC']] });
-    return { driver, vehicle, trip: activeTrip || null };
+    let activeTrip: any = null;
+    if (vehicle?.current_trip_id) {
+      const candidate = await Trip.findByPk(vehicle.current_trip_id);
+      if (candidate && (candidate.status === 'planned' || candidate.status === 'in_transit')) {
+        activeTrip = candidate;
+      } else if (candidate) {
+        // Vehicle points to an old completed/canceled trip — clear it from vehicle
+        await vehicle.update({ current_trip_id: null, tracking_active: false });
+      }
+    }
+    if (!activeTrip) {
+      activeTrip = await Trip.findOne({
+        where: { driver_id: driver.id, status: { [Op.in]: ['planned', 'in_transit'] } },
+        order: [['createdAt', 'DESC']],
+      });
+    }
+    const deliveries = activeTrip
+      ? await Delivery.findAll({ where: { trip_id: activeTrip.id } })
+      : [];
+    return { driver, vehicle, trip: activeTrip || null, deliveries };
   }
 
   /** Persisted history (PostGIS table) with time/trip filters + pagination. */
@@ -1444,7 +1478,7 @@ export class TrackingService {
     const vehicle = await Vehicle.findByPk(vehicleId);
     if (!vehicle) throw new Error('Vehicle not found');
 
-    const trip = await Trip.findOne({
+    let trip = await Trip.findOne({
       where: {
         vehicle_id: vehicle.id,
         status: { [Op.in]: ['planned', 'in_transit', 'delayed'] },
@@ -1452,6 +1486,14 @@ export class TrackingService {
       order: [['createdAt', 'DESC']],
       raw: true,
     });
+    if (!trip) {
+      // Fallback: check if the vehicle has a recent trip or assigned route so the corridor can still be tracked
+      trip = await Trip.findOne({
+        where: { vehicle_id: vehicle.id },
+        order: [['createdAt', 'DESC']],
+        raw: true,
+      });
+    }
     if (!trip) {
       return {
         vehicleId: vehicle.id,
@@ -1467,7 +1509,10 @@ export class TrackingService {
       };
     }
 
-    const route = await Route.findByPk(String(trip.route_id || ''), { raw: true });
+    let route = await Route.findByPk(String(trip.route_id || ''), { raw: true });
+    if (!route && vehicle.current_route) {
+      route = await Route.findOne({ where: { name: vehicle.current_route }, raw: true });
+    }
     if (!route) {
       return {
         vehicleId: vehicle.id,
@@ -1581,6 +1626,8 @@ export class TrackingService {
       plan.rerouted ||
       (plan.avoidedCorridors && plan.avoidedCorridors.length > 0) ||
       options.avoidCorridors?.length ||
+      options.broadcast ||
+      options.reason ||
       (primaryAlert && rec.legs?.some((l: any) => l._avoided))
     );
 
@@ -1657,18 +1704,25 @@ export class TrackingService {
           tripId: trip.id,
           driverId: trip.driver_id,
           transporterId: trip.transporter_id,
+          hasRoute: true,
           rerouted: isRerouted,
           rerouteReason,
           rerouteAlert: result.rerouteAlert,
           geometry: result.geometry,
           legs: result.legs,
+          totalDistanceKm: result.totalDistanceKm,
+          riskScore: result.riskScore,
+          riskLevel: result.riskLevel,
           etaMinutes: result.etaMinutes,
           etaAt: result.etaAt,
+          etaLabel: result.etaLabel,
+          trafficDelayMinutes: result.trafficDelayMinutes,
           timestamp: new Date().toISOString(),
         };
         io.to('admin:all').emit('vehicle:rerouted', broadcastPayload);
         io.to(`transporter:${vehicle.transporter_id}`).emit('vehicle:rerouted', broadcastPayload);
         io.to(`driver:${trip.driver_id}`).emit('vehicle:rerouted', broadcastPayload);
+        io.emit('vehicle:rerouted', broadcastPayload);
         io.emit('route:rerouted', broadcastPayload);
 
         io.to('admin:all').emit('alert:broadcast', {
