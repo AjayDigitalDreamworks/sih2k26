@@ -46,10 +46,7 @@ class RoutingService:
         if cached and (datetime.utcnow() - cached.get("_fetched_at", datetime.min)).seconds < cls._cache_ttl:
             return cached
 
-        fetchers = []
-        if APIConfig.MAPPLS_ACCESS_TOKEN:
-            fetchers.append(cls._fetch_mappls_route)
-        fetchers.extend([cls._fetch_osrm_route, cls._fetch_tomtom_route, cls._fetch_fossgis_route])
+        fetchers = [cls._fetch_osrm_route, cls._fetch_tomtom_route, cls._fetch_fossgis_route]
 
         for fetcher in fetchers:
             try:

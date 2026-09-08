@@ -260,6 +260,18 @@ router.post('/trips/:tripId/stop', authenticateJwt, async (req: Request, res: Re
   }
 });
 
+/** POST /api/tracking/simulate-step/:vehicleId — step vehicle along its route for live testing */
+router.post('/simulate-step/:vehicleId', authenticateJwt, async (req: Request, res: Response) => {
+  try {
+    const result = await TrackingService.simulateVehicleStep(String(req.params.vehicleId));
+    if (result?.error) return sendError(res, result.error, 400);
+    return sendSuccess(res, result, 'Simulated tracking step broadcast');
+  } catch (err: any) {
+    logger.error(`Tracking route failed (${req.method} ${req.originalUrl})`, err);
+    return sendError(res, err.message);
+  }
+});
+
 // Backwards-compatible route names for the mobile contract
 router.post('/vehicles/:vehicleId/trips/:tripId/start', authenticateJwt, async (req: Request, res: Response) => {
   try {

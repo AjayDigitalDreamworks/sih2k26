@@ -19,9 +19,10 @@ import { DISTRICTS } from '../../data/geoMaster';
 import { VehicleMarker } from '../admin/common/VehicleMarker';
 import RainRadarOverlay from '../admin/common/RainRadarOverlay';
 
-// Keyless Esri basemaps (no API key, no placeholder tiles).
+// Basemaps (Keyless Esri & Carto Voyager)
 const TILE_LAYERS = {
   streets: { url: 'https://server.arcgisonline.com/ArcGIS/rest/services/World_Street_Map/MapServer/tile/{z}/{y}/{x}', name: 'Streets', attribution: '&copy; Esri, HERE, Garmin, OpenStreetMap contributors, and the GIS User Community', maxNativeZoom: 16 },
+  voyager: { url: 'https://{s}.basemaps.cartocdn.com/rastertiles/voyager/{z}/{x}/{y}{r}.png', name: 'Voyager', attribution: '&copy; OpenStreetMap contributors &copy; CARTO', maxNativeZoom: 19 },
   satellite: { url: 'https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}', name: 'Satellite', attribution: '&copy; Esri, Maxar, Earthstar Geographics', maxNativeZoom: 17 },
   dark: { url: 'https://server.arcgisonline.com/ArcGIS/rest/services/Canvas/World_Dark_Gray_Base/MapServer/tile/{z}/{y}/{x}', name: 'Dark', attribution: '&copy; Esri — World Dark Gray Canvas', maxNativeZoom: 15 },
 };
@@ -769,7 +770,7 @@ export default function LiveTrackingMap({ embedded = false, selectedId, onSelect
                         </div>
                       )}
                       <p className="text-[9px] text-slate-400 mt-1">
-                        Real {r.provider === 'tomtom' ? 'TomTom' : r.provider === 'mappls' ? 'Mappls' : 'OSRM'} road network · from live GPS
+                        Real {r.provider === 'tomtom' ? 'TomTom' : 'OSRM'} road network · from live GPS
                       </p>
                     </div>
                   </Popup>
@@ -941,16 +942,18 @@ export default function LiveTrackingMap({ embedded = false, selectedId, onSelect
             </div>
             <div className="flex items-center justify-between gap-2 mt-2 pt-1.5 border-t border-slate-100">
               <span className="text-[9px] text-slate-400">Map centered · live heading</span>
-              <button
-                type="button"
-                onClick={() => handleRecalculateRoute(selMarker.id)}
-                disabled={reroutingId === selMarker.id}
-                className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg bg-amber-50 hover:bg-amber-100 text-amber-900 border border-amber-200 text-[10px] font-bold shadow-2xs transition-colors cursor-pointer disabled:opacity-50"
-                title="Trigger ML dynamic detour calculation"
-              >
-                <RefreshCw className={`w-3 h-3 text-amber-700 ${reroutingId === selMarker.id ? 'animate-spin' : ''}`} />
-                <span>{reroutingId === selMarker.id ? 'Recalculating…' : 'Recalculate Route'}</span>
-              </button>
+              <div className="flex items-center gap-1.5">
+                <button
+                  type="button"
+                  onClick={() => handleRecalculateRoute(selMarker.id)}
+                  disabled={reroutingId === selMarker.id}
+                  className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg bg-amber-50 hover:bg-amber-100 text-amber-900 border border-amber-200 text-[10px] font-bold shadow-2xs transition-colors cursor-pointer disabled:opacity-50"
+                  title="Trigger ML dynamic detour calculation"
+                >
+                  <RefreshCw className={`w-3 h-3 text-amber-700 ${reroutingId === selMarker.id ? 'animate-spin' : ''}`} />
+                  <span>{reroutingId === selMarker.id ? 'Recalculating…' : 'Recalculate Route'}</span>
+                </button>
+              </div>
             </div>
           </div>
         )}

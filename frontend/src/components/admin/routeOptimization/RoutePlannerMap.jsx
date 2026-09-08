@@ -321,7 +321,7 @@ export const RoutePlannerMap = ({
             <RouteIcon size={13} /> Active: {activeRoute.name}
           </span>
           <span style={{ display: 'inline-flex', alignItems: 'center', gap: 5, padding: '5px 10px', borderRadius: 8, background: '#F8FAFC', border: '1px solid #E2E8F0', color: '#64748B', fontWeight: 600 }}>
-            Geometry: {plan.routingProvider === 'osrm' ? 'OSRM road network' : plan.routingProvider === 'mappls' ? 'Mappls roads' : plan.routingProvider === 'tomtom' ? 'TomTom roads' : 'road network'}
+            Geometry: {plan.routingProvider === 'osrm' ? 'OSRM road network' : plan.routingProvider === 'tomtom' ? 'TomTom roads' : 'road network'}
           </span>
         </div>
       )}

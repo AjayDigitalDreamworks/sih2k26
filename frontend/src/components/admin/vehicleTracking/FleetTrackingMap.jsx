@@ -29,6 +29,7 @@ const DISTRICT_COORDS = {
 
 const TILE_LAYERS = {
   streets: { url: 'https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', name: 'Streets', maxNativeZoom: 19 },
+  voyager: { url: 'https://{s}.basemaps.cartocdn.com/rastertiles/voyager/{z}/{x}/{y}{r}.png', name: 'Voyager', maxNativeZoom: 19 },
   satellite: { url: 'https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}', name: 'Satellite', maxNativeZoom: 17 },
   terrain: { url: 'https://server.arcgisonline.com/ArcGIS/rest/services/World_Topo_Map/MapServer/tile/{z}/{y}/{x}', name: 'Terrain', maxNativeZoom: 16 },
   dark: { url: 'https://server.arcgisonline.com/ArcGIS/rest/services/Canvas/World_Dark_Gray_Base/MapServer/tile/{z}/{y}/{x}', name: 'Dark', maxNativeZoom: 15 },
@@ -406,7 +407,7 @@ export const FleetTrackingMap = ({ selectedVehicleId, onSelectVehicle }) => {
       )}
 
       <MapContainer center={mapCenter} zoom={7} maxZoom={19} style={{ height: '100%', width: '100%' }} zoomControl={false} attributionControl={false}>
-        <ResilientTileLayer url={tile.url} attribution="&copy; OpenStreetMap" key={activeLayer} maxNativeZoom={tile.maxNativeZoom || 16} maxZoom={19} />
+        <ResilientTileLayer url={tile.url} fallbackUrl={tile.fallbackUrl} attribution="&copy; OpenStreetMap" key={activeLayer} maxNativeZoom={tile.maxNativeZoom || 16} maxZoom={19} />
 
         {/* Rainfall / flood heatmap from real district observations */}
         {heatMode !== 'off' && (
@@ -483,7 +484,7 @@ export const FleetTrackingMap = ({ selectedVehicleId, onSelectVehicle }) => {
                         </div>
                       )}
                       <div style={{ color: '#6B7280', fontSize: 9, marginTop: 4 }}>
-                        {liveRoute?.routingProvider === 'osrm' ? 'via OSRM road network' : liveRoute?.routingProvider === 'tomtom' ? 'via TomTom road network' : liveRoute?.routingProvider === 'mappls' ? 'via Mappls roads' : liveRoute?.routingProvider ? 'via ' + liveRoute.routingProvider : ''}
+                        {liveRoute?.routingProvider === 'osrm' ? 'via OSRM road network' : liveRoute?.routingProvider === 'tomtom' ? 'via TomTom road network' : liveRoute?.routingProvider ? 'via ' + liveRoute.routingProvider : ''}
                       </div>
                       {(liveRoute?.legs || []).length > 0 && (
                         <div style={{ marginTop: 6, borderTop: '1px solid #E5E7EB', paddingTop: 6 }}>

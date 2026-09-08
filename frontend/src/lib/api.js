@@ -671,6 +671,20 @@ class ApiClient {
       body: JSON.stringify({ items }),
     });
   }
+
+  static getLiveRoute(vehicleId, options = {}) {
+    const params = new URLSearchParams();
+    if (options.avoid) params.set('avoid', options.avoid);
+    const qs = params.toString() ? `?${params.toString()}` : '';
+    return this.request(`/ml/live-route/${encodeURIComponent(vehicleId)}${qs}`);
+  }
+
+  static rerouteVehicle(vehicleId, payload = {}) {
+    return this.request(`/ml/live-route/${encodeURIComponent(vehicleId)}/reroute`, {
+      method: 'POST',
+      body: JSON.stringify(payload),
+    });
+  }
 }
 
 export default ApiClient;

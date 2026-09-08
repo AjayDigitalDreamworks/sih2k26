@@ -125,20 +125,31 @@ export class TransporterController {
       const routeTravelHours = Math.round((routeDistance / 45) * 10) / 10;
       const routeRisk = mlPlan?.recommended?.riskScore || 25;
 
+      // Extract real road network geometry from ML planner (OSRM/Mappls/TomTom)
+      let roadPoints: any[] = [];
+      if (Array.isArray(mlPlan?.recommended?.geometry) && mlPlan.recommended.geometry.length > 1) {
+        roadPoints = mlPlan.recommended.geometry;
+      } else if (Array.isArray(mlPlan?.safest?.geometry) && mlPlan.safest.geometry.length > 1) {
+        roadPoints = mlPlan.safest.geometry;
+      } else if (Array.isArray(mlPlan?.recommended?.legs?.[0]?.geometry) && mlPlan.recommended.legs[0].geometry.length > 1) {
+        roadPoints = mlPlan.recommended.legs[0].geometry;
+      }
+
+      const oLng = mlPlan?.origin?.lng || 77.2878;
+      const oLat = mlPlan?.origin?.lat || 28.3842;
+      const dLng = mlPlan?.destination?.lng || 77.4125;
+      const dLat = mlPlan?.destination?.lat || 28.4006;
+
+      // PostGIS GeoJSON LineString coordinates: [longitude, latitude]
+      const geoJsonCoords = roadPoints.length > 1
+        ? roadPoints.map((p: any) => (Array.isArray(p) && p.length >= 2 ? [p[1], p[0]] : p))
+        : [[oLng, oLat], [dLng, dLat]];
+      const routeGeom = JSON.stringify({ type: 'LineString', coordinates: geoJsonCoords });
+
       if (!route) {
         const oCode = originDistrictId.replace(/[^a-zA-Z0-9]/g, '').slice(0, 10).toUpperCase();
         const dCode = destDistrictId.replace(/[^a-zA-Z0-9]/g, '').slice(0, 10).toUpperCase();
         const routeId = `R-${oCode}-${dCode}`.slice(0, 50);
-
-        const oLng = mlPlan?.origin?.lng || 77.2878;
-        const oLat = mlPlan?.origin?.lat || 28.3842;
-        const dLng = mlPlan?.destination?.lng || 77.4125;
-        const dLat = mlPlan?.destination?.lat || 28.4006;
-        const rawCoords = mlPlan?.recommended?.legs?.[0]?.geometry?.coordinates;
-        const routeCoords = Array.isArray(rawCoords) && rawCoords.length > 1
-          ? rawCoords
-          : [[oLng, oLat], [dLng, dLat]];
-        const routeGeom = JSON.stringify({ type: 'LineString', coordinates: routeCoords });
 
         route = await Route.create({
           id: routeId,
@@ -150,6 +161,14 @@ export class TransporterController {
           current_risk_score: routeRisk,
           status: routeRisk > 70 ? 'blocked' : routeRisk > 50 ? 'at_risk' : 'good',
           geom: routeGeom,
+        });
+      } else if (roadPoints.length > 2) {
+        // Upgrade existing route to high-precision real road network geometry
+        await route.update({
+          geom: routeGeom,
+          distance_km: routeDistance,
+          avg_travel_hours: routeTravelHours,
+          current_risk_score: routeRisk,
         });
       }
 
@@ -307,9 +326,17 @@ export class TransporterController {
         if (!route) {
           const originName = req.body.originDistrictId.replace(/_/g, ' ').replace(/\b\w/g, (c: string) => c.toUpperCase());
           const destName = req.body.destDistrictId.replace(/_/g, ' ').replace(/\b\w/g, (c: string) => c.toUpperCase());
+          let roadPoints: any[] = [];
+          if (Array.isArray(req.body.geometry) && req.body.geometry.length > 1) {
+            roadPoints = req.body.geometry;
+          }
+          const geoJsonCoords = roadPoints.length > 1
+            ? roadPoints.map((p: any) => (Array.isArray(p) && p.length >= 2 ? [p[1], p[0]] : p))
+            : [[77.2878, 28.3842], [77.4125, 28.4006]];
+
           const routeGeom = JSON.stringify({
             type: 'LineString',
-            coordinates: [[77.2878, 28.3842], [77.4125, 28.4006]],
+            coordinates: geoJsonCoords,
           });
           const dynamicRouteId = `RT-${req.body.originDistrictId.slice(0, 3).toUpperCase()}-${req.body.destDistrictId.slice(0, 3).toUpperCase()}-${Date.now().toString().slice(-4)}`;
           route = await Route.create({
@@ -324,6 +351,13 @@ export class TransporterController {
             geom: routeGeom,
           });
         }
+      }
+      if (route && Array.isArray(req.body.geometry) && req.body.geometry.length > 2) {
+        const geoJsonCoords = req.body.geometry.map((p: any) => (Array.isArray(p) && p.length >= 2 ? [p[1], p[0]] : p));
+        await route.update({
+          geom: JSON.stringify({ type: 'LineString', coordinates: geoJsonCoords }),
+          distance_km: req.body.distanceKm || route.distance_km,
+        });
       }
       if (!route) {
         return sendError(res, 'Could not resolve corridor route for this trip', 400);

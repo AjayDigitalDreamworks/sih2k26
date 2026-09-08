@@ -11,9 +11,9 @@ L.Icon.Default.mergeOptions({
   shadowUrl: 'https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.7.1/images/marker-shadow.png',
 });
 
-// CartoDB Dark Matter / Voyager tiles
-const TILES = 'https://{s}.basemaps.cartocdn.com/rastertiles/voyager/{z}/{x}/{y}{r}.png';
-const TILE_ATTR = '&copy; <a href="https://carto.com/">CARTO</a> &copy; <a href="https://www.openstreetmap.org/copyright">OSM</a>';
+const CARTO_TILES = 'https://{s}.basemaps.cartocdn.com/rastertiles/voyager/{z}/{x}/{y}{r}.png';
+const OSM_TILES = 'https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png';
+const TILE_ATTR = '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors &copy; <a href="https://carto.com/attributions">CARTO</a>';
 
 const isValid = (p) => p && Number.isFinite(p.lat) && Number.isFinite(p.lng) && Math.abs(p.lat) <= 90 && Math.abs(p.lng) <= 180;
 
@@ -145,19 +145,32 @@ export default function DriverLiveMap({ marker, route, trail, height = 280 }) {
     ? trail.filter((p) => p && Number.isFinite(p.lat) && Number.isFinite(p.lng)).map((p) => [p.lat, p.lng])
     : [];
 
+  const hasFittedRef = useRef(false);
+
+  // Initial fit to route corridor
   useEffect(() => {
     if (!map) return;
-    const pts = [];
-    if (marker) pts.push([marker.lat, marker.lng]);
-    if (routeLatLngs.length) pts.push(...routeLatLngs);
-    if (trailLatLngs.length) pts.push(...trailLatLngs);
-    if (pts.length === 0) return;
-    if (pts.length === 1) {
-      map.setView(pts[0], 15);
+    if (routeLatLngs.length > 1 && !hasFittedRef.current) {
+      hasFittedRef.current = true;
+      try {
+        map.fitBounds(L.latLngBounds(routeLatLngs), { padding: [35, 35], maxZoom: 15 });
+      } catch {}
       return;
     }
-    map.fitBounds(L.latLngBounds(pts.map((p) => L.latLng(p[0], p[1]))), { padding: [28, 28], maxZoom: 15 });
-  }, [map, marker?.lat, marker?.lng, routeLatLngs.length, trailLatLngs.length]);
+  }, [map, routeLatLngs.length]);
+
+  // Google Maps turn-by-turn smooth vehicle camera follow
+  useEffect(() => {
+    if (!map || !marker || !Number.isFinite(marker.lat) || !Number.isFinite(marker.lng)) return;
+    try {
+      if (!hasFittedRef.current && routeLatLngs.length === 0) {
+        map.setView([marker.lat, marker.lng], 15);
+        hasFittedRef.current = true;
+      } else {
+        map.panTo([marker.lat, marker.lng], { animate: true, duration: 1.0 });
+      }
+    } catch {}
+  }, [map, marker?.lat, marker?.lng, routeLatLngs.length]);
 
   const destPoint = routeLatLngs.length > 0 ? routeLatLngs[routeLatLngs.length - 1] : null;
   const destIcon = L.divIcon({
@@ -178,13 +191,13 @@ export default function DriverLiveMap({ marker, route, trail, height = 280 }) {
       {hasAnything ? (
         <MapContainer
           ref={setMap}
-          center={marker ? [marker.lat, marker.lng] : [26.14, 91.73]}
-          zoom={10}
+          center={marker ? [marker.lat, marker.lng] : [28.38, 77.28]}
+          zoom={14}
           scrollWheelZoom={false}
           style={{ height: '100%', width: '100%' }}
           zoomControl={false}
         >
-          <ResilientTileLayer url={TILES} attribution={TILE_ATTR} maxZoom={19} maxNativeZoom={18} />
+          <ResilientTileLayer url={CARTO_TILES} fallbackUrl={OSM_TILES} attribution={TILE_ATTR} maxZoom={19} maxNativeZoom={19} />
 
           {/* Glowing Outer Polyline */}
           {routeLatLngs.length > 1 && (
