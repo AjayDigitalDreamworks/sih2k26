@@ -167,7 +167,7 @@ export default function VehicleDetailsModal({ isOpen, onClose, vehicle, onEdit, 
                 <button
                   type="button"
                   onClick={() => onDelete(vehicle)}
-                  className="inline-flex items-center gap-1.5 px-3 py-2 rounded-xl border border-rose-200 text-rose-600 hover:bg-rose-50 text-xs font-bold transition-colors cursor-pointer"
+                  className="inline-flex items-center gap-1.5 px-4 py-2 rounded-full border border-rose-200 text-rose-600 hover:bg-rose-50 text-xs font-bold transition-colors cursor-pointer"
                 >
                   <Trash2 className="w-3.5 h-3.5" /> Remove
                 </button>
@@ -176,7 +176,7 @@ export default function VehicleDetailsModal({ isOpen, onClose, vehicle, onEdit, 
                 <button
                   type="button"
                   onClick={() => onEdit(vehicle)}
-                  className="inline-flex items-center gap-1.5 px-4 py-2 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-xs font-bold text-white shadow-sm shadow-emerald-600/20 transition-colors cursor-pointer"
+                  className="inline-flex items-center gap-1.5 px-4.5 py-2 rounded-full bg-[#087f4d] hover:bg-[#06663e] text-xs font-bold text-white shadow-sm shadow-emerald-700/25 transition-colors cursor-pointer"
                 >
                   <Pencil className="w-3.5 h-3.5" /> Edit Vehicle
                 </button>

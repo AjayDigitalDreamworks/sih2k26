@@ -1,4 +1,5 @@
 import { env } from '../../config/env';
+import { LocalDisasterDigitalTwin } from './simulation.engine';
 import { redisClient } from '../../config/redis';
 import { Op, fn, col, literal } from 'sequelize';
 import {
@@ -305,4 +306,76 @@ export class MLProxyService {
       ],
     };
   }
+
+  /**
+   * Forward route planning request to Python ML routing engine
+   */
+  static async planRoute(payload: any) {
+    const response = await fetch(`${env.mlServiceUrl}/route/plan`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(payload),
+    });
+    if (!response.ok) throw new Error(`ML service returned ${response.status}`);
+    return await response.json();
+  }
+
+  /**
+   * Forward emergency dynamic reroute request to Python ML routing engine
+   */
+  static async rerouteVehicle(payload: any) {
+    const response = await fetch(`${env.mlServiceUrl}/route/reroute-vehicle`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(payload),
+    });
+    if (!response.ok) throw new Error(`ML service returned ${response.status}`);
+    return await response.json();
+  }
+
+  /**
+   * Retrieve Disaster Digital Twin catastrophe presets
+   */
+  static async getSimulationPresets() {
+    try {
+      const response = await fetch(`${env.mlServiceUrl}/simulation/presets`, {
+        method: 'GET',
+        headers: { 'Content-Type': 'application/json' },
+      });
+      if (response.ok) {
+        return await response.json();
+      }
+    } catch (err) {
+      console.warn('[MLProxyService] ML Service unreachable for presets, using in-memory twin fallback:', err);
+    }
+    return {
+      success: true,
+      presets: LocalDisasterDigitalTwin.getPresets(),
+      mountainPasses: LocalDisasterDigitalTwin.getMountainPasses(),
+    };
+  }
+
+  /**
+   * Run in-memory Disaster Digital Twin scenario simulation
+   */
+  static async runSimulation(payload: any) {
+    try {
+      const response = await fetch(`${env.mlServiceUrl}/simulation/run`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(payload),
+      });
+      if (response.ok) {
+        return await response.json();
+      }
+    } catch (err) {
+      console.warn('[MLProxyService] ML Service unreachable for simulation run, using in-memory twin fallback:', err);
+    }
+    const result = LocalDisasterDigitalTwin.runSimulation(payload || {});
+    return {
+      success: true,
+      data: result,
+    };
+  }
 }
+

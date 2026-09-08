@@ -1,8 +1,9 @@
 import dotenv from 'dotenv';
 import path from 'path';
+// Load .env from cwd as well as relative directory structures
 dotenv.config();
-// Also pick up real integration keys (IMD/Google Flood/TomTom/Mappls/Bhuvan)
-// that live in the repo-root .env when running from core-backend/.
+dotenv.config({ path: path.resolve(__dirname, '../../.env') });
+dotenv.config({ path: path.resolve(__dirname, '../../../.env') });
 dotenv.config({ path: path.resolve(process.cwd(), '../.env') });
 
 export const env = {

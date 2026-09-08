@@ -1,56 +1,45 @@
 import React from 'react';
-import { ArrowRight, Bell, Compass, Route as RouteIcon, Satellite, ShieldAlert, Truck } from 'lucide-react';
+import { Bell, Compass, Route as RouteIcon, Satellite, ShieldAlert, Truck } from 'lucide-react';
 
 const features = [
   {
-    no: "01",
-    tag: "ACTIVE LAYER",
-    title: "LIVE MAP & ACCESSIBILITY",
-    copy: "Monitor roads, bridges, corridors and access conditions in real time.",
+    title: "REAL-TIME ACCESSIBILITY & GIS",
+    copy: "Monitor road, bridge, and district passability status across all 8 North Eastern states.",
     icon: Compass,
     image: "/feature-live-map.jpg",
   },
   {
-    no: "02",
-    tag: "ACTIVE LAYER",
     title: "AI DISRUPTION PREDICTION",
-    copy: "Predict landslides, floods, congestion and road damage before they become major disruptions.",
+    copy: "Predict landslides, floods, road damage, and heavy rainfall cut-offs 6–24 hours in advance.",
     icon: ShieldAlert,
     image: "/feature-ai-prediction.jpg",
   },
   {
-    no: "03",
-    tag: "ACTIVE LAYER",
-    title: "SMART ROUTE ENGINE",
-    copy: "Generate optimized alternate routes based on risk, travel time and accessibility.",
+    title: "TERRAIN-AWARE ROUTE ENGINE",
+    copy: "Calculate alternate corridors factoring in bridge weight limits, ghat grades, and delays.",
     icon: RouteIcon,
     image: "/feature-route-engine.jpg",
   },
   {
-    no: "04",
-    tag: "ACTIVE LAYER",
-    title: "LIVE VEHICLE TRACKING",
-    copy: "Track vehicles and essential deliveries with GPS-based visibility.",
+    title: "GPS VEHICLE & SUPPLY TRACKING",
+    copy: "Track freight carrying essential medicines, food rations, and supplies across key corridors.",
     icon: Truck,
     image: "/feature-vehicle-tracking.jpg",
   },
   {
-    no: "05",
-    tag: "ACTIVE LAYER",
-    title: "INSTANT ALERTS",
-    copy: "Receive alerts for blockages, delays, high-risk corridors and disruptions.",
+    title: "AUTOMATED CORRIDOR ALERTS",
+    copy: "Receive instant alerts for road blockages, high-risk corridors, and critical route disruptions.",
     icon: Bell,
     image: "/feature-instant-alerts.jpg",
   },
   {
-    no: "06",
-    tag: "ACTIVE LAYER",
-    title: "FIELD REPORTING",
-    copy: "Upload geo-tagged photos and incident reports from the field, including offline reporting.",
+    title: "GEO-TAGGED FIELD REPORTING",
+    copy: "Enable field teams to submit geo-tagged incident photos and reports with offline auto-sync.",
     icon: Satellite,
     image: "/feature-field-reporting.jpg",
   },
 ];
+
 
 export function PlatformFeaturesSection() {
   return (
@@ -72,31 +61,17 @@ export function PlatformFeaturesSection() {
                   <img src={feat.image} alt={feat.title} className="feature-backdrop-photo" />
                   <div className="feature-backdrop-mist" />
                   <div className="feature-backdrop-topography" />
-                  <div className="feature-partition-orb" aria-hidden="true" />
                 </div>
 
                 <div className="feature-card-content">
-                  <div className="feature-signal">
-                    <span>{feat.no} / PLATFORM</span>
-                    <i />
-                    <span>{feat.tag}</span>
-                  </div>
-
-                  <div className="feature-icon">
-                    <Icon size={20} strokeWidth={1.8} />
-                  </div>
-
-                  <div className="feature-body-text">
-                    <span className="feature-no">{feat.no}</span>
+                  <div className="feature-card-header">
+                    <div className="feature-icon">
+                      <Icon size={20} strokeWidth={2} />
+                    </div>
                     <h3>{feat.title}</h3>
-                    <p>{feat.copy}</p>
                   </div>
-                </div>
 
-                <div className="feature-card-bottom">
-                  <button className="feature-action-btn" type="button" aria-label={`Explore ${feat.title}`}>
-                    <ArrowRight size={13} strokeWidth={2.5} />
-                  </button>
+                  <p>{feat.copy}</p>
                 </div>
               </article>
             );

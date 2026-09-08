@@ -1,33 +1,29 @@
 import React from 'react';
+import {
+  Truck,
+  MapPin,
+  Layers,
+  ShieldCheck,
+  Map,
+  Navigation,
+  Zap,
+  Users,
+  Info,
+  Building2,
+  Radio,
+  Briefcase,
+  User,
+  Shield,
+  Smartphone,
+  Bot,
+  Activity,
+  WifiOff,
+  ShieldAlert,
+} from 'lucide-react';
 
 export function Footer({ onOpenLogin }) {
   return (
     <footer className="footer">
-      {/* Footer Top Stats Banner */}
-      <div className="footer-stats-bar">
-        <div className="container footer-stats-inner">
-          <div className="footer-stat-item">
-            <span className="footer-stat-num">8,450+</span>
-            <span className="footer-stat-label">Vehicles Tracked</span>
-          </div>
-          <div className="footer-stat-divider" />
-          <div className="footer-stat-item">
-            <span className="footer-stat-num">12,500 KM</span>
-            <span className="footer-stat-label">Roads Monitored</span>
-          </div>
-          <div className="footer-stat-divider" />
-          <div className="footer-stat-item">
-            <span className="footer-stat-num">122+</span>
-            <span className="footer-stat-label">Districts Covered</span>
-          </div>
-          <div className="footer-stat-divider" />
-          <div className="footer-stat-item">
-            <span className="footer-stat-num">8 States</span>
-            <span className="footer-stat-label">Northeast India</span>
-          </div>
-        </div>
-      </div>
-
       <div className="container footer-top">
         {/* Brand Column */}
         <div className="footer-brand-col">
@@ -46,74 +42,125 @@ export function Footer({ onOpenLogin }) {
             AI-powered Smart Logistics Accessibility Intelligence Platform for Northeast India — monitoring road corridors, predicting disruptions, and keeping essential goods moving.
           </p>
           <div className="footer-gov-badge">
-            <div className="footer-gov-dot" />
+            <ShieldCheck size={14} className="text-emerald-700 shrink-0" />
             <span>RAAHI · NHIDCL Initiative · Built for India</span>
           </div>
         </div>
 
         {/* Explore Column */}
         <div>
-          <div className="footer-heading">Platform</div>
+          <div className="footer-heading">
+            <Layers size={13} className="text-emerald-700 inline mr-1.5" />
+            Platform
+          </div>
           <div className="footer-links">
-            <a href="#platform">Live Map & Accessibility</a>
-            <a href="#intelligence">Route Intelligence</a>
-            <a href="#how-it-works">How It Works</a>
-            <a href="#solutions">Who It's For</a>
-            <a href="#northeast">About RAAHI</a>
+            <a href="#platform" className="footer-link-item">
+              <Map size={15} className="footer-link-icon" />
+              <span>Live Map & Accessibility</span>
+            </a>
+            <a href="#how-it-works" className="footer-link-item">
+              <Zap size={15} className="footer-link-icon" />
+              <span>How It Works</span>
+            </a>
+            <a href="#solutions" className="footer-link-item">
+              <Users size={15} className="footer-link-icon" />
+              <span>Who It's For</span>
+            </a>
+            <a href="#northeast" className="footer-link-item">
+              <Info size={15} className="footer-link-icon" />
+              <span>About RAAHI</span>
+            </a>
           </div>
         </div>
 
         {/* Solutions Column */}
         <div>
-          <div className="footer-heading">Solutions</div>
+          <div className="footer-heading">
+            <ShieldAlert size={13} className="text-emerald-700 inline mr-1.5" />
+            Solutions
+          </div>
           <div className="footer-links">
-            <a href="#solutions">Government Agencies</a>
-            <a href="#solutions">Fleet Operators</a>
-            <a href="#solutions">Field Officers</a>
-            <a href="#solutions">Businesses</a>
-            <a href="#solutions">Citizens</a>
+            <a href="#solutions" className="footer-link-item">
+              <Building2 size={15} className="footer-link-icon" />
+              <span>Government Agencies</span>
+            </a>
+            <a href="#solutions" className="footer-link-item">
+              <Truck size={15} className="footer-link-icon" />
+              <span>Fleet Operators</span>
+            </a>
+            <a href="#solutions" className="footer-link-item">
+              <Radio size={15} className="footer-link-icon" />
+              <span>Field Officers</span>
+            </a>
+            <a href="#solutions" className="footer-link-item">
+              <Briefcase size={15} className="footer-link-icon" />
+              <span>Businesses</span>
+            </a>
+            <a href="#solutions" className="footer-link-item">
+              <Users size={15} className="footer-link-icon" />
+              <span>Citizens</span>
+            </a>
           </div>
         </div>
 
         {/* Portal Access Column */}
         <div>
-          <div className="footer-heading">Portal Access</div>
+          <div className="footer-heading">
+            <ShieldCheck size={13} className="text-emerald-700 inline mr-1.5" />
+            Portal Access
+          </div>
           <div className="footer-links">
             <button
               type="button"
               onClick={onOpenLogin}
-              className="text-left hover:text-emerald-400 text-slate-300 transition-colors cursor-pointer footer-link-btn"
+              className="text-left footer-link-btn"
             >
-              Citizen Login
+              <User size={15} className="footer-link-icon" />
+              <span>Citizen Login</span>
             </button>
             <button
               type="button"
               onClick={onOpenLogin}
-              className="text-left hover:text-emerald-400 text-slate-300 transition-colors cursor-pointer footer-link-btn"
+              className="text-left footer-link-btn"
             >
-              Official Login (NHIDCL)
+              <Shield size={15} className="footer-link-icon" />
+              <span>Official Login (NHIDCL)</span>
             </button>
             <button
               type="button"
               onClick={onOpenLogin}
-              className="text-left hover:text-emerald-400 text-slate-300 transition-colors cursor-pointer footer-link-btn"
+              className="text-left footer-link-btn"
             >
-              Fleet Operator Portal
+              <Truck size={15} className="footer-link-icon" />
+              <span>Fleet Operator Portal</span>
             </button>
             <button
               type="button"
               onClick={onOpenLogin}
-              className="text-left hover:text-emerald-400 text-slate-300 transition-colors cursor-pointer footer-link-btn"
+              className="text-left footer-link-btn"
             >
-              Field Officer App
+              <Smartphone size={15} className="footer-link-icon" />
+              <span>Field Officer App</span>
             </button>
           </div>
 
           <div className="footer-feature-chips">
-            <span className="footer-chip">GIS Mapping</span>
-            <span className="footer-chip">AI / ML</span>
-            <span className="footer-chip">GPS Tracking</span>
-            <span className="footer-chip">Offline Mode</span>
+            <span className="footer-chip">
+              <MapPin size={11} className="mr-1" />
+              GIS Mapping
+            </span>
+            <span className="footer-chip">
+              <Bot size={11} className="mr-1" />
+              AI / ML
+            </span>
+            <span className="footer-chip">
+              <Activity size={11} className="mr-1" />
+              GPS Tracking
+            </span>
+            <span className="footer-chip">
+              <WifiOff size={11} className="mr-1" />
+              Offline Mode
+            </span>
           </div>
         </div>
       </div>

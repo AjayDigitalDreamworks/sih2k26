@@ -5,39 +5,40 @@ const solutions = [
   {
     no: "01",
     role: "GOVERNMENT",
-    copy: "Monitor accessibility and critical supply movement.",
+    copy: "Monitor district accessibility, emergency green corridors, and public service supplies.",
     icon: ShieldAlert,
     image: "/feature-live-map.jpg",
   },
   {
     no: "02",
     role: "TRANSPORTERS",
-    copy: "Optimize routes and fleet movement.",
+    copy: "Terrain-aware dispatch planning, axle weight compliance, and live GPS fleet tracking.",
     icon: Truck,
     image: "/hero-truck.jpg",
   },
   {
     no: "03",
     role: "FIELD OFFICERS",
-    copy: "Report disruptions from the ground.",
+    copy: "Upload geo-tagged disruption reports with photos and offline sync from remote areas.",
     icon: Crosshair,
     image: "/card-terrain.jpg",
   },
   {
     no: "04",
-    role: "BUSINESSES",
-    copy: "Improve delivery predictability and operational visibility.",
+    role: "SUPPLIERS",
+    copy: "Ensure on-time transit for medicines, vaccines, food rations, and perishable agri produce.",
     icon: Gauge,
     image: "/feature-route-engine.jpg",
   },
   {
     no: "05",
     role: "CITIZENS",
-    copy: "Benefit from more reliable movement of essential goods.",
+    copy: "Transparent access to road passability, transport updates, and essential commodity alerts.",
     icon: Users,
     image: "/card-signal.jpg",
   },
 ];
+
 
 export function SolutionsSection({ onOpenLogin }) {
   return (
@@ -59,25 +60,17 @@ export function SolutionsSection({ onOpenLogin }) {
                   <img src={sol.image} alt={sol.role} className="solution-backdrop-photo" />
                   <div className="solution-backdrop-mist" />
                   <div className="solution-backdrop-topography" />
-                  <div className="solution-partition-orb" aria-hidden="true" />
                 </div>
 
                 <div className="solution-card-content">
-                  <div className="solution-signal">
-                    <span>ROLE / {sol.no}</span>
-                    <i />
-                    <span>ECOSYSTEM</span>
+                  <div className="solution-card-header">
+                    <div className="solution-icon-wrap">
+                      <Icon size={20} strokeWidth={2} />
+                    </div>
+                    <h3 className="solution-title">{sol.role}</h3>
                   </div>
 
-                  <div className="solution-icon-wrap">
-                    <Icon className="solution-icon" size={20} strokeWidth={1.8} />
-                  </div>
-
-                  <div className="solution-text">
-                    <span className="solution-no">ROLE / {sol.no}</span>
-                    <h3>{sol.role}</h3>
-                    <p>{sol.copy}</p>
-                  </div>
+                  <p className="solution-copy">{sol.copy}</p>
                 </div>
 
                 <div className="solution-card-bottom">
@@ -87,6 +80,7 @@ export function SolutionsSection({ onOpenLogin }) {
                     onClick={onOpenLogin}
                     aria-label={`Explore role for ${sol.role}`}
                   >
+                    <span>Launch</span>
                     <ArrowRight size={13} strokeWidth={2.5} />
                   </button>
                 </div>

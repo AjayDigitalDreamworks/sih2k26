@@ -199,7 +199,7 @@ export default function FieldOfficerApp() {
           <div className="flex items-center gap-2 sm:gap-3">
             {/* GPS Accuracy Pill */}
             <div
-              className={`hidden sm:flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-xs font-bold border ${
+              className={`hidden sm:flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs font-bold border ${
                 officerGps
                   ? 'bg-emerald-950/60 border-emerald-800/80 text-emerald-400'
                   : 'bg-amber-950/60 border-amber-800/80 text-amber-400'
@@ -213,7 +213,7 @@ export default function FieldOfficerApp() {
             <button
               onClick={loadData}
               disabled={isLoading}
-              className="p-2 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-300 transition-colors cursor-pointer"
+              className="p-2 rounded-full bg-slate-800 hover:bg-slate-700 text-slate-300 transition-colors cursor-pointer"
               title="Refresh Data"
             >
               <RefreshCw className={`w-4 h-4 ${isLoading ? 'animate-spin' : ''}`} />
@@ -222,7 +222,7 @@ export default function FieldOfficerApp() {
             {/* New Report Trigger */}
             <button
               onClick={() => setIsNewHazardModalOpen(true)}
-              className="hidden sm:flex items-center gap-1.5 px-3.5 py-1.5 bg-emerald-600 hover:bg-emerald-700 text-white font-bold text-xs rounded-xl shadow-md shadow-emerald-600/20 transition-all cursor-pointer"
+              className="hidden sm:flex items-center gap-1.5 px-4 py-2 bg-[#087f4d] hover:bg-[#06663e] text-white font-bold text-xs rounded-full shadow-md shadow-emerald-950/30 transition-all cursor-pointer"
             >
               <Plus className="w-4 h-4" />
               <span>Report Hazard</span>
@@ -231,7 +231,7 @@ export default function FieldOfficerApp() {
             {/* Logout */}
             <button
               onClick={handleLogout}
-              className="p-2 rounded-xl bg-slate-800 hover:bg-rose-900/50 text-slate-400 hover:text-rose-400 transition-colors cursor-pointer"
+              className="p-2 rounded-full bg-slate-800 hover:bg-rose-900/50 text-slate-400 hover:text-rose-400 transition-colors cursor-pointer"
               title="Sign Out"
             >
               <LogOut className="w-4 h-4" />
@@ -320,7 +320,7 @@ export default function FieldOfficerApp() {
           {/* Quick Action Button for Mobile or Desktop */}
           <button
             onClick={() => setIsNewHazardModalOpen(true)}
-            className="sm:hidden flex items-center gap-1 px-3 py-1.5 bg-emerald-600 text-white text-xs font-bold rounded-xl shadow-xs cursor-pointer"
+            className="sm:hidden flex items-center gap-1 px-3.5 py-1.5 bg-[#087f4d] hover:bg-[#06663e] text-white text-xs font-bold rounded-full shadow-xs cursor-pointer"
           >
             <Plus className="w-4 h-4" />
             <span>Report</span>
@@ -336,9 +336,9 @@ export default function FieldOfficerApp() {
                 <button
                   key={f}
                   onClick={() => setStatusFilter(f)}
-                  className={`px-3 py-1 rounded-lg text-xs font-bold cursor-pointer transition-colors ${
+                  className={`px-3.5 py-1 rounded-full text-xs font-bold cursor-pointer transition-colors ${
                     statusFilter === f
-                      ? 'bg-emerald-700 text-white shadow-2xs'
+                      ? 'bg-[#087f4d] text-white shadow-2xs'
                       : 'bg-white text-slate-600 hover:bg-slate-50 border border-slate-200'
                   }`}
                 >
@@ -357,7 +357,7 @@ export default function FieldOfficerApp() {
                 </p>
                 <button
                   onClick={() => setIsNewHazardModalOpen(true)}
-                  className="mt-4 px-4 py-2 bg-emerald-600 text-white text-xs font-bold rounded-xl shadow-xs hover:bg-emerald-700 cursor-pointer"
+                  className="mt-4 px-4.5 py-2.5 bg-[#087f4d] text-white text-xs font-bold rounded-full shadow-sm hover:bg-[#06663e] cursor-pointer"
                 >
                   Report an Incident Now
                 </button>
@@ -401,7 +401,7 @@ export default function FieldOfficerApp() {
                 </div>
                 <button
                   onClick={() => setIsNewHazardModalOpen(true)}
-                  className="px-3.5 py-1.5 bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-bold rounded-xl cursor-pointer"
+                  className="px-4 py-2 bg-[#087f4d] hover:bg-[#06663e] text-white text-xs font-bold rounded-full shadow-sm transition-colors cursor-pointer"
                 >
                   + New Report
                 </button>

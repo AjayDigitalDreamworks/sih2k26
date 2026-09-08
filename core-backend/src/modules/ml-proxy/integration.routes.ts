@@ -5,6 +5,7 @@ import { sendSuccess, sendError } from '../../utils/response';
 import { Vehicle, Trip, Route, District } from '../../models/postgres';
 import { TrackingService } from '../tracking/tracking.service';
 import { env } from '../../config/env';
+import { LocalDisasterDigitalTwin } from './simulation.engine';
 
 const ML_URL = env.mlServiceUrl;
 
@@ -234,6 +235,14 @@ router.post('/route/plan', async (req: Request, res: Response) => {
   } catch (err: any) { return sendError(res, err.message); }
 });
 
+router.post('/route/reroute-vehicle', async (req: Request, res: Response) => {
+  try {
+    const data = await proxyToML('/route/reroute-vehicle', 'POST', req.body);
+    return sendSuccess(res, data, 'Vehicle dynamically rerouted');
+  } catch (err: any) { return sendError(res, err.message); }
+});
+
+
 // --- Live vehicle route: real GPS position → destination over the road network ---
 // Uses TrackingService to dynamically calculate safest route, auto-avoiding any active
 // road hazards or roadblocks along the vehicle's remaining corridor.
@@ -274,6 +283,35 @@ router.post('/live-route/:vehicleId/reroute', async (req: Request, res: Response
     return sendSuccess(res, result, 'Vehicle dynamically rerouted successfully');
   } catch (err: any) {
     return sendError(res, err.message);
+  }
+});
+
+// --- Disaster Digital Twin Simulation ---
+router.get('/simulation/presets', async (_req: Request, res: Response) => {
+  try {
+    const data: any = await proxyToML('/simulation/presets');
+    return sendSuccess(res, data?.presets || data, 'Simulation presets retrieved');
+  } catch (err: any) {
+    console.warn('[IntegrationRoutes] ML Service unavailable for presets, using in-memory presets fallback');
+    return sendSuccess(
+      res,
+      {
+        presets: LocalDisasterDigitalTwin.getPresets(),
+        mountainPasses: LocalDisasterDigitalTwin.getMountainPasses(),
+      },
+      'Simulation presets retrieved (in-memory engine)'
+    );
+  }
+});
+
+router.post('/simulation/run', async (req: Request, res: Response) => {
+  try {
+    const data: any = await proxyToML('/simulation/run', 'POST', req.body);
+    return sendSuccess(res, data?.data || data, 'Simulation executed');
+  } catch (err: any) {
+    console.warn('[IntegrationRoutes] ML Service unavailable for simulation run, using in-memory simulation engine');
+    const result = LocalDisasterDigitalTwin.runSimulation(req.body || {});
+    return sendSuccess(res, result, 'Simulation executed (in-memory engine)');
   }
 });
 

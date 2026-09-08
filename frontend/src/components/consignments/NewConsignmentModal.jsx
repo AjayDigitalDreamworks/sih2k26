@@ -229,14 +229,14 @@ export default function NewConsignmentModal({ isOpen, onClose, onConsignmentAdde
               <button
                 type="button"
                 onClick={onClose}
-                className="px-4 py-2 rounded-xl border border-slate-200 text-xs font-bold text-slate-600 hover:bg-slate-50 transition-colors cursor-pointer"
+                className="px-4.5 py-2 rounded-full border border-slate-200 text-xs font-bold text-slate-600 hover:bg-slate-50 transition-colors cursor-pointer"
               >
                 Cancel
               </button>
               <button
                 type="submit"
                 disabled={loading}
-                className="inline-flex items-center gap-1.5 px-5 py-2 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-xs font-bold text-white shadow-sm shadow-emerald-600/30 transition-all cursor-pointer disabled:opacity-50"
+                className="inline-flex items-center gap-1.5 px-5 py-2 rounded-full bg-[#087f4d] hover:bg-[#06663e] text-xs font-bold text-white shadow-sm shadow-emerald-700/30 transition-all cursor-pointer disabled:opacity-50"
               >
                 <Check className="w-4 h-4" />
                 <span>{loading ? 'Creating…' : 'Create Consignment'}</span>

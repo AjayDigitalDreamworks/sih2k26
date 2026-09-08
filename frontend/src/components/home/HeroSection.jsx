@@ -115,9 +115,9 @@ export function HeroSection() {
           <div className="hero-corridor-copy">
             <div className="hero-live-badge hero-reveal">
               <span className="badge-radar-dot" />
-              <span className="badge-live-text">LIVE ROAD INTELLIGENCE NETWORK</span>
+              <span className="badge-live-text">AI LOGISTICS INTELLIGENCE</span>
               <span className="badge-sep">|</span>
-              <span className="badge-sub-text">Always On. Always Ahead.</span>
+              <span className="badge-sub-text">North East Region (NER)</span>
             </div>
 
             <h1 className="hero-corridor-headline hero-reveal">
@@ -126,8 +126,9 @@ export function HeroSection() {
             </h1>
 
             <p className="hero-corridor-desc hero-reveal">
-              RAAHI connects real-time road intelligence, smart routing, vehicle tracking, and disruption prediction to keep essential goods moving—safely and on time.
+              RAAHI combines real-time road accessibility, AI disruption prediction, GPS vehicle tracking, and terrain-aware routing to keep essential goods moving safely across Northeast India.
             </p>
+
 
             <div className="hero-corridor-actions hero-reveal">
               <a className="btn-hero-explore" href="#platform">
@@ -194,6 +195,16 @@ export function HeroSection() {
                 <div className="metric-label">ALERTS GENERATED</div>
               </div>
             </div>
+          </div>
+
+          {/* Elegant Scroll Cue Indicator */}
+          <div className="hero-scroll-cue-wrap">
+            <a href="#ner-challenge" className="hero-scroll-cue" aria-label="Scroll to exploration">
+              <span className="scroll-mouse-icon">
+                <span className="scroll-wheel-dot" />
+              </span>
+              <span>SCROLL TO EXPLORE</span>
+            </a>
           </div>
         </div>
       </div>

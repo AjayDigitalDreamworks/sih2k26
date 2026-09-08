@@ -1,4 +1,4 @@
-import React from 'react';
+import React, { useState } from 'react';
 import {
   Route,
   AlertTriangle,
@@ -8,6 +8,7 @@ import {
   Calendar,
   CloudSun,
   ChevronDown,
+  Globe,
 } from 'lucide-react';
 import { StatCard } from '@/components/admin/common/StatCard';
 import { LiveAccessibilityMap } from '@/components/admin/dashboard/LiveAccessibilityMap';
@@ -19,6 +20,7 @@ import { RecentAlertsList } from '@/components/admin/dashboard/RecentAlertsList'
 import { RecentFieldReportsList } from '@/components/admin/dashboard/RecentFieldReportsList';
 import { RouteStatusChart } from '@/components/admin/dashboard/RouteStatusChart';
 import { DistrictConnectivityTable } from '@/components/admin/dashboard/DistrictConnectivityTable';
+import { DigitalTwinSimulationModal } from '@/components/admin/modals/DigitalTwinSimulationModal';
 import { useApp } from '@/contexts/AppContext';
 import { useAuth } from '@/contexts/AuthContext';
 import { useLang } from '@/contexts/LanguageContext';
@@ -27,6 +29,7 @@ export const DashboardPage = () => {
   const { kpis, weather, mlHealth, vehicles } = useApp();
   const { user } = useAuth();
   const { t } = useLang();
+  const [showSimulationModal, setShowSimulationModal] = useState(false);
   
   const metrics = kpis || {};
   const todayDate = new Date().toLocaleDateString('en-GB', { day: 'numeric', month: 'short', year: 'numeric' });
@@ -42,6 +45,31 @@ export const DashboardPage = () => {
         </div>
 
         <div className="header-widgets-group">
+          {/* Disaster Digital Twin Sandbox Button */}
+          <button
+            onClick={() => setShowSimulationModal(true)}
+            style={{
+              display: 'flex',
+              alignItems: 'center',
+              gap: '8px',
+              padding: '8px 16px',
+              borderRadius: '10px',
+              background: 'linear-gradient(135deg, #1E293B 0%, #0F172A 100%)',
+              color: '#FFFFFF',
+              border: '1px solid #334155',
+              fontWeight: 700,
+              fontSize: '12px',
+              cursor: 'pointer',
+              boxShadow: '0 4px 6px -1px rgba(0, 0, 0, 0.1)',
+            }}
+          >
+            <Globe size={16} color="#60A5FA" />
+            <span>Digital Twin Sandbox</span>
+            <span style={{ fontSize: '9px', background: '#DC2626', color: '#FFF', padding: '1px 6px', borderRadius: '999px', fontWeight: 800 }}>
+              WHAT-IF
+            </span>
+          </button>
+
           {/* Date pill */}
           <div className="info-pill-card">
             <Calendar size={18} color="var(--text-muted)" />
@@ -152,6 +180,13 @@ export const DashboardPage = () => {
         <RouteStatusChart />
         <DistrictConnectivityTable />
       </div>
+
+      {/* Disaster Digital Twin What-If Sandbox Modal */}
+      <DigitalTwinSimulationModal
+        isOpen={showSimulationModal}
+        onClose={() => setShowSimulationModal(false)}
+      />
     </div>
   );
 };
+

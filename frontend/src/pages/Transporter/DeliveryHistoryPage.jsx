@@ -245,11 +245,11 @@ export default function DeliveryHistoryPage() {
               <button
                 type="button"
                 onClick={handleExport}
-                className="inline-flex items-center gap-1.5 px-3.5 py-2 rounded-xl bg-white border border-slate-200/90 shadow-2xs text-xs font-bold text-slate-700 hover:bg-slate-50 transition-colors cursor-pointer"
+                className="inline-flex items-center gap-1.5 px-4 py-2 rounded-full bg-white border border-slate-200/90 shadow-2xs text-xs font-bold text-slate-700 hover:bg-slate-50 transition-colors cursor-pointer"
               >
                 <Download className="w-3.5 h-3.5 text-slate-500" /> Export CSV
               </button>
-              <div className="inline-flex items-center gap-2 px-3.5 py-2 rounded-xl bg-white border border-slate-200/90 shadow-2xs text-xs font-bold text-slate-600">
+              <div className="inline-flex items-center gap-2 px-4 py-2 rounded-full bg-white border border-slate-200/90 shadow-2xs text-xs font-bold text-slate-600">
                 <span className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse" /> Live · {deliveries.length} records
               </div>
             </div>
@@ -562,12 +562,12 @@ export default function DeliveryHistoryPage() {
                       type="button"
                       disabled={busy}
                       onClick={() => setStatus(selectedD, 'delivered')}
-                      className="inline-flex items-center gap-1.5 px-3 py-2 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-xs font-bold text-white cursor-pointer disabled:opacity-50"
+                      className="inline-flex items-center gap-1.5 px-4 py-2 rounded-full bg-[#087f4d] hover:bg-[#06663e] text-xs font-bold text-white shadow-sm shadow-emerald-700/25 cursor-pointer disabled:opacity-50"
                     >
                       <CheckCircle2 className="w-3.5 h-3.5" /> Mark Delivered
                     </button>
                   )}
-                  <button type="button" onClick={() => setSelected(null)} className="px-4 py-2 rounded-xl border border-slate-200 text-xs font-bold text-slate-600 hover:bg-slate-50 cursor-pointer">
+                  <button type="button" onClick={() => setSelected(null)} className="px-4.5 py-2 rounded-full border border-slate-200 text-xs font-bold text-slate-600 hover:bg-slate-50 cursor-pointer">
                     Close
                   </button>
                 </div>

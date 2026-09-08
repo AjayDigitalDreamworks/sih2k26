@@ -352,7 +352,7 @@ export default function RoutePlanningPage() {
                 <button
                   type="submit"
                   disabled={planning || vehicles.length === 0}
-                  className="w-full py-2.5 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-xs font-bold text-white shadow-sm shadow-emerald-600/25 transition-colors cursor-pointer disabled:opacity-50"
+                  className="w-full py-3 rounded-full bg-[#087f4d] hover:bg-[#06663e] text-xs font-bold text-white shadow-sm shadow-emerald-700/25 transition-colors cursor-pointer disabled:opacity-50"
                 >
                   {planning ? 'Evaluating corridor…' : 'Evaluate Route'}
                 </button>
@@ -389,7 +389,7 @@ export default function RoutePlanningPage() {
                       type="button"
                       onClick={handleStartTrip}
                       disabled={starting}
-                      className="mt-3 w-full py-2.5 rounded-xl bg-[#0D7A48] hover:bg-[#0A633A] text-white text-xs font-bold cursor-pointer disabled:opacity-50"
+                      className="mt-3 w-full py-3 rounded-full bg-[#087f4d] hover:bg-[#06663e] text-white text-xs font-bold shadow-sm shadow-emerald-700/25 transition-colors cursor-pointer disabled:opacity-50"
                     >
                       {starting ? 'Starting trip…' : `Start Trip on ${plan.primary.routeId}`}
                     </button>

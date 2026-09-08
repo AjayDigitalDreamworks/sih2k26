@@ -1,23 +1,25 @@
 import React from 'react';
-import { NortheastMap } from '../NortheastMap';
+import { StaticNortheastMap } from './StaticNortheastMap';
 
 export function LiveMapSection() {
   return (
-    <section id="intelligence" className="section route-section texture-dark">
+    <section id="intelligence" className="section route-section texture">
       <div className="container">
         <div className="route-header reveal">
           <div>
-            <div className="eyebrow">Route intelligence / live map</div>
-            <h2 className="route-heading">See the route.<br /><em>Read the risk.</em></h2>
+            <div className="eyebrow">Route intelligence / tactical map</div>
+            <h2 className="route-heading">See the corridor.<br /><em>Read the risk.</em></h2>
           </div>
           <p className="route-copy">
-            An interactive map of the Northeast India logistics corridors. Click any route to inspect it — and when a driver starts a trip in the Driver App, their real GPS position appears here live.
+            A high-resolution tactical GIS map of the Northeast India logistics corridors. Inspect freight routes, terrain switchbacks, and key transit nodes across all 8 states.
           </p>
         </div>
         <div className="route-stage reveal">
-          <NortheastMap />
+          <StaticNortheastMap />
         </div>
       </div>
     </section>
   );
 }
+
+

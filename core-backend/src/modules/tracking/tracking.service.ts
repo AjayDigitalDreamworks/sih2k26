@@ -37,6 +37,14 @@ const KNOWN_GEOFENCES = [
   { id: 'depot-kohima', name: 'Kohima Transit Hub', type: 'checkpoint', lat: 25.6751, lng: 94.1086, radiusMeters: 300 },
 ];
 
+// Known cellular dead-zone corridors in Northeast India (mountain passes & valley cutoffs)
+export const KNOWN_DEAD_ZONES = [
+  { id: 'barail-range', name: 'NH-27 Barail Range (Haflong–Harangajao)', latMin: 24.95, latMax: 25.35, lngMin: 92.85, lngMax: 93.15 },
+  { id: 'sela-pass', name: 'NH-13 Sela Pass Corridor (Dirang–Tawang)', latMin: 27.40, latMax: 27.65, lngMin: 91.95, lngMax: 92.25 },
+  { id: 'naga-hills', name: 'NH-29 / NH-2 Medziphema–Kohima Valley', latMin: 25.60, latMax: 25.85, lngMin: 93.85, lngMax: 94.15 },
+  { id: 'moreh-pass', name: 'NH-102 Pallel–Moreh Border Corridor', latMin: 24.25, latMax: 24.55, lngMin: 93.95, lngMax: 94.30 },
+];
+
 // Haversine distance in meters
 function haversine(lat1: number, lng1: number, lat2: number, lng2: number): number {
   const R = 6371000;
@@ -444,7 +452,10 @@ export class TrackingService {
 
     for (const fence of KNOWN_GEOFENCES) {
       const dist = haversine(lat, lng, fence.lat, fence.lng);
-      if (dist <= fence.radiusMeters) {
+      // Hysteresis buffer: 80m exit threshold to eliminate boundary bounce/jitter
+      const isCurrentlyInside = prevGeofenceId === fence.id;
+      const threshold = isCurrentlyInside ? (fence.radiusMeters + 80) : fence.radiusMeters;
+      if (dist <= threshold) {
         insideGeofence = true;
         geofenceName = fence.name;
         geofenceType = fence.type;
@@ -867,12 +878,86 @@ export class TrackingService {
     const altitude = body.altitude ?? null;
     const ageMs = Math.max(0, Date.now() - gpsTimestamp.getTime());
 
+    // 3b. Physics-based Anti-Spoofing & Velocity Check (Teleportation Guard)
+    if (vehicle.current_lat != null && vehicle.current_lng != null && vehicle.last_gps_at && !syncBatch) {
+      const prevTime = new Date(vehicle.last_gps_at).getTime();
+      const currTime = gpsTimestamp.getTime();
+      const dtSeconds = (currTime - prevTime) / 1000;
+      if (dtSeconds > 1.5) {
+        const distMeters = haversine(Number(vehicle.current_lat), Number(vehicle.current_lng), body.latitude, body.longitude);
+        const impliedSpeedKmh = (distMeters / 1000) / (dtSeconds / 3600);
+        // Heavy commercial trucks in NER cannot exceed 115 km/h over distances > 800m
+        if (impliedSpeedKmh > 115 && distMeters > 800) {
+          console.warn(`[TRACKING] ⚠️ GPS Spoofing/Teleportation rejected for ${vehicle.id}: jumped ${Math.round(distMeters)}m in ${Math.round(dtSeconds)}s (${Math.round(impliedSpeedKmh)} km/h)`);
+          return {
+            error: `GPS rejected: Implausible velocity (${Math.round(impliedSpeedKmh)} km/h). Teleportation or mock location detected.`,
+            statusCode: 422,
+            rejected: true,
+            impliedSpeedKmh: Math.round(impliedSpeedKmh),
+          };
+        }
+      }
+    }
+
     // 4. Persist observation (real history, PostGIS point) — always.
     const locationId = await this.persistLocation({
       vehicleId: vehicle.id, driverId: driver?.id || null, tripId: String((trip?.id || vehicle.current_trip_id) || null),
       latitude: body.latitude, longitude: body.longitude, accuracy, speed, heading, altitude,
       gpsTimestamp, source,
     });
+
+    // 5. Live current-state update — only when the fix is recent enough to be honest.
+    const isFresh = ageMs <= STALE_THRESHOLD_MS;
+    const inDeadZone = KNOWN_DEAD_ZONES.find(dz =>
+      body.latitude >= dz.latMin && body.latitude <= dz.latMax &&
+      body.longitude >= dz.lngMin && body.longitude <= dz.lngMax
+    );
+    const liveStatus = ageMs <= LIVE_THRESHOLD_MS ? 'LIVE'
+      : (inDeadZone && ageMs <= 45 * 60 * 1000) ? 'IN_DEAD_ZONE'
+      : ageMs <= STALE_THRESHOLD_MS ? 'STALE'
+      : 'OFFLINE';
+    const movement = speed < MIN_SPEED_FOR_MOVING ? 'stopped' : 'moving';
+
+    // Algorithmic Fuel Consumption Engine (decrements dynamically with driving & idling)
+    let currentFuel = typeof vehicle.fuel_percent === 'number' ? vehicle.fuel_percent : 85;
+    if (isFresh && vehicle.current_lat != null && vehicle.current_lng != null) {
+      const movedMeters = haversine(Number(vehicle.current_lat), Number(vehicle.current_lng), body.latitude, body.longitude);
+      if (movement === 'moving' && movedMeters > 20) {
+        // Average commercial diesel cargo truck in NER: ~28L/100km -> 0.28% per km on 100L equivalent tank
+        const fuelBurn = (movedMeters / 1000) * 0.28;
+        currentFuel = Math.max(3, Math.round((currentFuel - fuelBurn) * 10) / 10);
+      } else if (movement === 'stopped') {
+        const idleMins = Math.min(15, Math.max(0.2, (Date.now() - new Date(vehicle.last_ping_at || Date.now()).getTime()) / 60000));
+        currentFuel = Math.max(3, Math.round((currentFuel - idleMins * 0.025) * 10) / 10);
+      }
+    }
+
+    // Driver continuous driving / fatigue tracker
+    let continuousMins = 0;
+    try {
+      const drivingKey = `vehicle:driving_mins:${vehicle.id}`;
+      const rawMins = await redisClient.get(drivingKey);
+      continuousMins = rawMins ? Number(rawMins) : 0;
+      if (movement === 'moving') {
+        const deltaMins = Math.min(5, Math.max(0.1, ageMs / 60000));
+        continuousMins += deltaMins;
+        await redisClient.set(drivingKey, String(Math.round(continuousMins)), { ex: 24 * 3600 });
+      } else if (movement === 'stopped') {
+        const stopTimerKey = `vehicle:stopped_at:${vehicle.id}`;
+        const stoppedAt = await redisClient.get(stopTimerKey);
+        if (!stoppedAt) {
+          await redisClient.set(stopTimerKey, String(Date.now()), { ex: 3600 });
+        } else {
+          const restingMins = (Date.now() - Number(stoppedAt)) / 60000;
+          if (restingMins >= 20) {
+            continuousMins = 0;
+            await redisClient.set(drivingKey, '0', { ex: 24 * 3600 });
+            await redisClient.del(stopTimerKey);
+          }
+        }
+      }
+    } catch {}
+    const isFatigued = continuousMins >= 270; // 4.5 hours continuous driving threshold
 
     const livePayload: any = {
       id: vehicle.id,
@@ -882,7 +967,7 @@ export class TrackingService {
       lat: body.latitude,
       lng: body.longitude,
       speed,
-      fuel: vehicle.fuel_percent ?? null,
+      fuel: currentFuel,
       heading,
       accuracy,
       accuracyRating: accuracy <= 10 ? 'high' : accuracy <= 30 ? 'medium' : accuracy <= MIN_ACCURACY_METERS ? 'low' : 'low',
@@ -895,14 +980,11 @@ export class TrackingService {
       timestamp: new Date().toISOString(),
       receivedAt: new Date().toISOString(),
       locationId,
+      inDeadZone: !!inDeadZone,
+      fatigueWarning: isFatigued,
+      continuousDrivingMins: Math.round(continuousMins),
     };
 
-    // 5. Live current-state update — only when the fix is recent enough to be honest.
-    const isFresh = ageMs <= STALE_THRESHOLD_MS;
-    const liveStatus = ageMs <= LIVE_THRESHOLD_MS ? 'LIVE'
-      : ageMs <= STALE_THRESHOLD_MS ? 'STALE'
-      : 'OFFLINE';
-    const movement = speed < MIN_SPEED_FOR_MOVING ? 'stopped' : 'moving';
     const updateData: any = {
       last_ping_at: new Date(),
       gps_source: source,
@@ -910,6 +992,7 @@ export class TrackingService {
       last_gps_at: gpsTimestamp,
       current_heading: heading,
       current_accuracy: accuracy,
+      fuel_percent: currentFuel,
     };
     if (trip?.id) updateData.current_trip_id = trip.id;
     if (isFresh) {
@@ -950,6 +1033,9 @@ export class TrackingService {
       enteringHighRiskCorridor: !!livePayload.enteringHighRiskCorridor,
       corridorRisk: livePayload.corridorRisk || null,
       corridorName: livePayload.corridorName || null,
+      inDeadZone: !!inDeadZone,
+      fatigueWarning: isFatigued,
+      continuousDrivingMins: Math.round(continuousMins),
     };
     const io = getSocketServer();
     if (io) {
@@ -1404,19 +1490,27 @@ export class TrackingService {
       // A vehicle whose trip ended / tracking was switched off is never LIVE —
       // its last coordinates are history, not a live position.
       const trackingOn = !!v.tracking_active || !!v.current_trip_id || !!live;
+      const isKnownDeadZone = KNOWN_DEAD_ZONES.some(dz =>
+        v.current_lat != null && v.current_lng != null &&
+        Number(v.current_lat) >= dz.latMin && Number(v.current_lat) <= dz.latMax &&
+        Number(v.current_lng) >= dz.lngMin && Number(v.current_lng) <= dz.lngMax
+      );
       const liveStatus = !trackingOn ? 'OFFLINE'
         : ageMs <= LIVE_THRESHOLD_MS ? 'LIVE'
+        : (isKnownDeadZone && ageMs <= 45 * 60 * 1000) ? 'IN_DEAD_ZONE'
         : ageMs <= STALE_THRESHOLD_MS ? 'STALE'
         : 'OFFLINE';
       return {
         vehicleId: v.id, model: v.model, liveStatus, ageSeconds: Number.isFinite(ageMs) ? Math.round(ageMs / 1000) : null,
         trackingActive: v.tracking_active, currentTripId: v.current_trip_id, speed: v.speed || 0, source: v.gps_source || null,
+        inDeadZone: isKnownDeadZone,
       };
     }));
     return {
       totalVehicles: vehicles.length,
       live: rows.filter(r => r.liveStatus === 'LIVE').length,
       stale: rows.filter(r => r.liveStatus === 'STALE').length,
+      inDeadZone: rows.filter(r => r.liveStatus === 'IN_DEAD_ZONE').length,
       offline: rows.filter(r => r.liveStatus === 'OFFLINE').length,
       activeTrips: vehicles.filter(v => v.tracking_active).length,
       moving: vehicles.filter(v => v.tracking_active && (v.speed || 0) > MIN_SPEED_FOR_MOVING).length,

@@ -1,5 +1,5 @@
 import React from 'react';
-import { MapPin, Navigation, AlertTriangle, CloudRain, Car } from 'lucide-react';
+import { MapPin, Navigation, AlertTriangle, CloudRain, Car, Clock, Mountain } from 'lucide-react';
 import { useApp } from '@/contexts/AppContext';
 
 export const RouteSequenceTimeline = ({ plan, activeRouteId = 'safest' }) => {
@@ -51,6 +51,8 @@ export const RouteSequenceTimeline = ({ plan, activeRouteId = 'safest' }) => {
           {legs.map((leg, i) => {
             const riskColor = getRiskColor(leg.riskLevel);
             const isLast = i === legs.length - 1;
+            const fc = leg.forecastAtArrival;
+            const fcRisk = fc?.forecast_risk_level;
 
             return (
               <div key={'seq-leg-' + i} style={{ display: 'flex', alignItems: 'flex-start', gap: '12px', padding: '6px 0' }}>
@@ -61,7 +63,14 @@ export const RouteSequenceTimeline = ({ plan, activeRouteId = 'safest' }) => {
                   <div style={{ width: '2px', height: isLast ? '24px' : '36px', backgroundColor: '#CBD5E1' }} />
                 </div>
                 <div style={{ flex: 1, background: '#F8FAFC', padding: '8px 10px', borderRadius: '8px', border: '1px solid #E2E8F0', marginBottom: '4px' }}>
-                  <div style={{ fontSize: '12px', fontWeight: 700, color: '#1E293B' }}>{leg.label || leg.roadLabel}</div>
+                  <div style={{ fontSize: '12px', fontWeight: 700, color: '#1E293B', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                    <span>{leg.label || leg.roadLabel}</span>
+                    {leg.etaHours != null && (
+                      <span style={{ fontSize: 10, fontWeight: 700, color: '#64748B', display: 'inline-flex', alignItems: 'center', gap: 3 }}>
+                        <Clock size={11} /> +{leg.etaHours}h
+                      </span>
+                    )}
+                  </div>
                   <div style={{ fontSize: '11px', color: 'var(--text-muted)', marginTop: '3px', display: 'flex', flexWrap: 'wrap', gap: '8px', alignItems: 'center' }}>
                     <span style={{ display: 'inline-flex', alignItems: 'center', gap: 3, fontWeight: 600 }}>
                       <Navigation size={11} /> {leg.distanceKm} km
@@ -69,9 +78,23 @@ export const RouteSequenceTimeline = ({ plan, activeRouteId = 'safest' }) => {
                     <span style={{ color: riskColor, fontWeight: 700 }}>
                       Risk: {leg.riskScore}/100 ({leg.riskLevel})
                     </span>
-                    {leg.rainfallMm != null && (
-                      <span style={{ display: 'inline-flex', alignItems: 'center', gap: 3, color: '#0284C7' }}>
-                        <CloudRain size={11} /> {leg.rainfallMm}mm
+                    {leg.climbGainM != null && leg.climbGainM > 0 && (
+                      <span style={{ display: 'inline-flex', alignItems: 'center', gap: 3, color: '#92400E', fontWeight: 600 }}>
+                        <Mountain size={11} /> +{Math.round(leg.climbGainM)}m {leg.maxGradientPct ? `(${leg.maxGradientPct}%)` : ''}
+                      </span>
+                    )}
+                    {fc && (
+                      <span style={{
+                        display: 'inline-flex',
+                        alignItems: 'center',
+                        gap: 3,
+                        fontWeight: 700,
+                        color: (fcRisk === 'critical' || fcRisk === 'high') ? '#DC2626' : fcRisk === 'medium' ? '#D97706' : '#0284C7',
+                        background: (fcRisk === 'critical' || fcRisk === 'high') ? '#FEF2F2' : '#F0F9FF',
+                        padding: '1px 5px',
+                        borderRadius: 4,
+                      }}>
+                        <CloudRain size={11} /> ETA: {fc.weather_desc || 'Rain'} ({fc.forecast_precip_mm} mm/h)
                       </span>
                     )}
                     {leg.congestionLevel && leg.congestionLevel !== 'low' && (
@@ -79,11 +102,17 @@ export const RouteSequenceTimeline = ({ plan, activeRouteId = 'safest' }) => {
                         <Car size={11} /> {leg.congestionLevel}
                       </span>
                     )}
+                    {leg.isFerryLeg && (
+                      <span style={{ fontSize: '10px', background: '#E0F2FE', color: '#0369A1', padding: '1px 6px', borderRadius: '4px', fontWeight: 700 }}>
+                        🚢 IWAI Ro-Ro Vessel Crossing • {leg.riverCurrent || 'Current: Safe'}
+                      </span>
+                    )}
                   </div>
                 </div>
               </div>
             );
           })}
+
 
           {/* Destination Node */}
           <div style={{ display: 'flex', alignItems: 'flex-start', gap: '12px', padding: '6px 0' }}>

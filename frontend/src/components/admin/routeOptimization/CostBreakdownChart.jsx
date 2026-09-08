@@ -1,5 +1,5 @@
 import React from 'react';
-import { Fuel, Receipt, Wrench, IndianRupee } from 'lucide-react';
+import { Fuel, Receipt, Wrench, IndianRupee, Mountain } from 'lucide-react';
 import { useApp } from '@/contexts/AppContext';
 
 export const CostBreakdownChart = ({ plan, activeRouteId = 'safest' }) => {
@@ -9,15 +9,28 @@ export const CostBreakdownChart = ({ plan, activeRouteId = 'safest' }) => {
   if (plan && (plan.recommended || plan.alternatives)) {
     const activeRoute = (plan.alternatives || []).find((a) => a.id === activeRouteId) || plan.recommended;
     const dist = activeRoute?.totalDistanceKm || activeRoute?.distanceKm || 15;
+    const climbM = activeRoute?.totalClimbM || 0;
+    const maxSlope = activeRoute?.maxGradientPct || 0;
 
-    const fuelCost = Math.round(dist * 22);
-    const tollCost = dist > 25 ? 160 : dist > 10 ? 80 : 0;
+    const baseFuelL = activeRoute?.baseFuelLiters || Math.round((activeRoute?.fuelLiters || dist * 0.25) * 0.85 * 10) / 10;
+    const climbFuelL = activeRoute?.climbPenaltyLiters || Math.max(0, Math.round(((activeRoute?.fuelLiters || dist * 0.25) - baseFuelL) * 10) / 10);
+    const baseFuelCost = Math.round(baseFuelL * 92);
+    const climbFuelCost = Math.round(climbFuelL * 92);
+
+    const tollCost = dist > 40 ? 180 : dist > 15 ? 90 : 0;
     const maintenanceCost = Math.round(dist * 6);
-    const totalCost = fuelCost + tollCost + maintenanceCost;
+    const totalCost = (activeRoute?.fuelCost ? activeRoute.fuelCost : (baseFuelCost + climbFuelCost)) + tollCost + maintenanceCost;
 
     const costItems = [
-      { label: 'Diesel Fuel (est.)', amount: fuelCost, icon: Fuel, color: '#059669', desc: `₹22/km over ${dist} km` },
-      { label: 'Highway Tolls & Cess', amount: tollCost, icon: Receipt, color: '#3B82F6', desc: tollCost > 0 ? 'State/NH corridor tolls' : 'No toll plaza on stretch' },
+      { label: 'Base Highway Diesel', amount: baseFuelCost, icon: Fuel, color: '#059669', desc: `${baseFuelL} L over ${dist} km highway corridor` },
+      ...(climbFuelCost > 0 ? [{
+        label: 'Mountain Incline Surcharge',
+        amount: climbFuelCost,
+        icon: Mountain,
+        color: '#D97706',
+        desc: `+${climbFuelL} L fuel for +${Math.round(climbM)}m climb (peak ${maxSlope}% slope)`
+      }] : []),
+      { label: 'Highway Tolls & Fastag Cess', amount: tollCost, icon: Receipt, color: '#3B82F6', desc: tollCost > 0 ? 'State/NH corridor tolls' : 'No toll plaza on stretch' },
       { label: 'Wear & Maintenance', amount: maintenanceCost, icon: Wrench, color: '#F59E0B', desc: 'Depreciation & tire wear' },
     ];
 
@@ -48,6 +61,7 @@ export const CostBreakdownChart = ({ plan, activeRouteId = 'safest' }) => {
       </div>
     );
   }
+
 
   // Fallback to supply chain by commodity
   const chain = supplyChain || [];

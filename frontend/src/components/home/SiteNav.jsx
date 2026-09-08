@@ -10,7 +10,6 @@ import { Link, useNavigate } from 'react-router-dom';
 const navItems = [
   ["Platform", "#platform", "nav.platform"],
   ["How It Works", "#how-it-works", "nav.howItWorks"],
-  ["Intelligence", "#intelligence", "nav.intelligence"],
   ["Solutions", "#solutions", "nav.solutions"],
   ["About", "#northeast", "nav.about"],
 ];
@@ -74,7 +73,7 @@ export function SiteNav({ onOpenLogin }) {
                     <button
                       type="button"
                       onClick={() => navigate('/admin')}
-                      className="px-2 py-0.5 bg-emerald-600 hover:bg-emerald-500 rounded text-[10px] font-semibold text-white transition-colors cursor-pointer"
+                      className="px-2.5 py-1 bg-emerald-600 hover:bg-emerald-500 rounded-full text-[10px] font-semibold text-white transition-colors cursor-pointer"
                     >
                       Admin Dash
                     </button>
@@ -85,7 +84,7 @@ export function SiteNav({ onOpenLogin }) {
                     <button
                       type="button"
                       onClick={() => navigate('/driver')}
-                      className="px-2 py-0.5 bg-emerald-600 hover:bg-emerald-500 rounded text-[10px] font-semibold text-white transition-colors cursor-pointer"
+                      className="px-2.5 py-1 bg-emerald-600 hover:bg-emerald-500 rounded-full text-[10px] font-semibold text-white transition-colors cursor-pointer"
                     >
                       Driver App
                     </button>
@@ -96,7 +95,7 @@ export function SiteNav({ onOpenLogin }) {
                     <button
                       type="button"
                       onClick={() => navigate('/field-officer')}
-                      className="px-2 py-0.5 bg-emerald-600 hover:bg-emerald-500 rounded text-[10px] font-semibold text-white transition-colors cursor-pointer"
+                      className="px-2.5 py-1 bg-emerald-600 hover:bg-emerald-500 rounded-full text-[10px] font-semibold text-white transition-colors cursor-pointer"
                     >
                       Field Officer
                     </button>
@@ -106,7 +105,7 @@ export function SiteNav({ onOpenLogin }) {
                   <button
                     type="button"
                     onClick={() => navigate('/transporter')}
-                    className="px-2 py-0.5 bg-emerald-600 hover:bg-emerald-500 rounded text-[10px] font-semibold text-white transition-colors cursor-pointer"
+                    className="px-2.5 py-1 bg-emerald-600 hover:bg-emerald-500 rounded-full text-[10px] font-semibold text-white transition-colors cursor-pointer"
                   >
                     Transporter Dash
                   </button>
@@ -115,7 +114,7 @@ export function SiteNav({ onOpenLogin }) {
               <button
                 type="button"
                 onClick={onOpenLogin}
-                className="px-2 py-0.5 bg-emerald-700/90 hover:bg-emerald-600 rounded text-[10px] font-semibold text-white transition-colors cursor-pointer"
+                className="px-2.5 py-1 bg-emerald-700/90 hover:bg-emerald-600 rounded-full text-[10px] font-semibold text-white transition-colors cursor-pointer"
                 title="Switch role / credentials"
               >
                 {t('nav.switch')}
@@ -123,7 +122,7 @@ export function SiteNav({ onOpenLogin }) {
               <button
                 type="button"
                 onClick={handleLogout}
-                className="px-2 py-0.5 bg-white/10 hover:bg-white/20 rounded text-[10px] font-semibold text-white transition-colors cursor-pointer"
+                className="px-2.5 py-1 bg-white/10 hover:bg-white/20 rounded-full text-[10px] font-semibold text-white transition-colors cursor-pointer"
               >
                 {t('nav.logOut')}
               </button>

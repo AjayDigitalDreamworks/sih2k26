@@ -337,42 +337,58 @@
   align-items: center;
   justify-content: center;
   gap: 8px;
-  padding: 8px 16px;
-  border-radius: var(--radius-sm);
+  padding: 8px 18px;
+  border-radius: 9999px;
   font-size: 13px;
-  font-weight: 500;
+  font-weight: 700;
+  cursor: pointer;
+  text-decoration: none;
   transition: all var(--transition-fast);
 }
 
+.btn:active {
+  transform: scale(0.97);
+}
+
 .btn-primary {
-  background-color: var(--primary-600);
+  background-color: #087f4d;
   color: #ffffff;
+  border: 1px solid #087f4d;
+  box-shadow: 0 4px 12px rgba(8, 127, 77, 0.25);
 }
 
 .btn-primary:hover {
-  background-color: var(--primary-700);
-  box-shadow: 0 2px 4px rgba(5, 150, 105, 0.25);
+  background-color: #06663e;
+  border-color: #06663e;
+  color: #ffffff;
+  transform: translateY(-1px);
+  box-shadow: 0 6px 16px rgba(8, 127, 77, 0.35);
 }
 
 .btn-outline {
-  border: 1px solid var(--border-light);
+  border: 1.5px solid var(--border-light);
   color: var(--text-secondary);
   background-color: var(--bg-card);
 }
 
 .btn-outline:hover {
-  border-color: var(--border-strong);
-  background-color: var(--bg-hover);
-  color: var(--text-primary);
+  border-color: #087f4d;
+  background-color: #f0fdf4;
+  color: #087f4d;
+  transform: translateY(-1px);
 }
 
 .btn-danger {
-  background-color: var(--color-danger);
+  background-color: #dc2626;
   color: #ffffff;
+  border: 1px solid #dc2626;
+  box-shadow: 0 4px 12px rgba(220, 38, 38, 0.25);
 }
 
 .btn-danger:hover {
-  background-color: #dc2626;
+  background-color: #b91c1c;
+  border-color: #b91c1c;
+  transform: translateY(-1px);
 }
 
 .btn-icon {

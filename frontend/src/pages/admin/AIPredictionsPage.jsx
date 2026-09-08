@@ -1,4 +1,4 @@
-import React from 'react';
+import React, { useState } from 'react';
 import {
   Sparkles,
   AlertTriangle,
@@ -9,10 +9,12 @@ import {
   ArrowRight,
 } from 'lucide-react';
 import { DonutChart } from '@/components/admin/common/DonutChart';
+import { ShapWaterfallModal } from '@/components/admin/common/ShapWaterfallModal';
 import { useApp } from '@/contexts/AppContext';
 
 export const AIPredictionsPage = () => {
   const { setCurrentPage, aiRisk, allDistrictsSummary, mlHealth, kpis, pipelineRiskScores } = useApp();
+  const [selectedXaiCorridor, setSelectedXaiCorridor] = useState(null);
   const risk = aiRisk || { totalRisks: 0, lastUpdated: 'loading', breakdown: [] };
   const summary = allDistrictsSummary || [];
   const scoresObj = pipelineRiskScores?.scores || {};
@@ -64,6 +66,7 @@ export const AIPredictionsPage = () => {
           route: `${districtName(c.from)} → ${districtName(c.to)}`,
           riskLevel: `${level} Risk`,  
           riskScore: c.score ?? 0,
+          rawCorridor: c,
           cause: `ML (${c.engine || 'xgboost'}): rainfall ${f.recordedRainfallMm ?? '—'}mm, slope risk ${f.terrainSlopeRisk ?? '—'}, landslide contribution ${f.landslideRiskContribution ?? '—'}, road condition ${f.roadConditionScore ?? '—'}`,
           recommendation: `Flood contribution ${f.floodRiskContribution ?? 0}, congestion ${f.congestionLevel || 'low'}, bridges ${f.bridgeCondition || 'n/a'}. Weather: ${dWeather?.rainfall_mm ?? '—'}mm, ${dWeather?.temperature_c ?? '—'}°C.`,
           timeWindow: c.computedAt ? `Computed ${new Date(c.computedAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}` : 'Live',
@@ -187,17 +190,35 @@ export const AIPredictionsPage = () => {
                 </p>
               </div>
 
-              <button
-                className="btn btn-outline"
-                style={{ padding: '6px 12px', fontSize: '12px', flexShrink: 0 }}
-                onClick={() => setCurrentPage('route-optimization')}
-              >
-                Apply Reroute
-              </button>
+              <div style={{ display: 'flex', gap: '8px', flexShrink: 0 }}>
+                <button
+                  className="btn btn-outline"
+                  style={{ padding: '6px 12px', fontSize: '12px', display: 'flex', alignItems: 'center', gap: '5px', borderColor: '#3B82F6', color: '#2563EB' }}
+                  onClick={() => setSelectedXaiCorridor(item.rawCorridor ? { ...item.rawCorridor, route: item.route } : item)}
+                >
+                  <Sparkles size={13} color="#2563EB" />
+                  <span>Explain (XAI)</span>
+                </button>
+
+                <button
+                  className="btn btn-primary"
+                  style={{ padding: '6px 12px', fontSize: '12px' }}
+                  onClick={() => setCurrentPage('route-optimization')}
+                >
+                  Apply Reroute
+                </button>
+              </div>
             </div>
           ))}
         </div>
       </div>
+
+      {/* SHAP XAI Waterfall Modal */}
+      <ShapWaterfallModal
+        isOpen={Boolean(selectedXaiCorridor)}
+        onClose={() => setSelectedXaiCorridor(null)}
+        data={selectedXaiCorridor}
+      />
     </div>
   );
 };

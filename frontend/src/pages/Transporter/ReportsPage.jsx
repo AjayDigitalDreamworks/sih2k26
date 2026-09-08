@@ -145,7 +145,7 @@ export default function ReportsPage() {
             <button
               type="button"
               onClick={handleExport}
-              className="inline-flex items-center gap-1.5 px-3.5 py-2 rounded-xl bg-white border border-slate-200/90 shadow-2xs text-xs font-bold text-slate-700 hover:bg-slate-50 cursor-pointer"
+              className="inline-flex items-center gap-1.5 px-4 py-2 rounded-full bg-white border border-slate-200/90 shadow-2xs text-xs font-bold text-slate-700 hover:bg-slate-50 cursor-pointer"
             >
               <Download className="w-3.5 h-3.5 text-slate-500" /> Export Corridor Report
             </button>

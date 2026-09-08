@@ -244,3 +244,116 @@ class WeatherService:
             "weather_code": fval(current.get("weather_code")),
             "note": "Live Open-Meteo forecast (free fallback source)",
         }
+
+    # ------------------------------------------------------------------
+    # Time-of-Arrival (ETA) Hourly Prediction
+    # ------------------------------------------------------------------
+    WEATHER_DESCRIPTIONS = {
+        0: "Clear sky",
+        1: "Mainly clear",
+        2: "Partly cloudy",
+        3: "Overcast",
+        45: "Foggy",
+        48: "Depositing rime fog",
+        51: "Light drizzle",
+        53: "Moderate drizzle",
+        55: "Dense drizzle",
+        61: "Slight rain",
+        63: "Moderate rain",
+        65: "Heavy rain",
+        66: "Freezing rain",
+        71: "Slight snow",
+        73: "Moderate snow",
+        75: "Heavy snow",
+        80: "Rain showers",
+        81: "Moderate showers",
+        82: "Violent rain showers",
+        95: "Thunderstorm",
+        96: "Thunderstorm with hail",
+        99: "Severe thunderstorm",
+    }
+
+    @classmethod
+    async def get_hourly_weather_at_eta(cls, lat: float, lng: float, hours_ahead: float = 0.0) -> Dict[str, Any]:
+        """Fetch forecasted weather at the estimated arrival time (current_hour + hours_ahead)."""
+        offset_h = max(0, min(72, int(round(hours_ahead))))
+        cache_key = f"weather_eta:{lat:.3f},{lng:.3f}:{offset_h}"
+        cached = cls._cache.get(cache_key)
+        if cached:
+            return cached
+
+        url = f"{APIConfig.OPEN_METEO_URL}/forecast"
+        params = {
+            "latitude": lat,
+            "longitude": lng,
+            "hourly": "temperature_2m,precipitation,weather_code,wind_speed_10m",
+            "forecast_days": "3",
+            "timezone": "auto",
+        }
+        try:
+            async with httpx.AsyncClient(timeout=12) as client:
+                resp = await client.get(url, params=params)
+                if resp.status_code == 200:
+                    data = resp.json()
+                    hourly = data.get("hourly") or {}
+                    times = hourly.get("time") or []
+                    precip = hourly.get("precipitation") or []
+                    wx_codes = hourly.get("weather_code") or []
+                    winds = hourly.get("wind_speed_10m") or []
+                    temps = hourly.get("temperature_2m") or []
+
+                    # Find index corresponding to current hour in local time
+                    now_str = datetime.now().strftime("%Y-%m-%dT%H:00")
+                    start_idx = 0
+                    for idx, t_str in enumerate(times):
+                        if t_str >= now_str:
+                            start_idx = idx
+                            break
+
+                    target_idx = min(len(times) - 1, start_idx + offset_h) if times else offset_h
+
+                    val_precip = float(precip[target_idx] or 0.0) if target_idx < len(precip) else 0.0
+                    val_code = int(wx_codes[target_idx] or 0) if target_idx < len(wx_codes) else 0
+                    val_wind = float(winds[target_idx] or 0.0) if target_idx < len(winds) else 0.0
+                    val_temp = float(temps[target_idx] or 25.0) if target_idx < len(temps) else 25.0
+                    target_time = times[target_idx] if target_idx < len(times) else now_str
+
+                    weather_desc = cls.WEATHER_DESCRIPTIONS.get(val_code, "Cloudy" if val_code > 0 else "Clear")
+
+                    risk_level = "low"
+                    if val_precip >= 20.0 or val_code in (95, 96, 99) or val_wind >= 60.0:
+                        risk_level = "critical"
+                    elif val_precip >= 8.0 or val_code in (65, 75, 82) or val_wind >= 45.0:
+                        risk_level = "high"
+                    elif val_precip >= 2.0 or val_code in (61, 63, 80):
+                        risk_level = "medium"
+
+                    res = {
+                        "hours_ahead": offset_h,
+                        "eta_time": target_time,
+                        "forecast_precip_mm": round(val_precip, 1),
+                        "weather_code": val_code,
+                        "weather_desc": weather_desc,
+                        "wind_kmh": round(val_wind, 1),
+                        "temp_celsius": round(val_temp, 1),
+                        "forecast_risk_level": risk_level,
+                        "source": "open-meteo-hourly",
+                    }
+                    cls._cache[cache_key] = res
+                    return res
+        except Exception:
+            pass
+
+        return {
+            "hours_ahead": offset_h,
+            "eta_time": datetime.now().strftime("%Y-%m-%dT%H:00"),
+            "forecast_precip_mm": 0.0,
+            "weather_code": 0,
+            "weather_desc": "Clear",
+            "wind_kmh": 10.0,
+            "temp_celsius": 25.0,
+            "forecast_risk_level": "low",
+            "source": "default",
+        }
+
+

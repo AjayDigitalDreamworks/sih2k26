@@ -1,11 +1,12 @@
 import React from 'react';
 
 const steps = [
-  ['01', 'COLLECT', 'Road, weather, traffic, GPS and field data.'],
-  ['02', 'ANALYZE', 'AI identifies route risks and accessibility changes.'],
-  ['03', 'OPTIMIZE', 'RAAHI calculates smarter and safer routes.'],
-  ['04', 'DELIVER', 'Drivers and logistics teams act with real-time intelligence.'],
+  ['01', 'INGEST', 'Weather sensors, GPS telemetry, satellite GIS, and offline field reports.'],
+  ['02', 'PREDICT', 'AI/ML models forecast landslides, flood runoffs, and route cut-offs.'],
+  ['03', 'OPTIMIZE', 'Smart engine calculates safe bypasses matching bridge weight limits.'],
+  ['04', 'DELIVER', 'Drivers, transporters, and officials act on real-time alerts & navigation.'],
 ];
+
 
 export function TimelineSection() {
   return (

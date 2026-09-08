@@ -39,6 +39,7 @@ function getStatusColor(status) {
     case 'stopped': return '#F59E0B';
     case 'prolonged_stop': return '#F97316';
     case 'delayed': return '#EF4444';
+    case 'in_dead_zone': return '#D97706';
     case 'offline': return '#94A3B8';
     case 'stale': return '#A78BFA';
     case 'gps_error': return '#DC2626';
@@ -52,6 +53,7 @@ function getStatusLabel(status) {
     case 'stopped': return 'Stopped';
     case 'prolonged_stop': return 'Prolonged Stop';
     case 'delayed': return 'Delayed';
+    case 'in_dead_zone': return 'In Dead Zone';
     case 'offline': return 'Offline';
     case 'stale': return 'Stale GPS';
     case 'gps_error': return 'GPS Error';
@@ -233,12 +235,18 @@ export const FleetTrackingMap = ({ selectedVehicleId, onSelectVehicle }) => {
         accuracyRating: animated.accuracyRating || 'unknown',
         distanceRemaining: animated.distanceRemaining || null,
         currentRoute: animated.currentRoute || v.route || '',
+        inDeadZone: animated.inDeadZone || false,
+        fatigueWarning: animated.fatigueWarning || false,
+        continuousDrivingMins: animated.continuousDrivingMins || 0,
       };
     }
     return {
       lat: v.lat, lng: v.lng, bearing: 0, speed: v.speed || 0,
-      status: v.statusClass || 'offline', direction: '', route: v.route || '',
+      status: v.liveStatus === 'IN_DEAD_ZONE' ? 'in_dead_zone' : v.statusClass || 'offline',
+      direction: '', route: v.route || '',
       eta: null, accuracyRating: 'unknown',
+      inDeadZone: v.liveStatus === 'IN_DEAD_ZONE',
+      fatigueWarning: false,
     };
   }, [vehiclePositions]);
 
@@ -501,6 +509,24 @@ export const FleetTrackingMap = ({ selectedVehicleId, onSelectVehicle }) => {
                         <Clock size={10} />
                         {ageLabel}
                       </span>
+                      {display.inDeadZone && (
+                        <span style={{
+                          display: 'inline-flex', alignItems: 'center', gap: 3,
+                          padding: '1px 6px', borderRadius: 4, fontSize: 9, fontWeight: 700,
+                          background: '#FEF3C7', color: '#B45309', border: '1px solid #FCD34D',
+                        }}>
+                          ⛰️ Dead Zone (Projected)
+                        </span>
+                      )}
+                      {display.fatigueWarning && (
+                        <span style={{
+                          display: 'inline-flex', alignItems: 'center', gap: 3,
+                          padding: '1px 6px', borderRadius: 4, fontSize: 9, fontWeight: 700,
+                          background: '#FEF2F2', color: '#DC2626', border: '1px solid #FCA5A5',
+                        }}>
+                          ⚠️ Fatigue ({display.continuousDrivingMins ? Math.round(display.continuousDrivingMins / 60) : '4+'}h continuous)
+                        </span>
+                      )}
                     </div>
 
                     {/* Vehicle Data Grid */}

@@ -205,7 +205,7 @@ export default function MyConsignments() {
                 <button
                   type="button"
                   onClick={() => setFilterOpen(!filterOpen)}
-                  className={`inline-flex items-center gap-1.5 px-3 py-2 text-xs sm:text-sm font-semibold rounded-lg shadow-sm border transition-colors cursor-pointer ${
+                  className={`inline-flex items-center gap-1.5 px-3.5 py-2 text-xs sm:text-sm font-bold rounded-full shadow-sm border transition-colors cursor-pointer ${
                     priorityFilter !== 'all'
                       ? 'bg-emerald-50 text-emerald-700 border-emerald-200'
                       : 'bg-white text-slate-700 border-slate-200 hover:bg-slate-50'
@@ -262,7 +262,7 @@ export default function MyConsignments() {
               <button
                 type="button"
                 onClick={() => setShowNewModal(true)}
-                className="inline-flex items-center gap-1.5 px-3.5 py-2 text-xs sm:text-sm font-bold text-white bg-emerald-600 hover:bg-emerald-700 rounded-lg shadow-sm shadow-emerald-600/20 transition-colors cursor-pointer"
+                className="inline-flex items-center gap-1.5 px-4 py-2 text-xs sm:text-sm font-bold text-white bg-[#087f4d] hover:bg-[#06663e] rounded-full shadow-sm shadow-emerald-700/25 transition-colors cursor-pointer"
               >
                 <Plus size={16} />
                 <span>New Consignment</span>
@@ -322,7 +322,7 @@ export default function MyConsignments() {
                     <button
                       type="button"
                       onClick={() => setShowNewModal(true)}
-                      className="inline-flex items-center gap-1.5 px-4 py-2.5 text-xs font-bold text-white bg-emerald-600 hover:bg-emerald-700 rounded-xl cursor-pointer"
+                      className="inline-flex items-center gap-1.5 px-4.5 py-2.5 text-xs font-bold text-white bg-[#087f4d] hover:bg-[#06663e] rounded-full shadow-sm shadow-emerald-700/25 cursor-pointer"
                     >
                       <Plus size={15} /> Create Your First Consignment
                     </button>

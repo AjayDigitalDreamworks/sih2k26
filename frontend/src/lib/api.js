@@ -461,10 +461,38 @@ class ApiClient {
     }
   }
 
+  // Emergency mid-trip reroute for fleet telematics
+  static async rerouteVehicle(payload) {
+    try {
+      const res = await this.request('/integrations/route/reroute-vehicle', {
+        method: 'POST',
+        body: JSON.stringify(payload),
+      });
+      if (res && (res.success || res.data?.success || res.data?.recommended)) {
+        return res;
+      }
+    } catch (_) {}
+
+    try {
+      const mlUrl = import.meta.env.VITE_ML_SERVICE_URL || 'http://localhost:8010';
+      const r = await fetch(`${mlUrl}/route/reroute-vehicle`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(payload),
+      });
+      const data = await r.json();
+      return { success: true, data };
+    } catch (err) {
+      return { success: false, message: err?.message || 'Emergency reroute service unreachable' };
+    }
+  }
+
+
   // Live route from a vehicle's real GPS fix to its active trip destination
   static getLiveRoute(vehicleId) {
     return this.request(`/integrations/live-route/${encodeURIComponent(vehicleId)}`);
   }
+
 
   // Full Context
   static getDistrictContext(districtId) {
@@ -513,6 +541,18 @@ class ApiClient {
   }
   static getDisruptionsAll() {
     return this.request('/integrations/disruptions/all');
+  }
+
+  // ---- Disaster Digital Twin Simulation ----
+  static getSimulationPresets() {
+    return this.request('/integrations/simulation/presets');
+  }
+
+  static runSimulation(payload) {
+    return this.request('/integrations/simulation/run', {
+      method: 'POST',
+      body: JSON.stringify(payload),
+    });
   }
 
   // ---- GIS Endpoints ----
@@ -640,4 +680,5 @@ class ApiClient {
   }
 }
 
+export { ApiClient };
 export default ApiClient;

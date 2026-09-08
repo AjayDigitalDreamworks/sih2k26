@@ -25,7 +25,7 @@ export default function LanguageSelector({ variant = 'pill' }) {
       <button
         type="button"
         onClick={() => setLangDropdownOpen(!langDropdownOpen)}
-        className="flex items-center gap-2 px-4 py-2 rounded-xl border border-slate-200/90 bg-white/90 backdrop-blur-md hover:bg-slate-50 text-slate-700 text-xs sm:text-sm font-semibold transition-all shadow-sm focus:outline-none cursor-pointer"
+        className="flex items-center gap-2 px-4 py-2 rounded-full border border-slate-200/90 bg-white/90 backdrop-blur-md hover:bg-slate-50 text-slate-700 text-xs sm:text-sm font-semibold transition-all shadow-sm focus:outline-none cursor-pointer"
       >
         <Globe className="w-4 h-4 text-slate-500" />
         <span>{currentLangObj.label.split(' ')[0]}</span>

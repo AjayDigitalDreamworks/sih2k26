@@ -213,10 +213,67 @@ def predict_risk_score(
 
     models = MLModels()
 
+    FEATURE_METRICS = [
+        {"key": "slope_risk", "name": "Terrain Slope Gradient", "unit": "%", "desc": "Mountain incline & road grade steepness"},
+        {"key": "rainfall_24h_mm", "name": "24h Accumulated Rainfall", "unit": "mm", "desc": "Real-time IMD/Open-Meteo precipitation"},
+        {"key": "road_condition", "name": "Road Surface Quality", "unit": "status", "desc": "Surveyed pavement condition"},
+        {"key": "bridge_condition", "name": "Bridge Structural Health", "unit": "status", "desc": "Bridge load & pier integrity"},
+        {"key": "historical_disruptions", "name": "Historical Incidents", "unit": "events", "desc": "Past blockage frequency"},
+        {"key": "congestion_level", "name": "Traffic Delay Index", "unit": "level", "desc": "Real-time congestion slowdown"},
+        {"key": "flood_risk_level", "name": "Hydrological Flood Stage", "unit": "gauge", "desc": "River gauge inundation susceptibility"},
+        {"key": "landslide_probability", "name": "Landslide Hazard Probability", "unit": "prob", "desc": "Geological soil slope vulnerability"},
+        {"key": "elevation_m", "name": "SRTM Altitude", "unit": "m", "desc": "Digital elevation model altitude"},
+        {"key": "river_proximity", "name": "Major River Proximity", "unit": "km", "desc": "Distance to Brahmaputra river basin"},
+        {"key": "month", "name": "Monsoon Seasonality", "unit": "month", "desc": "Monsoon climate cycle index"},
+        {"key": "road_distance_km", "name": "Corridor Stretch Length", "unit": "km", "desc": "Hazard exposure distance"},
+    ]
+
+    shap_attribution = None
+
     if models.risk_model is not None and models.risk_scaler is not None:
         try:
             features_scaled = models.risk_scaler.transform(features)
-            score = int(np.clip(models.risk_model.predict(features_scaled)[0], 0, 100))
+            raw_pred = float(models.risk_model.predict(features_scaled)[0])
+            score = int(np.clip(raw_pred, 0, 100))
+
+            # Compute exact TreeSHAP values natively via XGBoost Booster
+            try:
+                import xgboost as xgb
+                dmat = xgb.DMatrix(features_scaled)
+                contribs = models.risk_model.get_booster().predict(dmat, pred_contribs=True)[0]
+                base_val = float(contribs[12])
+                feature_contribs = []
+
+                for idx, meta in enumerate(FEATURE_METRICS):
+                    raw_v = features[0][idx]
+                    pts = round(float(contribs[idx]), 2)
+                    feature_contribs.append({
+                        "feature": meta["key"],
+                        "name": meta["name"],
+                        "description": meta["desc"],
+                        "rawValue": int(raw_v) if meta["key"] in ["historical_disruptions", "month"] else round(float(raw_v), 1),
+                        "unit": meta["unit"],
+                        "impactPoints": pts,
+                        "direction": "increases_risk" if pts > 0 else "reduces_risk" if pts < 0 else "neutral",
+                    })
+
+                feature_contribs.sort(key=lambda x: abs(x["impactPoints"]), reverse=True)
+                top_pos = [f"{c['name']} (+{c['impactPoints']:.1f} pts)" for c in feature_contribs if c['impactPoints'] > 0][:2]
+                top_neg = [f"{c['name']} ({c['impactPoints']:.1f} pts)" for c in feature_contribs if c['impactPoints'] < 0][:1]
+                summary_parts = []
+                if top_pos:
+                    summary_parts.append(f"Risk elevated primarily by {', '.join(top_pos)}")
+                if top_neg:
+                    summary_parts.append(f"mitigated by {', '.join(top_neg)}")
+
+                shap_attribution = {
+                    "baseValue": round(base_val, 2),
+                    "predictedScore": score,
+                    "topDriversSummary": ". ".join(summary_parts) if summary_parts else "Baseline corridor conditions.",
+                    "contributions": feature_contribs,
+                }
+            except Exception as e:
+                print(f"TreeSHAP calculation error: {e}")
         except Exception as e:
             print(f"ML prediction failed, using rule-based: {e}")
             score = _rule_based_risk(slope_risk, rainfall_24h_mm, road_condition,
@@ -226,6 +283,26 @@ def predict_risk_score(
         score = _rule_based_risk(slope_risk, rainfall_24h_mm, road_condition,
                                  bridge_condition, historical_disruptions,
                                  congestion_level, flood_risk_level, landslide_probability)
+
+    # Fallback attribution if ML model was not available
+    if shap_attribution is None:
+        rain_pts = round((min(120, rainfall_24h_mm) / 120.0) * 30.0, 1)
+        slope_pts = round((slope_risk / 100.0) * 25.0, 1)
+        cond_pts = 20.0 if road_condition == "blocked" else 10.0 if road_condition == "damaged" else -5.0
+        hist_pts = round(min(15.0, historical_disruptions * 2.5), 1)
+        base_val = 20.0
+
+        shap_attribution = {
+            "baseValue": base_val,
+            "predictedScore": score,
+            "topDriversSummary": f"Rule-based attribution: Rainfall (+{rain_pts} pts), Slope (+{slope_pts} pts).",
+            "contributions": [
+                {"feature": "rainfall_24h_mm", "name": "24h Accumulated Rainfall", "rawValue": rainfall_24h_mm, "unit": "mm", "impactPoints": rain_pts, "direction": "increases_risk"},
+                {"feature": "slope_risk", "name": "Terrain Slope Gradient", "rawValue": slope_risk, "unit": "%", "impactPoints": slope_pts, "direction": "increases_risk"},
+                {"feature": "road_condition", "name": "Road Surface Quality", "rawValue": road_condition, "unit": "status", "impactPoints": cond_pts, "direction": "increases_risk" if cond_pts > 0 else "reduces_risk"},
+                {"feature": "historical_disruptions", "name": "Historical Incidents", "rawValue": historical_disruptions, "unit": "events", "impactPoints": hist_pts, "direction": "increases_risk"},
+            ],
+        }
 
     # Determine risk level
     if score > 80:
@@ -252,6 +329,7 @@ def predict_risk_score(
         "score": score,
         "level": level,
         "engine": engine,
+        "attribution": shap_attribution,
         "computedAt": datetime.utcnow().isoformat() + "Z",
         "factors": {
             "terrainSlopeRisk": round(terrain_sub, 1),

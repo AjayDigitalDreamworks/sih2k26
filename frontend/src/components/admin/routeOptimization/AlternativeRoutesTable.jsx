@@ -84,7 +84,7 @@ export const AlternativeRoutesTable = ({ routes, plan, activeRouteId = 'safest',
                 }}
               >
                 <div>
-                  <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '8px', flexWrap: 'wrap' }}>
                     <span style={{ fontSize: '13px', fontWeight: 700, color: isActive ? '#065F46' : 'var(--text-primary)' }}>
                       {alt.name}
                     </span>
@@ -93,8 +93,13 @@ export const AlternativeRoutesTable = ({ routes, plan, activeRouteId = 'safest',
                         Recommended
                       </span>
                     )}
+                    {alt.isMultiModal && (
+                      <span style={{ fontSize: '10px', fontWeight: 700, padding: '2px 8px', borderRadius: '4px', background: '#E0F2FE', color: '#0369A1', border: '1px solid #BAE6FD' }}>
+                        🚢 NW-2 Ro-Ro Waterway
+                      </span>
+                    )}
                   </div>
-                  <div style={{ fontSize: '12px', color: 'var(--text-muted)', marginTop: '4px', display: 'flex', gap: '10px', alignItems: 'center' }}>
+                  <div style={{ fontSize: '12px', color: 'var(--text-muted)', marginTop: '4px', display: 'flex', gap: '10px', alignItems: 'center', flexWrap: 'wrap' }}>
                     <span style={{ display: 'inline-flex', alignItems: 'center', gap: '3px' }}>
                       <Navigation size={12} /> {dist} km
                     </span>
@@ -106,6 +111,11 @@ export const AlternativeRoutesTable = ({ routes, plan, activeRouteId = 'safest',
                       Risk: {alt.riskScore}/100 ({alt.riskLevel})
                     </span>
                   </div>
+                  {alt.waterCrossing && (
+                    <div style={{ fontSize: '11px', color: '#0369A1', marginTop: '4px', fontWeight: 500 }}>
+                      Vessel: <strong>{alt.waterCrossing.vesselName}</strong> • Bypasses mountain grades • Saves {alt.waterCrossing.fuelSavedLiters}L fuel ({alt.waterCrossing.carbonSavedKg} kg CO₂ ESG)
+                    </div>
+                  )}
                 </div>
 
                 <div>

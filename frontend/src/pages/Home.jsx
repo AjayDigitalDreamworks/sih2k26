@@ -5,15 +5,11 @@ import Lenis from "lenis";
 
 import { SiteNav } from "@/components/home/SiteNav";
 import { HeroSection } from "@/components/home/HeroSection";
-import { ProblemBanner } from "@/components/home/ProblemBanner";
-import { IntroSection } from "@/components/home/IntroSection";
-import { LiveMapSection } from "@/components/home/LiveMapSection";
 import { ProblemsSection } from "@/components/home/ProblemsSection";
 import { PlatformFeaturesSection } from "@/components/home/PlatformFeaturesSection";
 import { TimelineSection } from "@/components/home/TimelineSection";
-import { CommandCenterSection, ImpactStatsSection } from "@/components/home/CommandCenterSection";
+import { ImpactStatsSection } from "@/components/home/CommandCenterSection";
 import { SolutionsSection } from "@/components/home/SolutionsSection";
-import { NortheastSection, CtaSection } from "@/components/home/NortheastSection";
 import { Footer } from "@/components/home/Footer";
 import Login from "./Login";
 
@@ -50,6 +46,11 @@ export default function Home() {
     const prefersReduced = window.matchMedia("(prefers-reduced-motion: reduce)").matches;
     const lenis = prefersReduced ? null : new Lenis({ lerp: 0.085, smoothWheel: true });
     lenisRef.current = lenis;
+
+    if (lenis) {
+      lenis.on("scroll", ScrollTrigger.update);
+    }
+
     let raf = 0;
     const rafLoop = (time) => {
       lenis?.raf(time);
@@ -82,10 +83,10 @@ export default function Home() {
         ease: "none",
         scrollTrigger: { trigger: ".hero-corridor", start: "top top", end: "bottom top", scrub: true },
       });
-      gsap.to(".northeast-media", {
-        yPercent: -8,
+      gsap.to(".problems-bg-media", {
+        yPercent: 6,
         ease: "none",
-        scrollTrigger: { trigger: ".northeast", start: "top bottom", end: "bottom top", scrub: true },
+        scrollTrigger: { trigger: ".problems", start: "top bottom", end: "bottom top", scrub: true },
       });
       gsap.fromTo(
         ".steps-spine",
@@ -108,17 +109,11 @@ export default function Home() {
 
       <main>
         <HeroSection />
-        <ProblemBanner />
-        <IntroSection />
-        <LiveMapSection />
-        <ProblemsSection />
         <PlatformFeaturesSection />
+        <ProblemsSection />
         <TimelineSection />
-        <CommandCenterSection />
         <ImpactStatsSection />
         <SolutionsSection onOpenLogin={() => setIsLoginModalOpen(true)} />
-        <NortheastSection />
-        <CtaSection onOpenLogin={() => setIsLoginModalOpen(true)} />
       </main>
 
       <Footer onOpenLogin={() => setIsLoginModalOpen(true)} />

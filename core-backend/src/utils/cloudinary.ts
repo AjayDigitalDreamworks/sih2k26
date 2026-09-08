@@ -1,3 +1,4 @@
+import '../config/env';
 import { v2 as cloudinary, UploadApiResponse } from 'cloudinary';
 import { logger } from './logger';
 import fs from 'fs';

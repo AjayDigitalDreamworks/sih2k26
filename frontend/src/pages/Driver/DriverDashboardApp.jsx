@@ -210,7 +210,7 @@ export default function DriverDashboardApp() {
               logout();
               navigate('/login');
             }}
-            className="w-full py-3 px-4 rounded-xl bg-emerald-600 hover:bg-emerald-500 font-bold text-sm text-white transition-colors"
+            className="w-full py-3.5 px-5 rounded-full bg-[#087f4d] hover:bg-[#06663e] font-bold text-sm text-white shadow-md shadow-emerald-950/30 transition-colors"
           >
             Sign In with Driver Account
           </button>
@@ -303,7 +303,7 @@ export default function DriverDashboardApp() {
                 t.reload();
                 toast.info('Reloading driver assignment...');
               }}
-              className="p-1.5 rounded-lg bg-white/10 hover:bg-white/20 text-white transition-colors cursor-pointer"
+              className="p-2 rounded-full bg-white/10 hover:bg-white/20 text-white transition-colors cursor-pointer"
               title="Refresh Assignment"
             >
               <RefreshCw className="w-4 h-4" />
@@ -315,7 +315,7 @@ export default function DriverDashboardApp() {
                 logout();
                 navigate('/login');
               }}
-              className="p-1.5 rounded-lg bg-white/10 hover:bg-rose-500/30 text-white/80 hover:text-white transition-colors cursor-pointer"
+              className="p-2 rounded-full bg-white/10 hover:bg-rose-500/30 text-white/80 hover:text-white transition-colors cursor-pointer"
               title="Sign Out"
             >
               <LogOut className="w-4 h-4" />
@@ -465,7 +465,7 @@ export default function DriverDashboardApp() {
               <button
                 type="button"
                 onClick={() => setSosModalOpen(false)}
-                className="flex-1 py-3 rounded-xl border border-slate-200 font-bold text-xs text-slate-700 hover:bg-slate-50 cursor-pointer"
+                className="flex-1 py-3 rounded-full border border-slate-200 font-bold text-xs text-slate-700 hover:bg-slate-50 cursor-pointer"
               >
                 Cancel
               </button>
@@ -473,7 +473,7 @@ export default function DriverDashboardApp() {
                 type="button"
                 onClick={handleSosConfirm}
                 disabled={t.sosBusy}
-                className={`flex-1 py-3 rounded-xl font-black text-xs text-white shadow-md transition-colors cursor-pointer ${
+                className={`flex-1 py-3 rounded-full font-black text-xs text-white shadow-md transition-colors cursor-pointer ${
                   t.sosActive ? 'bg-amber-600 hover:bg-amber-500' : 'bg-rose-600 hover:bg-rose-500'
                 }`}
               >
@@ -567,7 +567,7 @@ function TrackingView({
           <button
             onClick={onStart}
             disabled={t.tripBusy}
-            className="w-full py-3.5 px-4 rounded-xl bg-gradient-to-r from-emerald-600 to-teal-700 hover:from-emerald-500 hover:to-teal-600 text-white font-black text-sm tracking-wide shadow-md shadow-emerald-700/20 flex items-center justify-center gap-2 cursor-pointer transition-all active:scale-[0.99] disabled:opacity-60"
+            className="w-full py-3.5 px-5 rounded-full bg-[#087f4d] hover:bg-[#06663e] text-white font-black text-sm tracking-wide shadow-md shadow-emerald-950/25 flex items-center justify-center gap-2 cursor-pointer transition-all active:scale-[0.99] disabled:opacity-60"
           >
             <Play className="w-4 h-4 fill-white" />
             <span>{t.tripBusy ? 'STARTING TRACKING…' : 'START TRIP & BEGIN TRACKING'}</span>
@@ -578,7 +578,7 @@ function TrackingView({
           <button
             onClick={onStop}
             disabled={t.tripBusy}
-            className="w-full py-3.5 px-4 rounded-xl bg-gradient-to-r from-rose-600 to-red-700 hover:from-rose-500 hover:to-red-600 text-white font-black text-sm tracking-wide shadow-md shadow-rose-700/20 flex items-center justify-center gap-2 cursor-pointer transition-all active:scale-[0.99] disabled:opacity-60"
+            className="w-full py-3.5 px-5 rounded-full bg-rose-600 hover:bg-rose-700 text-white font-black text-sm tracking-wide shadow-md shadow-rose-950/25 flex items-center justify-center gap-2 cursor-pointer transition-all active:scale-[0.99] disabled:opacity-60"
           >
             <Square className="w-4 h-4 fill-white" />
             <span>{t.tripBusy ? 'FINALIZING TRIP…' : 'STOP TRIP & COMPLETE'}</span>
@@ -773,7 +773,7 @@ function TrackingView({
           </div>
           <button
             onClick={t.startWatching}
-            className="w-full py-2.5 rounded-xl bg-amber-600 hover:bg-amber-500 text-white font-bold text-xs shadow-xs cursor-pointer"
+            className="w-full py-2.5 rounded-full bg-amber-600 hover:bg-amber-500 text-white font-bold text-xs shadow-xs cursor-pointer"
           >
             {t.permission === 'denied' ? 'Request Permission Again' : 'Enable Device GPS'}
           </button>
@@ -792,7 +792,7 @@ function TrackingView({
         </div>
         <button
           onClick={onOpenSos}
-          className={`px-4 py-2.5 rounded-xl text-xs font-black text-white shadow-md transition-all active:scale-95 cursor-pointer ${
+          className={`px-4.5 py-2.5 rounded-full text-xs font-black text-white shadow-md transition-all active:scale-95 cursor-pointer ${
             t.sosActive ? 'bg-amber-600 hover:bg-amber-500' : 'bg-rose-600 hover:bg-rose-500'
           }`}
         >

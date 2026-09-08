@@ -14,7 +14,7 @@ Integrations: Open-Meteo (free fallback), OSRM (free routing)
 from contextlib import asynccontextmanager
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
-from app.routers import risk, disruption, route_suggestion, route_planner, realtime, alerts, pipeline
+from app.routers import risk, disruption, route_suggestion, route_planner, realtime, alerts, pipeline, simulation
 from app.services.config import APIConfig
 from app.engine.ml_inference import get_model_status
 
@@ -94,6 +94,7 @@ app.include_router(route_planner.router)
 app.include_router(realtime.router)
 app.include_router(alerts.router)
 app.include_router(pipeline.router)
+app.include_router(simulation.router)
 
 
 @app.get("/health")

@@ -111,14 +111,14 @@ export default function ConsignmentDetailsModal({ isOpen, onClose, consignment }
             <button
               type="button"
               onClick={handleDownloadWaybill}
-              className="inline-flex items-center gap-1.5 px-3.5 py-2 rounded-xl border border-slate-200 text-xs font-bold text-slate-700 hover:bg-slate-100 transition-colors cursor-pointer"
+              className="inline-flex items-center gap-1.5 px-4 py-2 rounded-full border border-slate-200 text-xs font-bold text-slate-700 hover:bg-slate-100 transition-colors cursor-pointer"
             >
               <Download className="w-3.5 h-3.5 text-slate-500" /> Download e-Waybill
             </button>
             <button
               type="button"
               onClick={onClose}
-              className="px-4 py-2 rounded-xl bg-slate-900 hover:bg-slate-800 text-xs font-bold text-white transition-colors cursor-pointer"
+              className="px-5 py-2 rounded-full bg-slate-900 hover:bg-slate-800 text-xs font-bold text-white transition-colors cursor-pointer"
             >
               Close
             </button>

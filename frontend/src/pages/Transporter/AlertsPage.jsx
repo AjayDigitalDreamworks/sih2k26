@@ -152,7 +152,7 @@ export default function AlertsPage() {
               {/* All Alerts Dropdown */}
               <button
                 type="button"
-                className="flex items-center gap-1.5 px-3 py-2 rounded-xl bg-white border border-slate-200/90 shadow-2xs text-xs font-bold text-slate-700 hover:bg-slate-50 transition-colors cursor-pointer"
+                className="flex items-center gap-1.5 px-3.5 py-2 rounded-full bg-white border border-slate-200/90 shadow-2xs text-xs font-bold text-slate-700 hover:bg-slate-50 transition-colors cursor-pointer"
               >
                 <Filter className="w-3.5 h-3.5 text-slate-500" />
                 <span>All Alerts</span>
@@ -162,7 +162,7 @@ export default function AlertsPage() {
               {/* Date Range Selector */}
               <button
                 type="button"
-                className="flex items-center gap-2 px-3 py-2 rounded-xl bg-white border border-slate-200/90 shadow-2xs text-xs font-bold text-slate-700 hover:bg-slate-50 transition-colors cursor-pointer"
+                className="flex items-center gap-2 px-3.5 py-2 rounded-full bg-white border border-slate-200/90 shadow-2xs text-xs font-bold text-slate-700 hover:bg-slate-50 transition-colors cursor-pointer"
               >
                 <Calendar className="w-3.5 h-3.5 text-slate-500" />
                 <span>Last 7 Days</span>
@@ -174,7 +174,7 @@ export default function AlertsPage() {
                 type="button"
                 onClick={handleMarkAllAsRead}
                 title="Mark all as read"
-                className="hidden md:inline-flex items-center gap-1.5 px-3 py-2 rounded-xl bg-white border border-slate-200/90 shadow-2xs text-xs font-bold text-emerald-700 hover:bg-emerald-50 transition-colors cursor-pointer"
+                className="hidden md:inline-flex items-center gap-1.5 px-3.5 py-2 rounded-full bg-white border border-slate-200/90 shadow-2xs text-xs font-bold text-emerald-700 hover:bg-emerald-50 transition-colors cursor-pointer"
               >
                 <CheckCircle2 className="w-3.5 h-3.5" />
                 <span>Mark All Read</span>

@@ -209,7 +209,7 @@ export default function MyVehicles() {
                 <button
                   type="button"
                   onClick={() => setFilterOpen(!filterOpen)}
-                  className={`inline-flex items-center gap-1.5 px-3 py-2 text-xs sm:text-sm font-semibold rounded-lg shadow-sm border transition-colors cursor-pointer ${
+                  className={`inline-flex items-center gap-1.5 px-3.5 py-2 text-xs sm:text-sm font-bold rounded-full shadow-sm border transition-colors cursor-pointer ${
                     statusFilter !== 'all'
                       ? 'bg-emerald-50 text-emerald-700 border-emerald-200'
                       : 'bg-white text-slate-700 border-slate-200 hover:bg-slate-50'
@@ -269,7 +269,7 @@ export default function MyVehicles() {
                   setEditVehicle(null);
                   setShowAddModal(true);
                 }}
-                className="inline-flex items-center gap-1.5 px-3.5 py-2 text-xs sm:text-sm font-bold text-white bg-emerald-600 hover:bg-emerald-700 rounded-lg shadow-sm shadow-emerald-600/20 transition-colors cursor-pointer"
+                className="inline-flex items-center gap-1.5 px-4 py-2 text-xs sm:text-sm font-bold text-white bg-[#087f4d] hover:bg-[#06663e] rounded-full shadow-sm shadow-emerald-700/25 transition-colors cursor-pointer"
               >
                 <Plus size={16} />
                 <span>Add Vehicle</span>
@@ -323,7 +323,7 @@ export default function MyVehicles() {
                         setEditVehicle(null);
                         setShowAddModal(true);
                       }}
-                      className="inline-flex items-center gap-1.5 px-4 py-2.5 text-xs font-bold text-white bg-emerald-600 hover:bg-emerald-700 rounded-xl cursor-pointer"
+                      className="inline-flex items-center gap-1.5 px-4.5 py-2.5 text-xs font-bold text-white bg-[#087f4d] hover:bg-[#06663e] rounded-full shadow-sm shadow-emerald-700/25 cursor-pointer"
                     >
                       <Plus size={15} /> Add Your First Vehicle
                     </button>
@@ -404,7 +404,7 @@ export default function MyVehicles() {
                   type="button"
                   disabled={deleting}
                   onClick={() => setDeleteTarget(null)}
-                  className="px-4 py-2 rounded-xl border border-slate-200 text-xs font-bold text-slate-600 hover:bg-slate-50 transition-colors cursor-pointer disabled:opacity-50"
+                  className="px-4.5 py-2 rounded-full border border-slate-200 text-xs font-bold text-slate-600 hover:bg-slate-50 transition-colors cursor-pointer disabled:opacity-50"
                 >
                   Cancel
                 </button>
@@ -412,7 +412,7 @@ export default function MyVehicles() {
                   type="button"
                   disabled={deleting}
                   onClick={handleDelete}
-                  className="inline-flex items-center gap-1.5 px-4 py-2 rounded-xl bg-rose-600 hover:bg-rose-700 text-xs font-bold text-white cursor-pointer disabled:opacity-50"
+                  className="inline-flex items-center gap-1.5 px-4.5 py-2 rounded-full bg-rose-600 hover:bg-rose-700 text-xs font-bold text-white shadow-sm transition-colors cursor-pointer disabled:opacity-50"
                 >
                   <Trash2 size={14} />
                   {deleting ? 'Removing…' : 'Remove Vehicle'}

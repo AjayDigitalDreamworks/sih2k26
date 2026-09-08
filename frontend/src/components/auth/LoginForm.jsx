@@ -201,7 +201,7 @@ export default function LoginForm() {
           disabled={isLoading}
           whileHover={{ scale: 1.01 }}
           whileTap={{ scale: 0.98 }}
-          className="w-full py-3.5 px-4 rounded-xl bg-emerald-700 hover:bg-emerald-800 text-white font-bold text-sm shadow-md shadow-emerald-700/20 flex items-center justify-center gap-2 cursor-pointer transition-all focus:outline-none disabled:opacity-60"
+          className="w-full py-3.5 px-6 rounded-full bg-[#087f4d] hover:bg-[#06663e] text-white font-bold text-sm shadow-md shadow-emerald-900/20 flex items-center justify-center gap-2 cursor-pointer transition-all focus:outline-none disabled:opacity-60"
         >
           {isLoading ? (
             <span className="flex items-center gap-2">

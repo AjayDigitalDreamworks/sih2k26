@@ -13,10 +13,28 @@ import { TripSummaryCard } from "@/components/admin/vehicleTracking/TripSummaryC
 import { useApp } from "@/contexts/AppContext";
 
 export const VehicleTrackingPage = () => {
-  const { vehicles, weather, alerts } = useApp();
+  const { vehicles, weather, alerts, setCurrentPage, setRoutePlannerInitialState } = useApp();
   const [selectedVehicleId, setSelectedVehicleId] = useState(null);
   const [liveStats, setLiveStats] = useState(null);
   const vList = vehicles || [];
+
+  const handleEmergencyReroute = (v) => {
+    if (!v) return;
+    if (setRoutePlannerInitialState) {
+      setRoutePlannerInitialState({
+        vehicleId: v.id,
+        currentLat: v.lat,
+        currentLng: v.lng,
+        route: v.route,
+        vehicleType: (v.model && v.model.toLowerCase().includes('tanker')) ? 'hazardous_tanker' : 'heavy_multi_axle',
+        autoPlan: true,
+      });
+    }
+    if (setCurrentPage) {
+      setCurrentPage('route-optimization');
+    }
+  };
+
 
   // Real fleet live-status aggregation from /tracking/status (server computes
   // LIVE / STALE / OFFLINE from actual GPS timestamps - never fabricated).
@@ -35,9 +53,10 @@ export const VehicleTrackingPage = () => {
     return () => { alive = false; clearInterval(iv); };
   }, []);
 
+  const deadZoneCount = liveStats?.inDeadZone ?? vList.filter((v) => v.liveStatus === "IN_DEAD_ZONE").length;
   const liveCount = liveStats?.live ?? vList.filter((v) => v.trackingActive && v.liveStatus === "LIVE").length;
   const staleCount = liveStats?.stale ?? vList.filter((v) => v.trackingActive && v.liveStatus === "STALE").length;
-  const offlineCount = liveStats?.offline ?? (vList.length - liveCount - staleCount);
+  const offlineCount = liveStats?.offline ?? Math.max(0, vList.length - liveCount - staleCount - deadZoneCount);
   const activeTrips = liveStats?.activeTrips ?? vList.filter((v) => v.trackingActive).length;
   const anyLive = liveCount > 0;
   const totalVehicles = vList.length;
@@ -92,6 +111,7 @@ export const VehicleTrackingPage = () => {
         }
         <div style={{ display: 'flex', gap: '10px', marginLeft: 'auto', fontSize: '11px', fontWeight: 700 }}>
           <span style={{ color: '#059669' }}>LIVE {liveCount}</span>
+          {deadZoneCount > 0 && <span style={{ color: '#D97706' }}>DEAD ZONE {deadZoneCount}</span>}
           <span style={{ color: '#A78BFA' }}>STALE {staleCount}</span>
           <span style={{ color: '#94A3B8' }}>OFFLINE {offlineCount}</span>
           <span style={{ color: '#3B82F6' }}>ACTIVE TRIPS {activeTrips}</span>
@@ -112,8 +132,8 @@ export const VehicleTrackingPage = () => {
               <div>
                 <strong style={{ fontSize: "14px" }}>{selectedVehicle.id}</strong> - {selectedVehicle.model}
                 <span style={{ marginLeft: "12px", fontSize: "12px", color: "var(--text-muted)" }}>Driver: {selectedVehicle.driver} | Route: {selectedVehicle.route}</span>
-                <span style={{ marginLeft: "12px", fontSize: "11px", fontWeight: 700, color: selectedVehicle.liveStatus === "LIVE" ? "#059669" : selectedVehicle.liveStatus === "STALE" ? "#A78BFA" : "#94A3B8" }}>
-                  {selectedVehicle.liveStatus || (selectedVehicle.trackingActive ? "TRACKING" : "NOT TRACKING")}
+                <span style={{ marginLeft: "12px", fontSize: "11px", fontWeight: 700, color: selectedVehicle.liveStatus === "LIVE" ? "#059669" : selectedVehicle.liveStatus === "IN_DEAD_ZONE" ? "#D97706" : selectedVehicle.liveStatus === "STALE" ? "#A78BFA" : "#94A3B8" }}>
+                  {selectedVehicle.liveStatus === "IN_DEAD_ZONE" ? "⛰️ IN DEAD ZONE (PROJECTED)" : (selectedVehicle.liveStatus || (selectedVehicle.trackingActive ? "TRACKING" : "NOT TRACKING"))}
                   {selectedVehicle.lastGpsAt ? " | last GPS " + new Date(selectedVehicle.lastGpsAt).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit", second: "2-digit" }) : ""}
                 </span>
               </div>
@@ -122,8 +142,28 @@ export const VehicleTrackingPage = () => {
               <span style={{ fontWeight: 600 }}>Speed: {selectedVehicle.speed}</span>
               <span style={{ fontWeight: 600 }}>Fuel: {selectedVehicle.fuel}</span>
               <span className={"status-badge " + selectedVehicle.statusClass}>{selectedVehicle.status}</span>
+              <button
+                className="btn btn-primary"
+                style={{
+                  padding: "4px 12px",
+                  fontSize: "11px",
+                  backgroundColor: "#DC2626",
+                  borderColor: "#DC2626",
+                  color: "#fff",
+                  display: "inline-flex",
+                  alignItems: "center",
+                  gap: "5px",
+                  fontWeight: 700,
+                  cursor: "pointer",
+                }}
+                onClick={() => handleEmergencyReroute(selectedVehicle)}
+                title="Calculate safest alternative road corridor starting from current GPS fix"
+              >
+                🚨 Emergency Re-Route from GPS
+              </button>
               <button className="btn btn-outline" style={{ padding: "4px 10px", fontSize: "11px" }} onClick={() => setSelectedVehicleId(null)}>Close</button>
             </div>
+
           </div>
         </div>
       )}

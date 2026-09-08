@@ -240,7 +240,7 @@ export class TransporterController {
             coordinates: [[77.2878, 28.3842], [77.4125, 28.4006]],
           });
           route = await Route.create({
-            id: routeId,
+            id: req.body.routeId || `R-${Date.now().toString(36).toUpperCase()}`,
             name: `${originName} → ${destName}`,
             origin_district_id: req.body.originDistrictId,
             dest_district_id: req.body.destDistrictId,

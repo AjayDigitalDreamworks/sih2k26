@@ -37,36 +37,32 @@ export default function HeroMap() {
         {/* --- Green Safe Route (Western Corridor: Guwahati -> Meghalaya -> Silchar) --- */}
         <path
           d="M 320 220 C 350 190, 420 160, 470 95"
-          stroke="#10B981"
+          stroke="#059669"
           strokeWidth="3.5"
           strokeLinecap="round"
-          filter="url(#glow-green)"
         />
         <path
           d="M 320 220 C 340 270, 390 290, 430 330"
-          stroke="#10B981"
+          stroke="#059669"
           strokeWidth="3.5"
           strokeLinecap="round"
-          filter="url(#glow-green)"
         />
 
         {/* --- Orange At-Risk Route (Central/Upper Assam -> Nagaland) --- */}
         <path
           d="M 470 95 C 450 140, 420 180, 390 220"
-          stroke="#F59E0B"
+          stroke="#D97706"
           strokeWidth="3.5"
           strokeLinecap="round"
           strokeDasharray="5 4"
-          filter="url(#glow-orange)"
         />
 
         {/* --- Red Disrupted/Blocked Route (Haflong / NH-13A Corridor) --- */}
         <path
           d="M 390 220 C 400 250, 410 270, 435 295"
-          stroke="#EF4444"
+          stroke="#DC2626"
           strokeWidth="4"
           strokeLinecap="round"
-          filter="url(#glow-red)"
         />
 
         {/* Interconnected secondary feeder routes */}

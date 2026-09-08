@@ -31,4 +31,41 @@ export class MLProxyController {
       return sendError(res, err.message);
     }
   }
+
+  static async planRoute(req: Request, res: Response) {
+    try {
+      const result = await MLProxyService.planRoute(req.body);
+      return sendSuccess(res, result, 'Route plan generated');
+    } catch (err: any) {
+      return sendError(res, err.message);
+    }
+  }
+
+  static async rerouteVehicle(req: Request, res: Response) {
+    try {
+      const result = await MLProxyService.rerouteVehicle(req.body);
+      return sendSuccess(res, result, 'Vehicle rerouted successfully');
+    } catch (err: any) {
+      return sendError(res, err.message);
+    }
+  }
+
+  static async getSimulationPresets(req: Request, res: Response) {
+    try {
+      const result = await MLProxyService.getSimulationPresets();
+      return sendSuccess(res, result, 'Simulation presets retrieved');
+    } catch (err: any) {
+      return sendError(res, err.message);
+    }
+  }
+
+  static async runSimulation(req: Request, res: Response) {
+    try {
+      const result = await MLProxyService.runSimulation(req.body);
+      return sendSuccess(res, result, 'Simulation executed');
+    } catch (err: any) {
+      return sendError(res, err.message);
+    }
+  }
 }
+

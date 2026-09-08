@@ -59,6 +59,9 @@ export function useVehicleTracking(socket) {
           eta: state.eta, etaMinutes: state.etaMinutes, timestamp: state.timestamp,
           route: state.route, accuracyRating: state.accuracyRating,
           batteryLevel: state.batteryLevel, lastUpdate: state.lastUpdate,
+          inDeadZone: state.inDeadZone || false,
+          fatigueWarning: state.fatigueWarning || false,
+          continuousDrivingMins: state.continuousDrivingMins || 0,
         };
       });
       return updated;
@@ -89,9 +92,9 @@ export function useVehicleTracking(socket) {
       const speedMs = Math.max(data.speed || 20, 5) * 0.277778;
       animDuration = Math.max(600, Math.min(3000, (dist / speedMs) * 1000));
     }
-    let status = data.status || 'moving';
+    let status = data.inDeadZone ? 'in_dead_zone' : data.status || 'moving';
     if (data.accuracyRating === 'invalid') status = 'gps_error';
-    else if (!data.isValid) status = 'stale';
+    else if (!data.isValid && !data.inDeadZone) status = 'stale';
 
     animStates.current[vehicleId] = {
       startLat: prev ? prev.targetLat : data.lat,
@@ -104,7 +107,11 @@ export function useVehicleTracking(socket) {
       timestamp: data.timestamp || new Date(now).toISOString(),
       route: data.route || data.currentRoute || '',
       accuracyRating: data.accuracyRating || 'unknown',
-      batteryLevel: data.batteryLevel || null, lastUpdate: now,
+      batteryLevel: data.fuel != null ? `${data.fuel}%` : data.batteryLevel || null,
+      lastUpdate: now,
+      inDeadZone: !!data.inDeadZone,
+      fatigueWarning: !!data.fatigueWarning,
+      continuousDrivingMins: data.continuousDrivingMins || 0,
     };
 
     setTrails(prev => {

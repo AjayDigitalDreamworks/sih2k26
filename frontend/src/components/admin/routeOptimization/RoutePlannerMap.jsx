@@ -4,11 +4,13 @@ import { MapZoomControls } from '@/components/admin/common/MapZoomControls';
 import { ResilientTileLayer } from '@/components/admin/common/ResilientTileLayer';
 import L from 'leaflet';
 import 'leaflet/dist/leaflet.css';
-import { MapPin, Sparkles, Loader2, AlertTriangle, ShieldCheck, Navigation, Gauge, RefreshCw, Route as RouteIcon } from 'lucide-react';
+import { MapPin, Sparkles, Loader2, AlertTriangle, ShieldCheck, Navigation, Gauge, RefreshCw, Route as RouteIcon, Search, Scale, AlertOctagon } from 'lucide-react';
 import ApiClient from '@/lib/api';
 import { DISTRICTS, districtById } from '@/data/geoMaster';
+import { useApp } from '@/contexts/AppContext';
 
 const RISK_COLOR = { low: '#10B981', medium: '#F59E0B', high: '#F97316', critical: '#EF4444' };
+
 
 function MapViewportSync({ points, fromD, toD, focusedPoint }) {
   const map = useMap();
@@ -65,9 +67,17 @@ export const RoutePlannerMap = ({
   activeRouteId: propActiveRouteId,
   onSelectRoute: propOnSelectRoute,
 }) => {
+  const { routePlannerInitialState, setRoutePlannerInitialState } = useApp() || {};
   const [fromId, setFromId] = useState('dabua_chowk');
   const [toId, setToId] = useState('aravali_college');
   const [prefer, setPrefer] = useState('safest');
+  const [vehicleType, setVehicleType] = useState('heavy_multi_axle');
+  const [cargoWeightKg, setCargoWeightKg] = useState(12000);
+  const [searchMode, setSearchMode] = useState('hub'); // 'hub' | 'custom'
+  const [customOrigin, setCustomOrigin] = useState('');
+  const [customDest, setCustomDest] = useState('');
+  const [reroutedBanner, setReroutedBanner] = useState(null);
+
   const [internalPlan, setInternalPlan] = useState(null);
   const [internalActiveRouteId, setInternalActiveRouteId] = useState('safest');
   const [focusedPoint, setFocusedPoint] = useState(null);
@@ -88,17 +98,32 @@ export const RoutePlannerMap = ({
     setFocusedPoint(null);
   }, [propOnSelectRoute]);
 
-  const planRoute = useCallback(async (from, to, pref, silent = false) => {
-    if (!from || !to || from === to) return;
+  const parseLocation = (str) => {
+    if (!str || typeof str !== 'string') return {};
+    const parts = str.split(',').map(s => s.trim());
+    if (parts.length === 2 && !isNaN(Number(parts[0])) && !isNaN(Number(parts[1]))) {
+      return { coords: { lat: parseFloat(parts[0]), lng: parseFloat(parts[1]) } };
+    }
+    return { address: str };
+  };
+
+  const planRoute = useCallback(async (from, to, pref, vType = vehicleType, silent = false, extra = {}) => {
+    const isCustom = searchMode === 'custom' || extra.originAddress || extra.originCoords;
+    if (!isCustom && (!from || !to || from === to)) return;
     const mySeq = ++seq.current;
     setLoading(true);
     if (!silent) setError('');
     try {
-      const res = await ApiClient.planRoute({
-        originDistrictId: from,
-        destDistrictId: to,
+      const payload = {
         prefer: pref,
-      });
+        vehicleType: vType,
+        cargoWeightKg: Number(cargoWeightKg) || 12000,
+        ...extra,
+      };
+      if (from) payload.originDistrictId = from;
+      if (to) payload.destDistrictId = to;
+
+      const res = await ApiClient.planRoute(payload);
       if (mySeq !== seq.current) return;
       if (res?.success && (res.data?.success || res.data?.recommended)) {
         const planData = res.data;
@@ -125,11 +150,58 @@ export const RoutePlannerMap = ({
     } finally {
       if (mySeq === seq.current) setLoading(false);
     }
-  }, [onPlanChange, propOnSelectRoute]);
+  }, [cargoWeightKg, onPlanChange, propOnSelectRoute, searchMode, vehicleType]);
+
+  // Handle incoming emergency reroute navigation from GPS (e.g. from VehicleTrackingPage)
+  useEffect(() => {
+    if (routePlannerInitialState && (routePlannerInitialState.currentLat != null || routePlannerInitialState.vehicleId)) {
+      const { vehicleId, currentLat, currentLng, route, vehicleType: initVType } = routePlannerInitialState;
+      if (initVType) setVehicleType(initVType);
+      const destCandidate = route && route.includes('→') ? route.split('→')[1].trim().toLowerCase() : 'cachar';
+      const destMatched = DISTRICTS.find((d) => d.id === destCandidate || d.label.toLowerCase().includes(destCandidate))?.id || 'cachar';
+      setToId(destMatched);
+      setReroutedBanner(`🚨 Emergency Telematics Detour: Vehicle ${vehicleId || 'in transit'} dynamically rerouted from live GPS fix (${Number(currentLat).toFixed(4)}, ${Number(currentLng).toFixed(4)})`);
+      if (currentLat != null && currentLng != null) {
+        setFocusedPoint([currentLat, currentLng]);
+      }
+
+      // Execute immediate reroute from GPS
+      const runGpsReroute = async () => {
+        setLoading(true);
+        setError('');
+        try {
+          const res = await ApiClient.rerouteVehicle({
+            vehicleId,
+            currentLat,
+            currentLng,
+            destDistrictId: destMatched,
+            vehicleType: initVType || vehicleType,
+            cargoWeightKg,
+          });
+          if (res?.success && (res.data?.success || res.data?.recommended)) {
+            const planData = res.data;
+            if (onPlanChange) onPlanChange(planData);
+            else setInternalPlan(planData);
+            const defId = planData.preferred || (planData.alternatives && planData.alternatives[0]?.id) || 'safest';
+            if (propOnSelectRoute) propOnSelectRoute(defId);
+            else setInternalActiveRouteId(defId);
+          }
+        } catch (err) {
+          console.warn('GPS reroute failed:', err);
+        } finally {
+          setLoading(false);
+          if (setRoutePlannerInitialState) setRoutePlannerInitialState(null);
+        }
+      };
+      runGpsReroute();
+    }
+  }, [routePlannerInitialState, cargoWeightKg, onPlanChange, propOnSelectRoute, setRoutePlannerInitialState, vehicleType]);
 
   // Initial real plan on mount with Faridabad hubs
   useEffect(() => {
-    planRoute('dabua_chowk', 'aravali_college', 'safest', true);
+    if (!routePlannerInitialState) {
+      planRoute('dabua_chowk', 'aravali_college', 'safest', vehicleType, true);
+    }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
@@ -156,6 +228,12 @@ export const RoutePlannerMap = ({
   };
 
   const handleSwap = () => {
+    if (searchMode === 'custom') {
+      const oldO = customOrigin;
+      setCustomOrigin(customDest);
+      setCustomDest(oldO);
+      return;
+    }
     if (fromId === toId) return;
     const oldFrom = fromId;
     const oldTo = toId;
@@ -167,12 +245,27 @@ export const RoutePlannerMap = ({
   };
 
   const handlePlan = async () => {
-    if (fromId === toId) {
-      setError('Origin and destination must be different locations.');
-      return;
-    }
     setFocusedPoint(null);
-    await planRoute(fromId, toId, prefer);
+    if (searchMode === 'custom') {
+      if (!customOrigin || !customDest) {
+        setError('Please enter both origin and destination addresses or coordinates.');
+        return;
+      }
+      const oLoc = parseLocation(customOrigin);
+      const dLoc = parseLocation(customDest);
+      await planRoute(null, null, prefer, vehicleType, false, {
+        originAddress: oLoc.address,
+        originCoords: oLoc.coords,
+        destAddress: dLoc.address,
+        destCoords: dLoc.coords,
+      });
+    } else {
+      if (fromId === toId) {
+        setError('Origin and destination must be different locations.');
+        return;
+      }
+      await planRoute(fromId, toId, prefer, vehicleType);
+    }
   };
 
   // Determine active route
@@ -186,44 +279,144 @@ export const RoutePlannerMap = ({
 
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: '14px' }}>
-      {/* Query bar - real districts & Faridabad hubs */}
+      {/* Search Mode Switcher */}
+      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', gap: '8px' }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+          <button
+            type="button"
+            onClick={() => setSearchMode('hub')}
+            style={{
+              padding: '4px 10px',
+              borderRadius: '6px',
+              fontSize: '11px',
+              fontWeight: 700,
+              cursor: 'pointer',
+              border: searchMode === 'hub' ? '2px solid #059669' : '1px solid #CBD5E1',
+              background: searchMode === 'hub' ? '#ECFDF5' : '#FFFFFF',
+              color: searchMode === 'hub' ? '#065F46' : '#64748B',
+              transition: 'all 0.15s ease',
+            }}
+          >
+            🏢 District Hubs
+          </button>
+          <button
+            type="button"
+            onClick={() => setSearchMode('custom')}
+            style={{
+              padding: '4px 10px',
+              borderRadius: '6px',
+              fontSize: '11px',
+              fontWeight: 700,
+              cursor: 'pointer',
+              border: searchMode === 'custom' ? '2px solid #059669' : '1px solid #CBD5E1',
+              background: searchMode === 'custom' ? '#ECFDF5' : '#FFFFFF',
+              color: searchMode === 'custom' ? '#065F46' : '#64748B',
+              transition: 'all 0.15s ease',
+            }}
+          >
+            📍 Search Village / GPS Coords
+          </button>
+        </div>
+      </div>
+
+      {/* Emergency Rerouted Banner */}
+      {reroutedBanner && (
+        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '10px 14px', borderRadius: 8, background: '#FEF2F2', border: '1px solid #FECACA', color: '#991B1B', fontSize: 13, fontWeight: 700 }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+            <AlertOctagon size={18} color="#DC2626" />
+            <span>{reroutedBanner}</span>
+          </div>
+          <button
+            type="button"
+            onClick={() => setReroutedBanner(null)}
+            style={{ background: 'transparent', border: 'none', color: '#991B1B', cursor: 'pointer', fontWeight: 800, fontSize: 14 }}
+          >
+            ✕
+          </button>
+        </div>
+      )}
+
+      {/* Query bar - real districts or custom geocoding */}
       <div className="route-query-bar" style={{ flexWrap: 'wrap', gap: '12px' }}>
-        <div className="query-field-group">
-          <label className="query-field-label">From (origin)</label>
-          <div className="query-input-wrap">
-            <MapPin size={16} color="#059669" />
-            <select
-              value={fromId}
-              onChange={(e) => handleFromChange(e.target.value)}
-              style={{ border: 'none', background: 'transparent', outline: 'none', fontSize: 13, fontWeight: 600, color: 'var(--text-primary)', cursor: 'pointer', width: '100%' }}
-            >
-              {DISTRICTS.map((d) => <option key={d.id} value={d.id}>{d.label}</option>)}
-            </select>
-          </div>
-        </div>
+        {searchMode === 'custom' ? (
+          <>
+            <div className="query-field-group" style={{ flex: 1, minWidth: '170px' }}>
+              <label className="query-field-label">From (Village / Address / GPS)</label>
+              <div className="query-input-wrap">
+                <MapPin size={16} color="#059669" />
+                <input
+                  type="text"
+                  placeholder="e.g. Guwahati Airport or 26.14, 91.73"
+                  value={customOrigin}
+                  onChange={(e) => setCustomOrigin(e.target.value)}
+                  style={{ border: 'none', background: 'transparent', outline: 'none', fontSize: 13, fontWeight: 600, color: 'var(--text-primary)', width: '100%' }}
+                />
+              </div>
+            </div>
 
-        <button
-          type="button"
-          onClick={handleSwap}
-          title="Swap origin and destination"
-          style={{ alignSelf: 'flex-end', background: '#F3F4F6', border: '1px solid #E5E7EB', borderRadius: 8, padding: '4px 10px', cursor: 'pointer', fontSize: 12, fontWeight: 700, color: '#374151' }}
-        >
-          Swap
-        </button>
-
-        <div className="query-field-group">
-          <label className="query-field-label">To (destination)</label>
-          <div className="query-input-wrap">
-            <MapPin size={16} color="#DC2626" />
-            <select
-              value={toId}
-              onChange={(e) => handleToChange(e.target.value)}
-              style={{ border: 'none', background: 'transparent', outline: 'none', fontSize: 13, fontWeight: 600, color: 'var(--text-primary)', cursor: 'pointer', width: '100%' }}
+            <button
+              type="button"
+              onClick={handleSwap}
+              title="Swap origin and destination"
+              style={{ alignSelf: 'flex-end', background: '#F3F4F6', border: '1px solid #E5E7EB', borderRadius: 8, padding: '4px 10px', cursor: 'pointer', fontSize: 12, fontWeight: 700, color: '#374151' }}
             >
-              {DISTRICTS.map((d) => <option key={d.id} value={d.id}>{d.label}</option>)}
-            </select>
-          </div>
-        </div>
+              Swap
+            </button>
+
+            <div className="query-field-group" style={{ flex: 1, minWidth: '170px' }}>
+              <label className="query-field-label">To (Village / Address / GPS)</label>
+              <div className="query-input-wrap">
+                <MapPin size={16} color="#DC2626" />
+                <input
+                  type="text"
+                  placeholder="e.g. Shillong Police Bazar or 25.57, 91.88"
+                  value={customDest}
+                  onChange={(e) => setCustomDest(e.target.value)}
+                  style={{ border: 'none', background: 'transparent', outline: 'none', fontSize: 13, fontWeight: 600, color: 'var(--text-primary)', width: '100%' }}
+                />
+              </div>
+            </div>
+          </>
+        ) : (
+          <>
+            <div className="query-field-group">
+              <label className="query-field-label">From (origin)</label>
+              <div className="query-input-wrap">
+                <MapPin size={16} color="#059669" />
+                <select
+                  value={fromId}
+                  onChange={(e) => handleFromChange(e.target.value)}
+                  style={{ border: 'none', background: 'transparent', outline: 'none', fontSize: 13, fontWeight: 600, color: 'var(--text-primary)', cursor: 'pointer', width: '100%' }}
+                >
+                  {DISTRICTS.map((d) => <option key={d.id} value={d.id}>{d.label}</option>)}
+                </select>
+              </div>
+            </div>
+
+            <button
+              type="button"
+              onClick={handleSwap}
+              title="Swap origin and destination"
+              style={{ alignSelf: 'flex-end', background: '#F3F4F6', border: '1px solid #E5E7EB', borderRadius: 8, padding: '4px 10px', cursor: 'pointer', fontSize: 12, fontWeight: 700, color: '#374151' }}
+            >
+              Swap
+            </button>
+
+            <div className="query-field-group">
+              <label className="query-field-label">To (destination)</label>
+              <div className="query-input-wrap">
+                <MapPin size={16} color="#DC2626" />
+                <select
+                  value={toId}
+                  onChange={(e) => handleToChange(e.target.value)}
+                  style={{ border: 'none', background: 'transparent', outline: 'none', fontSize: 13, fontWeight: 600, color: 'var(--text-primary)', cursor: 'pointer', width: '100%' }}
+                >
+                  {DISTRICTS.map((d) => <option key={d.id} value={d.id}>{d.label}</option>)}
+                </select>
+              </div>
+            </div>
+          </>
+        )}
 
         <div className="query-field-group">
           <label className="query-field-label">Preference</label>
@@ -233,7 +426,7 @@ export const RoutePlannerMap = ({
               value={prefer}
               onChange={(e) => {
                 setPrefer(e.target.value);
-                planRoute(fromId, toId, e.target.value);
+                if (searchMode === 'hub') planRoute(fromId, toId, e.target.value, vehicleType);
               }}
               style={{ border: 'none', background: 'transparent', outline: 'none', fontSize: 13, fontWeight: 600, color: 'var(--text-primary)', cursor: 'pointer' }}
             >
@@ -244,13 +437,51 @@ export const RoutePlannerMap = ({
           </div>
         </div>
 
+        <div className="query-field-group">
+          <label className="query-field-label">Vehicle Profile</label>
+          <div className="query-input-wrap">
+            <Gauge size={16} color="#10B981" />
+            <select
+              value={vehicleType}
+              onChange={(e) => {
+                setVehicleType(e.target.value);
+                if (searchMode === 'hub') planRoute(fromId, toId, prefer, e.target.value);
+              }}
+              style={{ border: 'none', background: 'transparent', outline: 'none', fontSize: 13, fontWeight: 600, color: 'var(--text-primary)', cursor: 'pointer' }}
+            >
+              <option value="heavy_multi_axle">Heavy Multi-Axle (16T-28T BharatBenz)</option>
+              <option value="medium_commercial">Medium Truck (Tata 407 / Eicher)</option>
+              <option value="light_commercial">Light Commercial (Tata Ace / Pickup)</option>
+              <option value="hazardous_tanker">Hazardous Tanker (POL / Gas)</option>
+            </select>
+          </div>
+        </div>
+
+        <div className="query-field-group" style={{ width: '105px' }}>
+          <label className="query-field-label">Cargo (kg)</label>
+          <div className="query-input-wrap">
+            <Scale size={15} color="#6366F1" />
+            <input
+              type="number"
+              min="0"
+              max="50000"
+              step="500"
+              value={cargoWeightKg}
+              onChange={(e) => setCargoWeightKg(Number(e.target.value))}
+              style={{ border: 'none', background: 'transparent', outline: 'none', fontSize: 13, fontWeight: 600, color: 'var(--text-primary)', width: '100%' }}
+            />
+          </div>
+        </div>
+
         <div style={{ display: 'flex', gap: '8px', alignSelf: 'flex-end' }}>
-          <button className="btn btn-primary" onClick={handlePlan} disabled={loading || fromId === toId} style={{ display: 'inline-flex', alignItems: 'center', gap: 6 }}>
+          <button className="btn btn-primary" onClick={handlePlan} disabled={loading} style={{ display: 'inline-flex', alignItems: 'center', gap: 6 }}>
             {loading ? <Loader2 size={14} className="spin" /> : <Sparkles size={14} />}
             <span>{loading ? 'Planning on roads...' : 'Plan Route'}</span>
           </button>
         </div>
       </div>
+
+
 
       {/* Interactive Alternative Route Selector Tabs */}
       {plan && plan.alternatives && plan.alternatives.length > 0 && (
@@ -320,11 +551,24 @@ export const RoutePlannerMap = ({
           <span style={{ display: 'inline-flex', alignItems: 'center', gap: 5, padding: '5px 10px', borderRadius: 8, background: '#EFF6FF', border: '1px solid #BFDBFE', color: '#1E40AF', fontWeight: 700 }}>
             <RouteIcon size={13} /> Active: {activeRoute.name}
           </span>
+          {activeRoute.totalClimbM > 0 && (
+            <span style={{ display: 'inline-flex', alignItems: 'center', gap: 5, padding: '5px 10px', borderRadius: 8, background: '#FEF3C7', border: '1px solid #FCD34D', color: '#92400E', fontWeight: 700 }}>
+              ⛰️ Climb: +{Math.round(activeRoute.totalClimbM)} m {activeRoute.maxGradientPct ? `(${activeRoute.maxGradientPct}% slope)` : ''}
+            </span>
+          )}
+          {activeRoute.fuelLiters > 0 && (
+            <span style={{ display: 'inline-flex', alignItems: 'center', gap: 5, padding: '5px 10px', borderRadius: 8, background: '#F0FDF4', border: '1px solid #BBF7D0', color: '#166534', fontWeight: 700 }} title={`Base: ${activeRoute.baseFuelLiters || activeRoute.fuelLiters}L, Climb Surcharge: +${activeRoute.climbPenaltyLiters || 0}L`}>
+              ⛽ Fuel: ~{activeRoute.fuelLiters} L (₹{activeRoute.fuelCost})
+              {activeRoute.climbPenaltyLiters > 0 && <span style={{ fontSize: 10, color: '#047857', marginLeft: 2 }}> (+{activeRoute.climbPenaltyLiters}L climb)</span>}
+            </span>
+          )}
+
           <span style={{ display: 'inline-flex', alignItems: 'center', gap: 5, padding: '5px 10px', borderRadius: 8, background: '#F8FAFC', border: '1px solid #E2E8F0', color: '#64748B', fontWeight: 600 }}>
             Geometry: {plan.routingProvider === 'osrm' ? 'OSRM road network' : plan.routingProvider === 'mappls' ? 'Mappls roads' : plan.routingProvider === 'tomtom' ? 'TomTom roads' : 'road network'}
           </span>
         </div>
       )}
+
 
       {/* Risk / hazard alerts */}
       {alerts.length > 0 && (
@@ -447,7 +691,20 @@ export const RoutePlannerMap = ({
                       Rainfall: <strong>{leg.rainfallMm != null ? leg.rainfallMm + ' mm/24h' : 'n/a'}</strong>
                       <br />
                       Landslide: <strong>{leg.landslideRisk || 'n/a'}{leg.landslideProbability != null ? ' (' + Math.round(leg.landslideProbability) + '%)' : ''}</strong>
+                      {leg.climbGainM != null && (
+                        <>
+                          <br />
+                          Incline Climb: <strong>+{Math.round(leg.climbGainM)} m</strong> (Peak: {Math.round(leg.maxElevationM || 0)} m)
+                        </>
+                      )}
+                      {leg.forecastAtArrival && (
+                        <>
+                          <br />
+                          Weather @ ETA: <strong>{leg.forecastAtArrival.forecast_risk_level} ({leg.forecastAtArrival.forecast_precip_mm} mm/h rain)</strong>
+                        </>
+                      )}
                       <br />
+
                       Traffic: <strong>{leg.congestionLevel || 'n/a'}</strong>
                     </div>
                   </div>

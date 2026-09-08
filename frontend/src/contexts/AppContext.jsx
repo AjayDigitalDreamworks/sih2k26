@@ -61,8 +61,10 @@ export const AppProvider = ({ children, scope = 'admin' }) => {
   const [supplyChain, setSupplyChain] = useState(emptyArray);
   const [pipelineRiskScores, setPipelineRiskScores] = useState(emptyObject); // { totalRoutes, scores: { 'kamrup-sonitpur': {...} } }
   const [emergencySos, setEmergencySos] = useState(null); // real-time driver SOS { vehicleId, driver, lat, lng, timestamp }
+  const [routePlannerInitialState, setRoutePlannerInitialState] = useState(null); // { vehicleId, currentLat, currentLng, destDistrictId, vehicleType, blockedCorridor }
 
   const [toasts, setToasts] = useState([]);
+
 
   const addToast = useCallback((title, message, type = 'success') => {
     const id = Date.now();
@@ -399,6 +401,7 @@ export const AppProvider = ({ children, scope = 'admin' }) => {
       pipelineRiskScores,
       addFieldReport, verifyReport,
       addVehicle, addAlert,
+      routePlannerInitialState, setRoutePlannerInitialState,
       toasts, addToast, removeToast,
     }}>
       {children}
@@ -407,3 +410,4 @@ export const AppProvider = ({ children, scope = 'admin' }) => {
 };
 
 export const useApp = () => useContext(AppContext);
+

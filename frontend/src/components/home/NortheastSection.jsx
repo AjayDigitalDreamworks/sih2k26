@@ -6,32 +6,40 @@ const ASSETS = {
 };
 
 export function NortheastSection() {
+  const states = [
+    "Arunachal Pradesh",
+    "Assam",
+    "Manipur",
+    "Meghalaya",
+    "Mizoram",
+    "Nagaland",
+    "Sikkim",
+    "Tripura"
+  ];
+
   return (
     <section id="northeast" className="section northeast">
-      <img className="northeast-media" src={ASSETS.mountains} alt="Winding mountain corridor in a forest landscape" />
-      <svg className="northeast-route" viewBox="0 0 500 300" aria-hidden="true">
-        <path d="M20 260 C90 180 115 228 168 146 S278 40 327 105 S392 198 480 32" />
-        <circle cx="20" cy="260" r="3" />
-        <circle cx="168" cy="146" r="3" />
-        <circle cx="327" cy="105" r="3" />
-        <circle cx="480" cy="32" r="3" />
-      </svg>
       <div className="container northeast-content">
-        <div className="eyebrow reveal">A platform with a point of view</div>
+        <div className="eyebrow reveal flex items-center gap-2">
+          <span className="inline-block w-2 h-2 rounded-full bg-slate-300 animate-pulse mr-1" />
+          A platform with a point of view
+        </div>
         <h2 className="northeast-heading reveal">Built for the roads<br /><em>others find difficult.</em></h2>
         <p className="northeast-copy reveal">From steep mountain corridors to landslide-prone roads, RAAHI is engineered around the ground realities of Northeast India — 8 states, 122+ districts, and thousands of kilometres of challenging terrain.</p>
+        
         <div className="northeast-pills reveal">
-          <span className="ne-pill-item">8 NE States</span>
-          <span className="ne-pill-item">Arunachal Pradesh</span>
-          <span className="ne-pill-item">Assam</span>
-          <span className="ne-pill-item">Manipur</span>
-          <span className="ne-pill-item">Meghalaya</span>
-          <span className="ne-pill-item">Mizoram</span>
-          <span className="ne-pill-item">Nagaland</span>
-          <span className="ne-pill-item">Sikkim</span>
-          <span className="ne-pill-item">Tripura</span>
+          <span className="ne-pill-item ne-pill-featured">
+            <span className="ne-pill-dot" />
+            8 NE States
+          </span>
+          {states.map((state) => (
+            <span key={state} className="ne-pill-item">
+              {state}
+            </span>
+          ))}
         </div>
       </div>
+      <div className="northeast-bottom-border" />
     </section>
   );
 }

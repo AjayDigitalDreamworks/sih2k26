@@ -65,8 +65,8 @@ function AdminContent() {
               {emergencySos.reason ? ` · “${emergencySos.reason}”` : ''}
             </span>
             <span style={{ marginLeft: 'auto', display: 'flex', gap: 8 }}>
-              <button onClick={() => { setCurrentPage('alerts'); }} style={{ background: '#FEE2E2', color: '#7F1D1D', border: 'none', borderRadius: 8, padding: '6px 12px', fontWeight: 800, cursor: 'pointer', fontSize: 12 }}>OPEN ALERTS</button>
-              <button onClick={clearEmergencySos} style={{ background: 'transparent', color: '#FECACA', border: '1px solid #FCA5A5', borderRadius: 8, padding: '6px 12px', fontWeight: 700, cursor: 'pointer', fontSize: 12 }}>DISMISS</button>
+              <button onClick={() => { setCurrentPage('alerts'); }} style={{ background: '#FEE2E2', color: '#7F1D1D', border: 'none', borderRadius: 9999, padding: '6px 14px', fontWeight: 800, cursor: 'pointer', fontSize: 12 }}>OPEN ALERTS</button>
+              <button onClick={clearEmergencySos} style={{ background: 'transparent', color: '#FECACA', border: '1px solid #FCA5A5', borderRadius: 9999, padding: '6px 14px', fontWeight: 700, cursor: 'pointer', fontSize: 12 }}>DISMISS</button>
             </span>
           </div>
         )}

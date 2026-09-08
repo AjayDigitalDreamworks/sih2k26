@@ -1,14 +1,20 @@
 import { Sequelize } from 'sequelize';
 import { env } from './env';
 
-export const sequelize = new Sequelize(env.postgresUri, {
+const defaultPostgresUri = 'postgres://ner_admin:change_me_in_production@localhost:5432/ner_logistics';
+const postgresUri = (env.postgresUri && env.postgresUri.trim()) ? env.postgresUri.trim() : defaultPostgresUri;
+const isLocalhost = postgresUri.includes('localhost') || postgresUri.includes('127.0.0.1');
+
+export const sequelize = new Sequelize(postgresUri, {
   dialect: 'postgres',
-  dialectOptions: {
-    ssl: {
-      require: true,
-      rejectUnauthorized: false,
-    },
-  },
+  dialectOptions: isLocalhost
+    ? {}
+    : {
+        ssl: {
+          require: true,
+          rejectUnauthorized: false,
+        },
+      },
   logging: env.nodeEnv === 'development' ? false : false,
   pool: {
     max: 10,
