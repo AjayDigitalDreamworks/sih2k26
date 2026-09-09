@@ -66,13 +66,9 @@ export default function ConsignmentsKPIs() {
               </div>
             </div>
 
-            <div className="mt-3.5 pt-3 border-t border-slate-100 flex items-center justify-between gap-2 text-xs">
+            <div className="mt-3.5 pt-3 border-t border-slate-100 flex items-center justify-between text-xs">
               <span className="text-slate-400 font-medium text-[11px] truncate">
-                {card.subKey && stats[card.subKey] > 0 ? `${pct} of consignments` : 'Live from deliveries'}
-              </span>
-              <span className="inline-flex items-center gap-1.5 text-[10px] font-black text-emerald-600 bg-emerald-50 border border-emerald-100 px-2 py-0.5 rounded-full flex-shrink-0">
-                <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse" />
-                LIVE
+                {card.subKey && stats[card.subKey] > 0 ? `${pct} of shipments` : 'Registered consignments'}
               </span>
             </div>
           </div>

@@ -68,7 +68,6 @@ export default function MyVehicles() {
       route: v.current_route || undefined,
       location: v.current_route ? { name: v.current_route } : null,
       speed: v.speed != null ? `${Number(v.speed).toFixed(0)} km/h` : undefined,
-      fuel: v.fuel_percent != null ? `${Number(v.fuel_percent).toFixed(0)}%` : undefined,
       lastUpdated: v.last_ping_at
         ? {
             date: new Date(v.last_ping_at).toLocaleDateString([], { day: 'numeric', month: 'short' }),

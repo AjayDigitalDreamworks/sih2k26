@@ -7,6 +7,7 @@ import {
   CheckCircle2,
   Clock,
   AlertOctagon,
+  AlertTriangle,
 } from 'lucide-react';
 import { StatCard } from '@/components/admin/common/StatCard';
 import { FieldReportsTable } from '@/components/admin/fieldReports/FieldReportsTable';
@@ -56,7 +57,35 @@ export const FieldReportsPage = () => {
         </div>
       </div>
 
-      {/* 5 KPI Stat Cards from Image 5 */}
+      {/* Action Required Banner when Reports are Pending */}
+      {pending > 0 && (
+        <div style={{
+          padding: '12px 18px',
+          borderRadius: '12px',
+          backgroundColor: '#FFFBEB',
+          border: '1.5px solid #FDE68A',
+          display: 'flex',
+          alignItems: 'center',
+          justifyContent: 'space-between',
+          flexWrap: 'wrap',
+          gap: '12px',
+          marginBottom: '16px',
+        }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+            <AlertTriangle size={18} color="#D97706" />
+            <div>
+              <strong style={{ fontSize: '13px', color: '#92400E' }}>
+                ACTION REQUIRED: {pending} Field Incident Report{pending > 1 ? 's' : ''} Awaiting Admin Verification
+              </strong>
+              <div style={{ fontSize: '12px', color: '#B45309' }}>
+                Ground field officers uploaded road damage / blockage evidence. Verify them to trigger automatic fleet rerouting.
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* 5 KPI Stat Cards */}
       <div className="stat-card-grid">
         <StatCard
           title="Total Reports"

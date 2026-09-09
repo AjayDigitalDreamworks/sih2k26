@@ -99,7 +99,7 @@ export const popularHelpTopics = [
     icon: 'truck',
     iconColor: 'text-amber-600 bg-amber-50',
     answer:
-      "Go to 'My Vehicles' and click 'Add Vehicle'. Provide registration number (e.g. AS 01 GC 9876), vehicle model, fuel capacity, insurance validity, and assign an onboarded driver.",
+      "Go to 'My Vehicles' and click 'Add Vehicle'. Provide registration number (e.g. AS 01 GC 9876), vehicle model, payload capacity, insurance validity, and assign an onboarded driver.",
   },
   {
     id: 'topic-4',

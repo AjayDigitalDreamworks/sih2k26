@@ -6,7 +6,6 @@ import {
   AlertTriangle,
   AlertOctagon,
   CloudRain,
-  Fuel,
   Wrench,
   Construction,
   Car,
@@ -43,8 +42,8 @@ export const FieldReportsTable = () => {
         return <AlertTriangle size={16} color="#F59E0B" />;
       case 'Weather Issue':
         return <CloudRain size={16} color="#8B5CF6" />;
-      case 'Fuel Shortage':
-        return <Fuel size={16} color="#059669" />;
+      case 'Infrastructure Damage':
+        return <Construction size={16} color="#059669" />;
       case 'Vehicle Breakdown':
         return <Wrench size={16} color="#EF4444" />;
       default:
@@ -94,7 +93,7 @@ export const FieldReportsTable = () => {
             <option value="Accident">Accident</option>
             <option value="Road Block">Road Block</option>
             <option value="Weather Issue">Weather Issue</option>
-            <option value="Fuel Shortage">Fuel Shortage</option>
+            <option value="Infrastructure Damage">Infrastructure Damage</option>
             <option value="Vehicle Breakdown">Vehicle Breakdown</option>
           </select>
 

@@ -22,6 +22,30 @@ export const DISTRICTS = [
 
 export const districtById = (id) => DISTRICTS.find((d) => d.id === id) || null;
 
+export const findDistrictMatch = (term) => {
+  if (!term) return null;
+  const clean = String(term).trim().toLowerCase();
+  // Exact id match
+  let match = DISTRICTS.find((d) => d.id.toLowerCase() === clean);
+  if (match) return match;
+  // Exact city match
+  match = DISTRICTS.find((d) => d.city && d.city.toLowerCase() === clean);
+  if (match) return match;
+  // Exact name match
+  match = DISTRICTS.find((d) => d.name && d.name.toLowerCase() === clean);
+  if (match) return match;
+  // Substring or label match
+  match = DISTRICTS.find((d) =>
+    (d.label && d.label.toLowerCase().includes(clean)) ||
+    (d.city && d.city.toLowerCase().includes(clean)) ||
+    (d.name && d.name.toLowerCase().includes(clean)) ||
+    clean.includes(d.id.toLowerCase()) ||
+    (d.city && clean.includes(d.city.toLowerCase())) ||
+    (d.name && clean.includes(d.name.toLowerCase()))
+  );
+  return match || null;
+};
+
 export const districtLabel = (id) => {
   const d = districtById(id);
   return d ? d.label : (id || '').split('_').map((w) => w.charAt(0).toUpperCase() + w.slice(1)).join(' ');

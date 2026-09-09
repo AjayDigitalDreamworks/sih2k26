@@ -52,7 +52,7 @@ export const ActiveVehiclesList = () => {
                     {veh.id}
                   </span>
                   <span style={{ fontSize: '10px', color: 'var(--text-muted)' }}>
-                    {veh.route || 'NER Corridor'} • {veh.speed || '45 km/h'}
+                    {veh.route || (veh.currentTripId ? `Trip #${veh.currentTripId}` : 'Assam-NER Corridor')} • {veh.speedNum != null ? `${veh.speedNum} km/h` : veh.speed && veh.speed !== '45 km/h' ? veh.speed : (statusClass === 'moving' ? 'En Route' : 'Stationary (0 km/h)')}
                   </span>
                 </div>
               </div>

@@ -4,8 +4,8 @@ import { useApp } from '@/contexts/AppContext';
 export const VehiclePerformanceCard = () => {
   const { vehicles } = useApp();
   const vehicleList = vehicles || [];
-  const totalFuel = vehicleList.reduce((s, v) => s + (parseInt(v.fuel) || 0), 0);
-  const avgFuel = vehicleList.length ? Math.round(totalFuel / vehicleList.length) : 0;
+  const onTimeVehicles = vehicleList.filter(v => v.statusClass !== 'delayed').length;
+  const onScheduleRate = vehicleList.length ? Math.round((onTimeVehicles / vehicleList.length) * 100) : 100;
 
   return (
     <div className="card" style={{ height: '100%' }}>
@@ -21,8 +21,8 @@ export const VehiclePerformanceCard = () => {
             <span style={{ fontSize: '13px', fontWeight: 600 }}>{vehicleList.length}</span>
           </div>
           <div style={{ display: 'flex', justifyContent: 'space-between', padding: '8px 12px', backgroundColor: '#f8fafc', borderRadius: '6px' }}>
-            <span style={{ fontSize: '13px', color: 'var(--text-muted)' }}>Avg Fuel Level</span>
-            <span style={{ fontSize: '13px', fontWeight: 600 }}>{avgFuel}%</span>
+            <span style={{ fontSize: '13px', color: 'var(--text-muted)' }}>On-Schedule Rate</span>
+            <span style={{ fontSize: '13px', fontWeight: 600, color: '#059669' }}>{onScheduleRate}%</span>
           </div>
           <div style={{ display: 'flex', justifyContent: 'space-between', padding: '8px 12px', backgroundColor: '#f8fafc', borderRadius: '6px' }}>
             <span style={{ fontSize: '13px', color: 'var(--text-muted)' }}>Active Vehicles</span>

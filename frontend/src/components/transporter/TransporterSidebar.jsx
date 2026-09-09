@@ -153,19 +153,12 @@ export default function TransporterSidebar({ isOpen, onClose }) {
       {/* Brand Header */}
       <div className="p-4 sm:p-5 border-b border-slate-100 flex items-center justify-between sticky top-0 bg-white z-20">
         <Link to="/" className="flex items-center gap-3 group focus:outline-none">
-          <div className="w-10 h-10 flex-shrink-0 flex items-center justify-center rounded-xl bg-gradient-to-br from-emerald-50 to-teal-50 border border-emerald-100 shadow-xs group-hover:scale-105 transition-transform">
-            <svg viewBox="0 0 40 40" className="w-7 h-7" fill="none" xmlns="http://www.w3.org/2000/svg">
-              <path d="M20 7L33 29H7L20 7Z" fill="#059669" />
-              <path d="M20 7L28 29H12L20 7Z" fill="#10B981" fillOpacity="0.85" />
-              <path d="M20 7L23 13H17L20 7Z" fill="#D1FAE5" />
-              <path
-                d="M10 29C15 24 17 27 24 22C28 19 31 29 31 29"
-                stroke="#1E3A8A"
-                strokeWidth="3.2"
-                strokeLinecap="round"
-                strokeLinejoin="round"
-              />
-            </svg>
+          <div className="w-10 h-10 flex-shrink-0 flex items-center justify-center rounded-xl overflow-hidden shadow-xs border border-slate-200/80 group-hover:scale-105 transition-transform">
+            <img
+              src="/raahi-logo.jpg"
+              alt="RAAHI"
+              className="w-full h-full object-cover rounded-xl"
+            />
           </div>
           <div className="flex flex-col">
             <div className="flex items-baseline gap-1.5 tracking-tight">
@@ -200,29 +193,7 @@ export default function TransporterSidebar({ isOpen, onClose }) {
           return (
             <Link
               key={item.id}
-              to={
-                item.id === 'dashboard'
-                  ? '/transporter/dashboard'
-                  : item.id === 'consignments'
-                  ? '/transporter/consignments'
-                  : item.id === 'vehicles'
-                  ? '/transporter/vehicles'
-                  : item.id === 'tracking'
-                  ? '/transporter/live-tracking'
-                  : item.id === 'fleet-tracking'
-                  ? '/transporter/vehicle-tracking'
-                  : item.id === 'routes'
-                  ? '/transporter/routes'
-                  : item.id === 'route-optimization'
-                  ? '/transporter/route-optimization'
-                  : item.id === 'alerts'
-                  ? '/transporter/alerts'
-                  : item.id === 'history'
-                  ? '/transporter/delivery-history'
-                  : item.id === 'reports'
-                  ? '/transporter/reports'
-                  : '#'
-              }
+              to={item.path || '/transporter/dashboard'}
               onClick={() => {
                 if (onClose) onClose();
               }}
@@ -265,13 +236,7 @@ export default function TransporterSidebar({ isOpen, onClose }) {
           return (
             <Link
               key={item.id}
-              to={
-                item.id === 'settings'
-                  ? '/transporter/settings'
-                  : item.id === 'help'
-                  ? '/transporter/help'
-                  : '#'
-              }
+              to={item.path || '#'}
               onClick={() => {
                 if (onClose) onClose();
               }}

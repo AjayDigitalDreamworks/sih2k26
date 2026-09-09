@@ -10,11 +10,14 @@ import {
 } from 'lucide-react';
 import { DonutChart } from '@/components/admin/common/DonutChart';
 import { ShapWaterfallModal } from '@/components/admin/common/ShapWaterfallModal';
+import { SafeBypassModal } from '@/components/admin/modals/SafeBypassModal';
+import { ContinualLearningPanel } from '@/components/admin/continual-learning/ContinualLearningPanel';
 import { useApp } from '@/contexts/AppContext';
 
 export const AIPredictionsPage = () => {
   const { setCurrentPage, aiRisk, allDistrictsSummary, mlHealth, kpis, pipelineRiskScores } = useApp();
   const [selectedXaiCorridor, setSelectedXaiCorridor] = useState(null);
+  const [selectedBypassCorridor, setSelectedBypassCorridor] = useState(null);
   const risk = aiRisk || { totalRisks: 0, lastUpdated: 'loading', breakdown: [] };
   const summary = allDistrictsSummary || [];
   const scoresObj = pipelineRiskScores?.scores || {};
@@ -102,6 +105,26 @@ export const AIPredictionsPage = () => {
         </div>
       </div>
 
+      {/* Human-first Explainer Banner */}
+      <div style={{
+        padding: '12px 18px',
+        borderRadius: '12px',
+        backgroundColor: '#EFF6FF',
+        border: '1px solid #BFDBFE',
+        fontSize: '12px',
+        color: '#1E3A8A',
+        display: 'flex',
+        alignItems: 'center',
+        gap: '10px',
+        fontWeight: 500,
+        lineHeight: 1.5,
+      }}>
+        <Sparkles size={18} color="#2563EB" style={{ flexShrink: 0 }} />
+        <span>
+          <strong>How this works:</strong> The AI combines 24-hour IMD rainfall forecasts, mountain slope incline percentages, and live road damage reports to predict landslides and floods <strong>before trucks enter hazardous corridors</strong>, allowing automatic safe detour rerouting.
+        </span>
+      </div>
+
       {/* Top Metrics Grid */}
       <div className="grid-3">
         <div className="card">
@@ -120,7 +143,7 @@ export const AIPredictionsPage = () => {
             <p style={{ fontSize: '12px', color: 'var(--text-muted)', marginTop: '4px' }}>
               {mlLoading
                 ? 'Loading live data integration status…'
-                : `Mode: ${engineMode} · ${health.activeIntegrations ?? 0}/${health.totalIntegrations ?? 0} live data integrations (IMD, Google Flood Hub, TomTom, Bhuvan, OSRM).`}
+                : `AI Mode: Hybrid ML & Satellite Road Sensors Connected · ${health.activeIntegrations ?? 0}/${health.totalIntegrations ?? 0} live data feeds (IMD, CWC, TomTom, OSRM).`}
             </p>
           </div>
           <div style={{ fontSize: '11px', color: 'var(--text-muted)' }}>{lastSynced}</div>
@@ -139,13 +162,22 @@ export const AIPredictionsPage = () => {
           <button
             className="btn btn-primary"
             style={{ width: '100%', padding: '8px', fontSize: '12px' }}
-            onClick={() => setCurrentPage('route-optimization')}
+            onClick={() => {
+              if (predictionsList.length > 0) {
+                setSelectedBypassCorridor(predictionsList[0]);
+              } else {
+                setCurrentPage('route-optimization');
+              }
+            }}
           >
-            <span>Launch Route Optimizer</span>
+            <span>Plan Detour Bypasses</span>
             <ArrowRight size={14} />
           </button>
         </div>
       </div>
+
+      {/* Continual Learning & Active Feedback Loop Panel */}
+      <ContinualLearningPanel />
 
       {/* Predictions Feed Table */}
       <div className="card">
@@ -193,25 +225,34 @@ export const AIPredictionsPage = () => {
               <div style={{ display: 'flex', gap: '8px', flexShrink: 0 }}>
                 <button
                   className="btn btn-outline"
-                  style={{ padding: '6px 12px', fontSize: '12px', display: 'flex', alignItems: 'center', gap: '5px', borderColor: '#3B82F6', color: '#2563EB' }}
+                  style={{ padding: '6px 12px', fontSize: '12px', display: 'flex', alignItems: 'center', gap: '5px', borderColor: '#3B82F6', color: '#2563EB', cursor: 'pointer' }}
                   onClick={() => setSelectedXaiCorridor(item.rawCorridor ? { ...item.rawCorridor, route: item.route } : item)}
+                  title="See exact rainfall, slope, and road factors that caused this risk score"
                 >
                   <Sparkles size={13} color="#2563EB" />
-                  <span>Explain (XAI)</span>
+                  <span>Why AI Flagged This</span>
                 </button>
 
                 <button
                   className="btn btn-primary"
-                  style={{ padding: '6px 12px', fontSize: '12px' }}
-                  onClick={() => setCurrentPage('route-optimization')}
+                  style={{ padding: '6px 12px', fontSize: '12px', cursor: 'pointer' }}
+                  onClick={() => setSelectedBypassCorridor(item)}
+                  title="Calculate and assign safe bypass detour for this corridor"
                 >
-                  Apply Reroute
+                  Propose Safe Bypass
                 </button>
               </div>
             </div>
           ))}
         </div>
       </div>
+
+      {/* Safe Bypass Detour Modal */}
+      <SafeBypassModal
+        isOpen={Boolean(selectedBypassCorridor)}
+        onClose={() => setSelectedBypassCorridor(null)}
+        corridor={selectedBypassCorridor}
+      />
 
       {/* SHAP XAI Waterfall Modal */}
       <ShapWaterfallModal

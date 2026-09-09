@@ -41,24 +41,39 @@ export const Sidebar = () => {
 
   const alertCount = alerts ? alerts.length : 0;
 
-  const mainNavItems = [
-    { id: 'dashboard', label: 'Dashboard', icon: LayoutDashboard },
-    { id: 'live-map', label: 'Live Map', icon: MapPin },
-    { id: 'ai-predictions', label: 'AI Predictions', icon: Sparkles },
-    { id: 'route-optimization', label: 'Route Optimization', icon: Route },
-    { id: 'vehicle-tracking', label: 'Vehicle Tracking', icon: Truck },
+  const navSections = [
     {
-      id: 'alerts',
-      label: 'Alerts & Notifications',
-      icon: Bell,
-      badge: alertCount > 0 ? alertCount : null,
-      badgeClass: 'danger',
+      title: 'Operations',
+      items: [
+        { id: 'dashboard', label: 'Dashboard', icon: LayoutDashboard },
+        { id: 'live-map', label: 'Live GIS Map', icon: MapPin },
+        { id: 'vehicle-tracking', label: 'Fleet Tracking', icon: Truck },
+        { id: 'route-optimization', label: 'Route Planning', icon: Route },
+      ],
     },
-    { id: 'field-reports', label: 'Field Reports', icon: FileText },
-    { id: 'analytics', label: 'Analytics & Reports', icon: BarChart3 },
-    { id: 'users', label: 'Users', icon: Users },
-    { id: 'emergency', label: 'Emergency Mode', icon: AlertTriangle, isEmergency: true },
-    { id: 'settings', label: 'Settings', icon: Settings },
+    {
+      title: 'Hazards & AI Safety',
+      items: [
+        {
+          id: 'alerts',
+          label: 'Alerts & Broadcasts',
+          icon: Bell,
+          badge: alertCount > 0 ? alertCount : null,
+          badgeClass: 'danger',
+        },
+        { id: 'ai-predictions', label: 'AI Risk Forecast', icon: Sparkles },
+        { id: 'field-reports', label: 'Field Reports', icon: FileText },
+        { id: 'emergency', label: 'Emergency Protocol', icon: AlertTriangle, isEmergency: true },
+      ],
+    },
+    {
+      title: 'Governance & Insights',
+      items: [
+        { id: 'analytics', label: 'Analytics & Trends', icon: BarChart3 },
+        { id: 'users', label: 'Users & Fleets', icon: Users },
+        { id: 'settings', label: 'System Settings', icon: Settings },
+      ],
+    },
   ];
 
   return (
@@ -73,20 +88,21 @@ export const Sidebar = () => {
           }}
           className="brand-logo-container"
         >
-          {/* Stylized Raahi Logo SVG */}
+          {/* Actual Raahi Logo */}
           <div className="brand-logo-icon">
-            <svg viewBox="0 0 44 44" fill="none" xmlns="http://www.w3.org/2000/svg" style={{ width: '100%', height: '100%' }}>
-              <rect width="44" height="44" rx="10" fill="#059669" />
-              {/* Mountain silhouettes */}
-              <path d="M6 32L16 18L24 28L30 20L38 32H6Z" fill="#10B981" opacity="0.6" />
-              {/* Delivery Truck Vector */}
-              <path d="M12 28H14M28 28H30" stroke="#FFFFFF" strokeWidth="2" strokeLinecap="round" />
-              <path d="M11 20H24V28H11V20Z" fill="#FFFFFF" />
-              <path d="M24 22H29L33 25V28H24V22Z" fill="#FFFFFF" />
-              <circle cx="16" cy="28" r="2.5" fill="#047857" stroke="#FFFFFF" strokeWidth="1.5" />
-              <circle cx="28" cy="28" r="2.5" fill="#047857" stroke="#FFFFFF" strokeWidth="1.5" />
-              <path d="M8 22H6M9 25H5" stroke="#FFFFFF" strokeWidth="1.5" strokeLinecap="round" />
-            </svg>
+            <img
+              src="/raahi-logo.jpg"
+              alt="RAAHI"
+              className="rounded-lg shadow-sm border border-slate-200/80 shrink-0"
+              style={{
+                width: '38px',
+                height: '38px',
+                minWidth: '38px',
+                minHeight: '38px',
+                objectFit: 'cover',
+                borderRadius: '8px'
+              }}
+            />
           </div>
           {!sidebarCollapsed && (
             <div className="brand-info">
@@ -99,31 +115,49 @@ export const Sidebar = () => {
 
       {/* Sidebar Navigation */}
       <div className="sidebar-content">
-        <nav className="nav-group">
-          {mainNavItems.map((item) => {
-            const Icon = item.icon;
-            const isActive = currentPage === item.id;
-            const translatedLabel = t(`nav.${item.id}`) || t(item.label) || item.label;
-            return (
-              <button
-                key={item.id}
-                onClick={() => setCurrentPage(item.id)}
-                className={`nav-item ${isActive ? 'active' : ''} ${item.isEmergency ? 'emergency' : ''}`}
-                title={sidebarCollapsed ? `${translatedLabel}${item.badge ? ` (${item.badge})` : ''}` : undefined}
-              >
-                <div className="nav-icon-wrapper">
-                  <Icon className="nav-icon" />
-                  {sidebarCollapsed && item.badge && (
-                    <span className="nav-badge-dot" />
-                  )}
+        <nav className="nav-group" style={{ display: 'flex', flexDirection: 'column', gap: '4px' }}>
+          {navSections.map((sec, secIdx) => (
+            <div key={sec.title} style={{ marginBottom: secIdx < navSections.length - 1 ? '6px' : '0' }}>
+              {!sidebarCollapsed && (
+                <div style={{
+                  padding: '6px 14px 4px',
+                  fontSize: '10px',
+                  fontWeight: 800,
+                  color: '#94A3B8',
+                  letterSpacing: '0.06em',
+                  textTransform: 'uppercase',
+                  borderTop: secIdx > 0 ? '1px solid rgba(226, 232, 240, 0.6)' : 'none',
+                  marginTop: secIdx > 0 ? '6px' : '0',
+                }}>
+                  {sec.title}
                 </div>
-                {!sidebarCollapsed && <span className="nav-label">{translatedLabel}</span>}
-                {!sidebarCollapsed && item.badge && (
-                  <span className={`nav-badge ${item.badgeClass || ''}`}>{item.badge}</span>
-                )}
-              </button>
-            );
-          })}
+              )}
+              {sec.items.map((item) => {
+                const Icon = item.icon;
+                const isActive = currentPage === item.id;
+                const translatedLabel = t(`nav.${item.id}`) || item.label;
+                return (
+                  <button
+                    key={item.id}
+                    onClick={() => setCurrentPage(item.id)}
+                    className={`nav-item ${isActive ? 'active' : ''} ${item.isEmergency ? 'emergency' : ''}`}
+                    title={sidebarCollapsed ? `${translatedLabel}${item.badge ? ` (${item.badge})` : ''}` : undefined}
+                  >
+                    <div className="nav-icon-wrapper">
+                      <Icon className="nav-icon" />
+                      {sidebarCollapsed && item.badge && (
+                        <span className="nav-badge-dot" />
+                      )}
+                    </div>
+                    {!sidebarCollapsed && <span className="nav-label">{translatedLabel}</span>}
+                    {!sidebarCollapsed && item.badge && (
+                      <span className={`nav-badge ${item.badgeClass || ''}`}>{item.badge}</span>
+                    )}
+                  </button>
+                );
+              })}
+            </div>
+          ))}
         </nav>
 
         {!sidebarCollapsed && (

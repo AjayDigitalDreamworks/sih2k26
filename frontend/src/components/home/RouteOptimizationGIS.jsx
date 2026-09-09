@@ -5,7 +5,6 @@ import {
   ShieldCheck,
   TriangleAlert,
   Mountain,
-  Fuel,
   Clock,
   ArrowRight,
   Layers,
@@ -28,7 +27,7 @@ const CORRIDORS_DATA = [
     standardTime: '17h 45m',
     optimizedTime: '11h 20m',
     timeSaved: '6h 25m faster',
-    fuelSaved: '42 L (₹3,900)',
+    costSaved: '₹3,900 Saved',
     safetyScore: 98,
     activeHazard: 'Active Landslide & Mudflow at Dzükou Pass (NH-29 km 142)',
     hazardSeverity: 'critical',
@@ -58,7 +57,7 @@ const CORRIDORS_DATA = [
     standardTime: '8h 30m',
     optimizedTime: '4h 15m',
     timeSaved: '4h 15m faster',
-    fuelSaved: '18 L (₹1,680)',
+    costSaved: '₹1,680 Saved',
     safetyScore: 96,
     activeHazard: 'Teesta River Swell & Debris Sinkage on NH-10 Lower Reach',
     hazardSeverity: 'high',
@@ -88,7 +87,7 @@ const CORRIDORS_DATA = [
     standardTime: '14h 10m',
     optimizedTime: '9h 40m',
     timeSaved: '4h 30m faster',
-    fuelSaved: '32 L (₹2,980)',
+    costSaved: '₹2,980 Saved',
     safetyScore: 97,
     activeHazard: 'Sonapur Tunnel Heavy Mudslide & Waterlogging',
     hazardSeverity: 'warning',
@@ -278,9 +277,9 @@ export function RouteOptimizationGIS() {
                 </div>
 
                 <div className="metric-box">
-                  <Fuel size={16} className="text-emerald-600 mb-1" />
-                  <div className="metric-value">{current.fuelSaved}</div>
-                  <div className="metric-label">Fuel Saved / Consignment</div>
+                  <TrendingDown size={16} className="text-emerald-600 mb-1" />
+                  <div className="metric-value">{current.costSaved}</div>
+                  <div className="metric-label">Cost Saved / Consignment</div>
                   <span className="metric-badge green">-22% Cost</span>
                 </div>
 

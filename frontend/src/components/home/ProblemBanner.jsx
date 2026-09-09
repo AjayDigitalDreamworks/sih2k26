@@ -26,7 +26,7 @@ const CORRIDOR_CHALLENGES = [
     icon: TriangleAlert,
     stat: '42+ Days/Yr',
     statLabel: 'Road Cut-Off',
-    description: 'Active young Himalayan geology & torrential monsoons cause repetitive debris slides, cutting off fuel, food & medicines to Kohima & Imphal.',
+    description: 'Active young Himalayan geology & torrential monsoons cause repetitive debris slides, cutting off food, rations & medicines to Kohima & Imphal.',
     problemDetail: 'Debris slide at Dzükou Ridge (Elev. 1,850m). Heavy multi-axle freight halted.',
     solutionDetail: 'RAAHI AI detected slope saturation 6 hrs prior. Dispatched bypass via Foothill Corridor.',
     impact: 'Saved 16 hrs delay • Zero perishable loss',

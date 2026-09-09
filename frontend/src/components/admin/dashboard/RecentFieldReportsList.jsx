@@ -38,14 +38,36 @@ export const RecentFieldReportsList = () => {
               transition: 'background-color var(--transition-fast)',
             }}
           >
-            <img
-              src={rep.image || '/assets/field-reports/landslide.jpg'}
-              alt={rep.title || rep.type}
-              className="report-thumbnail"
-              onError={(e) => {
-                e.target.src = '/assets/field-reports/landslide.jpg';
-              }}
-            />
+            {rep.image || (rep.photos && rep.photos[0]) ? (
+              <img
+                src={rep.image || rep.photos[0]}
+                alt={rep.title || rep.type}
+                className="report-thumbnail"
+                onError={(e) => {
+                  e.target.style.display = 'none';
+                }}
+              />
+            ) : (
+              <div
+                style={{
+                  width: '36px',
+                  height: '36px',
+                  borderRadius: 'var(--radius-sm)',
+                  backgroundColor: rep.severity === 'high' || rep.severity === 'critical' ? '#FEF2F2' : '#FFFBEB',
+                  color: rep.severity === 'high' || rep.severity === 'critical' ? '#EF4444' : '#D97706',
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                  fontWeight: 800,
+                  fontSize: '11px',
+                  flexShrink: 0,
+                  border: '1px solid currentColor',
+                  opacity: 0.85,
+                }}
+              >
+                {rep.type ? rep.type.slice(0, 2).toUpperCase() : 'REP'}
+              </div>
+            )}
             <div style={{ flex: 1, minWidth: 0 }}>
               <div
                 style={{

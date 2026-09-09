@@ -1,21 +1,16 @@
 // Navigation configuration for the Transporter dashboard.
-// No business records live here — all data comes from the live APIs.
+// Streamlined into 5 core workspaces for zero-confusion dispatching.
 
 export const sidebarNavItems = [
-  { id: 'dashboard', label: 'Dashboard', icon: 'dashboard' },
-  { id: 'consignments', label: 'My Consignments', icon: 'package' },
-  { id: 'vehicles', label: 'My Vehicles', icon: 'truck' },
-  { id: 'tracking', label: 'Live Tracking & GPS', icon: 'map-pin' },
-  { id: 'fleet-tracking', label: 'Vehicle Tracking', icon: 'tracker' },
-  { id: 'routes', label: 'Route Planning', icon: 'route' },
-  { id: 'route-optimization', label: 'Route Optimization', icon: 'route-opt' },
-  { id: 'alerts', label: 'Alerts', icon: 'bell' },
-  { id: 'history', label: 'Delivery History', icon: 'history' },
-  { id: 'reports', label: 'Reports', icon: 'bar-chart' },
+  { id: 'dashboard', label: 'Fleet & Map', icon: 'map-pin', path: '/transporter/dashboard' },
+  { id: 'routes', label: 'New Trip / Dispatch', icon: 'route', path: '/transporter/route-planning' },
+  { id: 'consignments', label: 'Consignments & Orders', icon: 'package', path: '/transporter/consignments' },
+  { id: 'vehicles', label: 'Vehicles & Drivers', icon: 'truck', path: '/transporter/vehicles' },
+  { id: 'reports', label: 'Analytics & Reports', icon: 'bar-chart', path: '/transporter/reports' },
 ];
 
 export const sidebarSecondaryItems = [
-  { id: 'profile', label: 'Profile', icon: 'user' },
-  { id: 'settings', label: 'Settings', icon: 'settings' },
-  { id: 'help', label: 'Help & Support', icon: 'headset' },
+  { id: 'alerts', label: 'Corridor Alerts', icon: 'bell', path: '/transporter/alerts' },
+  { id: 'settings', label: 'Settings', icon: 'settings', path: '/transporter/settings' },
+  { id: 'help', label: 'Help & Support', icon: 'headset', path: '/transporter/help' },
 ];

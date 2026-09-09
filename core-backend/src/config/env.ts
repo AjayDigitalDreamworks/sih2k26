@@ -17,7 +17,7 @@ export const env = {
   jwtAccessSecret: process.env.JWT_ACCESS_SECRET || 'fallback_access_secret',
   jwtRefreshSecret: process.env.JWT_REFRESH_SECRET || 'fallback_another_secret',
   jwtAccessExpires: process.env.JWT_ACCESS_EXPIRES || '15m',
-  jwtRefreshExpires: process.env.JWT_REFRESH_EXPIRES || '7d',
+  jwtRefreshExpires: process.env.JWT_REFRESH_EXPIRES || '1d',
   mlServiceUrl: process.env.ML_SERVICE_URL || 'http://localhost:8010',
   frontendUrl: process.env.FRONTEND_URL || 'http://localhost:3000',
   coreBackendInternalKey: process.env.CORE_BACKEND_INTERNAL_KEY || '',

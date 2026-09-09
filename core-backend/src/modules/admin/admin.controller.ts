@@ -18,6 +18,7 @@ import { notifyRiskRecalculation } from '../../utils/mlRiskTrigger';
 import { env } from '../../config/env';
 import { uploadImageToCloudinary } from '../../utils/cloudinary';
 import { TrackingService } from '../tracking/tracking.service';
+import { ContinualLearningService } from '../ml-proxy/continual-learning.service';
 import bcrypt from 'bcrypt';
 
 export class AdminController {
@@ -33,10 +34,11 @@ export class AdminController {
           Delivery.count({ where: { status: 'in_transit' } }),
         ]);
 
-      // Compute trend by comparing to yesterday's counts (approximate via created_at)
+      // Compute trend by comparing to yesterday's counts
       const yesterday = new Date();
       yesterday.setDate(yesterday.getDate() - 1);
-      const [prevAtRisk, prevBlocked, prevActive, prevInTransit] = await Promise.all([
+      const [prevTotalRoutes, prevAtRisk, prevBlocked, prevActive, prevInTransit] = await Promise.all([
+        Route.count({ where: { createdAt: { [Op.lt]: yesterday } } }),
         RiskScore.count({ where: { risk_level: { [Op.in]: ['high', 'critical'] }, computed_at: { [Op.lt]: yesterday } } }),
         Route.count({ where: { status: 'blocked', updatedAt: { [Op.lt]: yesterday } } }),
         Vehicle.count({ where: { status: { [Op.in]: ['moving', 'idle', 'delayed'] }, updatedAt: { [Op.lt]: yesterday } } }),
@@ -44,13 +46,14 @@ export class AdminController {
       ]);
 
       const trendPct = (curr: number, prev: number) => {
-        if (prev === 0) return curr > 0 ? '+100%' : '— No change';
+        if (prev === 0 && curr === 0) return '0.0%';
+        if (prev === 0) return '+100%';
         const pct = ((curr - prev) / prev) * 100;
         return `${pct >= 0 ? '+' : ''}${pct.toFixed(1)}%`;
       };
 
       const data = {
-        totalRoutes: { value: totalRoutes, trend: trendPct(totalRoutes, totalRoutes - 1), period: 'vs yesterday', isUp: true },
+        totalRoutes: { value: totalRoutes, trend: trendPct(totalRoutes, prevTotalRoutes || totalRoutes), period: 'vs yesterday', isUp: totalRoutes >= (prevTotalRoutes || totalRoutes) },
         routesAtRisk: { value: atRiskRoutes, trend: trendPct(atRiskRoutes, prevAtRisk), period: 'vs yesterday', isUp: atRiskRoutes >= prevAtRisk, isRisk: true },
         blockedRoutes: { value: blockedRoutes, trend: trendPct(blockedRoutes, prevBlocked), period: 'vs yesterday', isUp: blockedRoutes >= prevBlocked, isDanger: true },
         activeVehicles: { value: activeVehicles, trend: trendPct(activeVehicles, prevActive), period: 'vs yesterday', isUp: activeVehicles >= prevActive },
@@ -362,6 +365,10 @@ export class AdminController {
 
       // A resolved report changes the open-disruption count → recalc risk now.
       notifyRiskRecalculation(`field report verified: ${req.params.id}`);
+
+      // Closed-loop active learning: mine verified disruption for model retraining
+      ContinualLearningService.mineFieldReportIncident(report).catch(() => {});
+
       return sendSuccess(res, report, 'Field report verified successfully');
     } catch (err: any) {
       return sendError(res, err.message);
@@ -758,6 +765,35 @@ export class AdminController {
       }
       await user.destroy();
       return sendSuccess(res, null, 'User deleted successfully');
+    } catch (err: any) {
+      return sendError(res, err.message);
+    }
+  }
+
+  // ─── CONTINUAL LEARNING / ACTIVE LEARNING FEEDBACK LOOP ───
+  static async getContinualLearningStatus(req: Request, res: Response) {
+    try {
+      const stats = await ContinualLearningService.getFeedbackStats();
+      return sendSuccess(res, stats, 'Continual learning status retrieved');
+    } catch (err: any) {
+      return sendError(res, err.message);
+    }
+  }
+
+  static async triggerContinualRetraining(req: Request, res: Response) {
+    try {
+      const result = await ContinualLearningService.triggerRetraining();
+      return sendSuccess(res, result, 'Continual retraining completed successfully');
+    } catch (err: any) {
+      return sendError(res, err.message, 500);
+    }
+  }
+
+  static async simulateActiveLearningIncident(req: Request, res: Response) {
+    try {
+      const { corridor } = req.body || {};
+      const sample = await ContinualLearningService.simulateHardSample(corridor);
+      return sendSuccess(res, sample, 'Hard False Negative sample mined for active learning', 201);
     } catch (err: any) {
       return sendError(res, err.message);
     }

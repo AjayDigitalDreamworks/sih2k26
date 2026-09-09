@@ -8,7 +8,6 @@ import {
   User,
   Phone,
   Gauge,
-  Fuel,
   Activity,
   Pencil,
   Trash2,
@@ -25,7 +24,6 @@ export default function VehicleDetailsModal({ isOpen, onClose, vehicle, onEdit, 
   const driverPhone = vehicle.driver?.phone;
   const route = vehicle.route || vehicle.raw?.current_route;
   const speed = vehicle.speed;
-  const fuel = vehicle.fuel;
   const lastPing = vehicle.lastUpdated
     ? `${vehicle.lastUpdated.date || ''} ${vehicle.lastUpdated.time || ''}`.trim()
     : null;
@@ -83,10 +81,10 @@ export default function VehicleDetailsModal({ isOpen, onClose, vehicle, onEdit, 
 
               <div className="bg-slate-50 rounded-xl p-3 border border-slate-200/70">
                 <span className="text-[10px] font-bold text-slate-400 flex items-center gap-1">
-                  <Fuel className="w-3 h-3 text-emerald-500" /> Fuel Level
+                  <Activity className="w-3 h-3 text-emerald-500" /> Fitness Status
                 </span>
                 <span className="text-base font-black text-slate-800 mt-1 block">
-                  {fuel || '—'}
+                  Verified
                 </span>
               </div>
 

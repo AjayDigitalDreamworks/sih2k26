@@ -62,8 +62,14 @@ class ApiClient {
               }
             }
           } catch (e) {
-            this.clearTokens();
+            // refresh request failed
           }
+        }
+        this.clearTokens();
+        localStorage.removeItem('ner_logismart_user');
+        sessionStorage.removeItem('ner_logismart_user');
+        if (typeof window !== 'undefined') {
+          window.dispatchEvent(new CustomEvent('raahi:auth_expired'));
         }
       }
 
@@ -283,6 +289,13 @@ class ApiClient {
     });
   }
 
+  static confirmDelivery(deliveryId, payload = {}) {
+    return this.request(`/tracking/deliveries/${deliveryId}/delivered`, {
+      method: 'POST',
+      body: JSON.stringify(payload),
+    });
+  }
+
   static getTransporterAlerts() {
     return this.request('/transporter/alerts');
   }
@@ -461,16 +474,36 @@ class ApiClient {
     }
   }
 
-  // Emergency mid-trip reroute for fleet telematics
-  static async rerouteVehicle(payload) {
+  // Dynamic Route Recalculation / mid-trip detour for in-transit vehicles
+  static async rerouteVehicle(vehicleIdOrPayload, options = {}) {
+    let vehicleId = null;
+    let payload = {};
+
+    if (typeof vehicleIdOrPayload === 'string') {
+      vehicleId = vehicleIdOrPayload;
+      payload = options || {};
+    } else if (vehicleIdOrPayload && typeof vehicleIdOrPayload === 'object') {
+      vehicleId = vehicleIdOrPayload.vehicleId || vehicleIdOrPayload.id;
+      payload = { ...vehicleIdOrPayload };
+    }
+
+    if (vehicleId) {
+      try {
+        const res = await this.request(`/integrations/live-route/${encodeURIComponent(vehicleId)}/reroute`, {
+          method: 'POST',
+          body: JSON.stringify(payload),
+        });
+        if (res && res.success) return res;
+      } catch (_) {}
+    }
+
+    // Secondary fallback
     try {
       const res = await this.request('/integrations/route/reroute-vehicle', {
         method: 'POST',
         body: JSON.stringify(payload),
       });
-      if (res && (res.success || res.data?.success || res.data?.recommended)) {
-        return res;
-      }
+      if (res && (res.success || res.data?.success || res.data?.recommended)) return res;
     } catch (_) {}
 
     try {
@@ -483,16 +516,17 @@ class ApiClient {
       const data = await r.json();
       return { success: true, data };
     } catch (err) {
-      return { success: false, message: err?.message || 'Emergency reroute service unreachable' };
+      return { success: false, message: err?.message || 'Reroute service unreachable' };
     }
   }
 
-
   // Live route from a vehicle's real GPS fix to its active trip destination
-  static getLiveRoute(vehicleId) {
-    return this.request(`/integrations/live-route/${encodeURIComponent(vehicleId)}`);
+  static getLiveRoute(vehicleId, options = {}) {
+    const params = new URLSearchParams();
+    if (options.avoid) params.set('avoid', options.avoid);
+    const qs = params.toString() ? `?${params.toString()}` : '';
+    return this.request(`/integrations/live-route/${encodeURIComponent(vehicleId)}${qs}`);
   }
-
 
   // Full Context
   static getDistrictContext(districtId) {
@@ -672,10 +706,46 @@ class ApiClient {
     });
   }
 
+  static uploadMedia(fileOrPayload) {
+    if (typeof FormData !== 'undefined' && fileOrPayload instanceof FormData) {
+      const url = `${API_BASE}/media/upload`;
+      const token = this.getAccessToken();
+      return fetch(url, {
+        method: 'POST',
+        headers: {
+          ...(token ? { Authorization: `Bearer ${token}` } : {}),
+        },
+        body: fileOrPayload,
+      }).then((r) => r.json());
+    }
+    return this.request('/media/upload', {
+      method: 'POST',
+      body: JSON.stringify(fileOrPayload),
+    });
+  }
+
   static syncFieldOfficerBatch(items) {
     return this.request('/field-officer/sync', {
       method: 'POST',
       body: JSON.stringify({ items }),
+    });
+  }
+
+  // Continual Learning & Active Feedback Loop
+  static getContinualLearningStatus() {
+    return this.request('/admin/continual-learning/status');
+  }
+
+  static triggerContinualRetraining() {
+    return this.request('/admin/continual-learning/retrain', {
+      method: 'POST',
+    });
+  }
+
+  static simulateActiveLearningIncident(corridor) {
+    return this.request('/admin/continual-learning/simulate-feedback', {
+      method: 'POST',
+      body: JSON.stringify({ corridor }),
     });
   }
 }

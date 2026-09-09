@@ -30,9 +30,9 @@ export const RouteOptimizationPage = ({ onExport }) => {
         <div className="page-title-group">
           <h1>
             <Route size={24} color="#059669" />
-            Route Optimization
+            Route Optimization & Detour Planner
           </h1>
-          <p>Find the most efficient routes to save time, fuel and ensure timely deliveries.</p>
+          <p>Dijkstra multi-criteria routing engine: calculates safest all-weather detours bypassing active landslides and flash floods.</p>
         </div>
 
         <div className="header-widgets-group">
@@ -48,9 +48,39 @@ export const RouteOptimizationPage = ({ onExport }) => {
             <CloudSun size={20} color="#F59E0B" />
             <div className="info-pill-text">
               <span className="info-pill-primary">{weather?.temp || '--'}</span>
-              <span className="info-pill-secondary">{weather?.city || '--'}</span>
+              <span className="info-pill-secondary">{weather?.city || 'Guwahati'}</span>
             </div>
           </div>
+        </div>
+      </div>
+
+      {/* 3-Step Guided Workflow Banner */}
+      <div style={{
+        display: 'flex',
+        alignItems: 'center',
+        justifyContent: 'space-between',
+        flexWrap: 'wrap',
+        gap: '8px',
+        padding: '12px 16px',
+        borderRadius: '12px',
+        backgroundColor: '#FFFFFF',
+        border: '1px solid #E2E8F0',
+        marginBottom: '16px',
+        boxShadow: '0 1px 2px rgba(0,0,0,0.03)',
+      }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+          <span style={{ width: '22px', height: '22px', borderRadius: '50%', backgroundColor: '#059669', color: '#FFF', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: '11px', fontWeight: 800 }}>1</span>
+          <span style={{ fontSize: '12px', fontWeight: 700, color: '#0F172A' }}>Select Origin & Destination</span>
+        </div>
+        <span style={{ color: '#CBD5E1' }}>&rarr;</span>
+        <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+          <span style={{ width: '22px', height: '22px', borderRadius: '50%', backgroundColor: '#2563EB', color: '#FFF', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: '11px', fontWeight: 800 }}>2</span>
+          <span style={{ fontSize: '12px', fontWeight: 700, color: '#0F172A' }}>Engine Calculates Safest Detour</span>
+        </div>
+        <span style={{ color: '#CBD5E1' }}>&rarr;</span>
+        <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+          <span style={{ width: '22px', height: '22px', borderRadius: '50%', backgroundColor: '#7C3AED', color: '#FFF', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: '11px', fontWeight: 800 }}>3</span>
+          <span style={{ fontSize: '12px', fontWeight: 700, color: '#0F172A' }}>Dispatch Route to Driver App</span>
         </div>
       </div>
 

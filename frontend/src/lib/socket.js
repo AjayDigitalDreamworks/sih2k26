@@ -47,8 +47,10 @@ export const getSocket = () => {
 export const subscribeToVehiclePositions = (callback) => {
   const s = getSocket();
   s.on('vehicle:position', callback);
+  s.on('vehicle.location.updated', callback);
   return () => {
     s.off('vehicle:position', callback);
+    s.off('vehicle.location.updated', callback);
   };
 };
 
@@ -83,6 +85,24 @@ export const subscribeToDynamicReroute = (callback) => {
   return () => {
     s.off('vehicle:rerouted', callback);
     s.off('route:rerouted', callback);
+  };
+};
+
+export const subscribeToTripUpdates = (callback) => {
+  const s = getSocket();
+  s.on('trip.status.updated', callback);
+  s.on('vehicle.status.updated', callback);
+  return () => {
+    s.off('trip.status.updated', callback);
+    s.off('vehicle.status.updated', callback);
+  };
+};
+
+export const subscribeToRouteCleared = (callback) => {
+  const s = getSocket();
+  s.on('route:cleared', callback);
+  return () => {
+    s.off('route:cleared', callback);
   };
 };
 

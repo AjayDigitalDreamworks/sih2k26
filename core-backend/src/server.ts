@@ -40,6 +40,14 @@ async function startServer() {
       } catch (e) { /* ignore */ }
     }, 60000);
 
+    // Closed-loop continual learning: automated check every 10 minutes
+    setInterval(async () => {
+      try {
+        const { ContinualLearningService } = require('./modules/ml-proxy/continual-learning.service');
+        await ContinualLearningService.checkAndTriggerScheduledRetraining();
+      } catch (e) { /* ignore */ }
+    }, 10 * 60 * 1000);
+
     server.listen(env.port, '0.0.0.0', () => {
       logger.info('Raahi Core Backend is ACTIVE', {
         port: env.port,

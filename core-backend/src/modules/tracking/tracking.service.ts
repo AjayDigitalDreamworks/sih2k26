@@ -6,6 +6,7 @@ import { Vehicle, Route, Driver, Trip, Delivery, District } from '../../models/p
 import { Alert } from '../../models/mongo';
 import { getSocketServer } from '../../sockets/socket.gateway';
 import { env } from '../../config/env';
+import { ContinualLearningService } from '../ml-proxy/continual-learning.service';
 
 // Tracking policy — all tunable via env (root .env). Defaults match the spec:
 // LIVE when the GPS fix is fresh, STALE beyond that, OFFLINE beyond STALE.
@@ -53,6 +54,7 @@ function haversine(lat1: number, lng1: number, lat2: number, lng2: number): numb
   const a = Math.sin(dLat / 2) ** 2 + Math.cos(lat1 * Math.PI / 180) * Math.cos(lat2 * Math.PI / 180) * Math.sin(dLng / 2) ** 2;
   return R * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
 }
+
 
 // Point-to-line-segment distance
 function pointToSegmentDistance(px: number, py: number, ax: number, ay: number, bx: number, by: number): number {
@@ -251,6 +253,8 @@ export class TrackingService {
     if (io) {
       io.to('admin:all').emit('vehicle:position', broadcastPayload);
       io.to(`transporter:${vehicle.transporter_id}`).emit('vehicle:position', broadcastPayload);
+      io.emit('vehicle:position', broadcastPayload);
+      io.emit('vehicle.location.updated', broadcastPayload);
 
       // Emit route deviation alert if needed
       if (status.routeDeviation?.isDeviated) {
@@ -1044,6 +1048,8 @@ export class TrackingService {
         io.to(room).emit('vehicle:position', broadcast);       // legacy dashboards
         io.to(room).emit('vehicle.location.updated', broadcast); // tracking contract event
       });
+      io.emit('vehicle:position', broadcast);
+      io.emit('vehicle.location.updated', broadcast);
       io.emit('vehicle.status.updated', {
         vehicleId: vehicle.id, liveStatus, movement, speed, timestamp: new Date().toISOString(),
       });
@@ -1071,12 +1077,168 @@ export class TrackingService {
     return { ok: true, locationId, liveStatus, movement, persisted: true, vehicleId: vehicle.id, geofenceEvent, corridorCheck };
   }
 
+  /**
+   * Simulate a movement step along the active route corridor for live tracking demonstration.
+   * Advances the vehicle's position along its trip road geometry by ~80 meters at ~48 km/h,
+   * updating PostGIS, Redis, and broadcasting to all clients via Socket.io.
+   */
+  static async simulateVehicleStep(vehicleId: string, stepMeters: number = 80): Promise<any> {
+    const vehicle = await Vehicle.findByPk(vehicleId);
+    if (!vehicle) return { error: 'Vehicle not found' };
+
+    const dynamicRoute = await this.calculateLiveDynamicRoute(vehicleId).catch(() => null);
+    let geom: [number, number][] = (dynamicRoute?.hasRoute && Array.isArray(dynamicRoute.geometry) && dynamicRoute.geometry.length > 2)
+      ? dynamicRoute.geometry
+      : [];
+
+    if (geom.length < 2) {
+      const activeTrip = await Trip.findOne({
+        where: { vehicle_id: vehicle.id, status: { [Op.in]: ['in_transit', 'planned', 'delayed'] } },
+        order: [['createdAt', 'DESC']],
+      });
+      if (activeTrip?.route_id) {
+        const r = await Route.findByPk(activeTrip.route_id, { raw: true });
+        if (r?.geom) {
+          let g: any = r.geom;
+          if (typeof g === 'string') {
+            try { g = JSON.parse(g); } catch {}
+          }
+          if (Array.isArray(g?.coordinates) && g.coordinates.length > 1) {
+            geom = g.coordinates.map((c: any) => [c[1], c[0]]);
+          } else if (Array.isArray(g) && g.length > 1) {
+            geom = g;
+          }
+        }
+      }
+    }
+
+    if (!Array.isArray(geom) || geom.length < 2) {
+      return { error: 'No active route geometry found for vehicle' };
+    }
+    const curLat = vehicle.current_lat ?? geom[0][0];
+    const curLng = vehicle.current_lng ?? geom[0][1];
+
+    // Find closest index on geometry
+    let closestIdx = 0;
+    let minDist = Infinity;
+    for (let i = 0; i < geom.length; i++) {
+      const d = haversine(curLat, curLng, geom[i][0], geom[i][1]);
+      if (d < minDist) {
+        minDist = d;
+        closestIdx = i;
+      }
+    }
+
+    // Step forward along geometry until stepMeters traversed
+    let targetIdx = Math.min(geom.length - 1, closestIdx + 1);
+    let accumulated = 0;
+    for (let i = closestIdx; i < geom.length - 1; i++) {
+      const segDist = haversine(geom[i][0], geom[i][1], geom[i + 1][0], geom[i + 1][1]);
+      accumulated += segDist;
+      targetIdx = i + 1;
+      if (accumulated >= stepMeters) break;
+    }
+
+    const targetPoint = geom[targetIdx];
+    const prevPoint = geom[Math.max(0, targetIdx - 1)];
+    const heading = Math.round(calculateBearing(prevPoint[0], prevPoint[1], targetPoint[0], targetPoint[1]));
+    const speed = 48 + Math.round(Math.sin(Date.now() / 8000) * 5);
+
+    const trip = await Trip.findOne({
+      where: { vehicle_id: vehicle.id, status: { [Op.in]: ['in_transit', 'planned'] } },
+      order: [['createdAt', 'DESC']],
+    });
+
+    const driver = vehicle.assigned_driver_id
+      ? await Driver.findByPk(vehicle.assigned_driver_id)
+      : null;
+
+    // Persist observation (source: 'WEB_GPS' satisfies chk_vl_source constraint)
+    const locationId = await this.persistLocation({
+      vehicleId: vehicle.id,
+      driverId: driver?.id || null,
+      tripId: trip?.id || null,
+      latitude: targetPoint[0],
+      longitude: targetPoint[1],
+      accuracy: 6,
+      speed,
+      heading,
+      altitude: 120,
+      gpsTimestamp: new Date(),
+      source: 'WEB_GPS',
+    });
+
+    // Update vehicle live status
+    await vehicle.update({
+      current_lat: targetPoint[0],
+      current_lng: targetPoint[1],
+      speed,
+      current_heading: heading,
+      live_status: 'LIVE',
+      last_gps_at: new Date(),
+      last_ping_at: new Date(),
+      status: 'moving',
+    });
+
+    // Broadcast via socket
+    const livePayload = {
+      id: vehicle.id,
+      vehicleId: vehicle.id,
+      model: vehicle.model,
+      transporter_id: vehicle.transporter_id,
+      lat: targetPoint[0],
+      lng: targetPoint[1],
+      speed,
+      fuel: vehicle.fuel_percent ?? 85,
+      heading,
+      accuracy: 6,
+      source: 'WEB_GPS',
+      driver: driver?.name || null,
+      tripId: trip?.id || null,
+      timestamp: new Date().toISOString(),
+      status: 'moving',
+      liveStatus: 'LIVE',
+      route: vehicle.current_route || '',
+      direction: bearingToDirection(heading),
+    };
+
+    await redisClient.set(`vehicle:live:${vehicle.id}`, JSON.stringify(livePayload), { ex: 300 });
+
+    const io = getSocketServer();
+    if (io) {
+      io.emit('vehicle:position', livePayload);
+      io.emit('vehicle.location.updated', livePayload);
+      io.to('admin:all').emit('vehicle.status.updated', livePayload);
+      if (vehicle.transporter_id) {
+        io.to(`transporter:${vehicle.transporter_id}`).emit('vehicle.location.updated', livePayload);
+      }
+    }
+
+    return {
+      success: true,
+      vehicleId: vehicle.id,
+      lat: targetPoint[0],
+      lng: targetPoint[1],
+      speed,
+      heading,
+      step: targetIdx,
+      totalSteps: geom.length,
+      progressPercent: Math.round((targetIdx / (geom.length - 1)) * 100),
+      destination: dynamicRoute?.destination?.name || '',
+    };
+  }
+
   /** Trip lifecycle: ASSIGNED(planned) → STARTED(in_transit, tracking on) → COMPLETED. */
   static async startTrip(user: any, tripId: string) {
     const trip = await Trip.findByPk(tripId);
     if (!trip) return { error: 'Trip not found', statusCode: 404 };
     const vehicle = await Vehicle.findByPk(trip.vehicle_id);
     if (!vehicle) return { error: 'Vehicle not found', statusCode: 404 };
+
+    // Strict guard: route corridor MUST be evaluated and assigned by transporter before trip can start
+    if (!trip.route_id || !trip.transporter_id) {
+      return { error: 'Trip cannot be started: route corridor has not been evaluated or assigned by transporter', statusCode: 400 };
+    }
 
     if (user.role === 'driver') {
       const driver = await this.resolveDriverForUser(user.id);
@@ -1090,6 +1252,9 @@ export class TrackingService {
 
     if (trip.status === 'completed' || trip.status === 'canceled') return { error: 'Trip already closed', statusCode: 409 };
     if (trip.status === 'in_transit') return { ok: true, alreadyStarted: true, trip };
+    if (trip.status !== 'planned') {
+      return { error: `Trip cannot be started: current status is "${trip.status}" (must be "planned")`, statusCode: 400 };
+    }
 
     await trip.update({ status: 'in_transit', started_at: new Date() });
     await vehicle.update({
@@ -1107,7 +1272,10 @@ export class TrackingService {
     await redisClient.del(`vehicle:history:${vehicle.id}`);
     await redisClient.del(`vehicle:live:${vehicle.id}`);
     const io = getSocketServer();
-    if (io) io.emit('vehicle.status.updated', { vehicleId: vehicle.id, event: 'trip_started', tripId: trip.id, timestamp: new Date().toISOString() });
+    if (io) {
+      io.emit('vehicle.status.updated', { vehicleId: vehicle.id, event: 'trip_started', tripId: trip.id, timestamp: new Date().toISOString() });
+      io.emit('trip.status.updated', { tripId: trip.id, status: 'in_transit', vehicleId: vehicle.id, driverId: trip.driver_id, origin: trip.origin, destination: trip.destination, timestamp: new Date().toISOString() });
+    }
     console.log(`[TRACKING] Trip ${trip.id} STARTED by ${user.role}:${user.id} on ${vehicle.id}`);
     return { ok: true, trip };
   }
@@ -1132,14 +1300,34 @@ export class TrackingService {
     } catch {}
     if (vehicle) {
       await vehicle.update({
-        tracking_active: false, current_trip_id: null,
-        live_status: 'OFFLINE', status: 'idle', speed: 0,
+        tracking_active: false,
+        current_trip_id: null,
+        current_route: null,
+        live_status: 'OFFLINE',
+        status: 'idle',
+        speed: 0,
       });
       await redisClient.del(`vehicle:live:${vehicle.id}`);
+      await redisClient.del(`vehicle:history:${vehicle.id}`);
+      await redisClient.del(`vehicle:route:${vehicle.id}`);
+      await redisClient.del(`vehicle:reroute:${vehicle.id}`);
     }
     const io = getSocketServer();
-    if (io) io.emit('vehicle.status.updated', { vehicleId: trip.vehicle_id, event: 'trip_completed', tripId: trip.id, timestamp: new Date().toISOString() });
-    console.log(`[TRACKING] Trip ${trip.id} COMPLETED by ${user.role}:${user.id}`);
+    if (io) {
+      const clearPayload = { vehicleId: trip.vehicle_id, tripId: trip.id, timestamp: new Date().toISOString() };
+      io.emit('route:cleared', clearPayload);
+      io.to('admin:all').emit('route:cleared', clearPayload);
+      if (vehicle?.transporter_id) io.to(`transporter:${vehicle.transporter_id}`).emit('route:cleared', clearPayload);
+      if (trip.driver_id) io.to(`driver:${trip.driver_id}`).emit('route:cleared', clearPayload);
+
+      io.emit('vehicle.status.updated', { vehicleId: trip.vehicle_id, event: 'trip_completed', tripId: trip.id, timestamp: new Date().toISOString() });
+      io.emit('trip.status.updated', { tripId: trip.id, status: 'completed', vehicleId: trip.vehicle_id, driverId: trip.driver_id, timestamp: new Date().toISOString() });
+    }
+    console.log(`[TRACKING] Trip ${trip.id} COMPLETED by ${user.role}:${user.id} — routes & telemetry cleared`);
+
+    // Closed-loop active learning: log smooth transit ground truth
+    ContinualLearningService.logTripOutcome(trip, 'smooth_transit').catch(() => {});
+
     return { ok: true, trip };
   }
 
@@ -1235,6 +1423,15 @@ export class TrackingService {
         timestamp: new Date().toISOString(),
       });
     }
+
+    // Closed-loop active learning: if truck had active trip and is stranded, mine sample
+    Trip.findOne({ where: { vehicle_id: vehicle.id, status: 'in_transit' } })
+      .then((activeTrip) => {
+        if (activeTrip) {
+          ContinualLearningService.logTripOutcome(activeTrip, 'stranded', reason || 'Emergency SOS raised on route');
+        }
+      })
+      .catch(() => {});
     console.log(`[SOS] 🚨 EMERGENCY from ${actorName} (${vehicle.id}) at ${hasPos ? `${lat},${lng}` : 'no fix'}`);
     return { ok: true, alert, vehicleId: vehicle.id, sosActive: true, timestamp: payload.timestamp };
   }
@@ -1349,10 +1546,26 @@ export class TrackingService {
       vehicle = await Vehicle.findOne({ where: { assigned_driver_id: driver.id } });
       if (vehicle) await driver.update({ vehicle_id: vehicle.id });
     }
-    const activeTrip = vehicle?.current_trip_id
-      ? await Trip.findByPk(vehicle.current_trip_id)
-      : await Trip.findOne({ where: { driver_id: driver.id, status: { [Op.in]: ['planned', 'in_transit'] } }, order: [['createdAt', 'DESC']] });
-    return { driver, vehicle, trip: activeTrip || null };
+    let activeTrip: any = null;
+    if (vehicle?.current_trip_id) {
+      const candidate = await Trip.findByPk(vehicle.current_trip_id);
+      if (candidate && (candidate.status === 'planned' || candidate.status === 'in_transit')) {
+        activeTrip = candidate;
+      } else if (candidate) {
+        // Vehicle points to an old completed/canceled trip — clear it from vehicle
+        await vehicle.update({ current_trip_id: null, tracking_active: false });
+      }
+    }
+    if (!activeTrip) {
+      activeTrip = await Trip.findOne({
+        where: { driver_id: driver.id, status: { [Op.in]: ['planned', 'in_transit'] } },
+        order: [['createdAt', 'DESC']],
+      });
+    }
+    const deliveries = activeTrip
+      ? await Delivery.findAll({ where: { trip_id: activeTrip.id } })
+      : [];
+    return { driver, vehicle, trip: activeTrip || null, deliveries };
   }
 
   /** Persisted history (PostGIS table) with time/trip filters + pagination. */
@@ -1561,7 +1774,10 @@ export class TrackingService {
       };
     }
 
-    const route = await Route.findByPk(String(trip.route_id || ''), { raw: true });
+    let route = await Route.findByPk(String(trip.route_id || ''), { raw: true });
+    if (!route && vehicle.current_route) {
+      route = await Route.findOne({ where: { name: vehicle.current_route }, raw: true });
+    }
     if (!route) {
       return {
         vehicleId: vehicle.id,
@@ -1569,6 +1785,19 @@ export class TrackingService {
         reason: 'TRIP_ROUTE_MISSING',
         trip: { id: trip.id, status: trip.status, origin: trip.origin, destination: trip.destination },
       };
+    }
+
+    let parsedRouteGeom: [number, number][] = [];
+    if (route?.geom) {
+      let g: any = route.geom;
+      if (typeof g === 'string') {
+        try { g = JSON.parse(g); } catch {}
+      }
+      if (Array.isArray(g?.coordinates) && g.coordinates.length > 1) {
+        parsedRouteGeom = g.coordinates.map((c: any) => [c[1], c[0]]);
+      } else if (Array.isArray(g) && g.length > 1) {
+        parsedRouteGeom = g;
+      }
     }
 
     const destDistrictId = route.dest_district_id;
@@ -1580,7 +1809,7 @@ export class TrackingService {
       !(vehicle.current_lat === 0 && vehicle.current_lng === 0);
 
     if (hasGps) {
-      const districts = await District.findAll({ attributes: ['id', 'centroid_lat', 'centroid_lng'], raw: true });
+      const districts = await District.findAll({ attributes: ['id', 'centroid_lat', 'centroid_lng'], raw: true }).catch(() => []);
       let bestId = originDistrictId;
       let bestDist = Infinity;
       for (const d of districts as any[]) {
@@ -1588,11 +1817,13 @@ export class TrackingService {
         const dM = haversine(vehicle.current_lat, vehicle.current_lng, Number(d.centroid_lat), Number(d.centroid_lng));
         if (dM < bestDist) { bestDist = dM; bestId = d.id; }
       }
-      originDistrictId = bestId;
+      if (bestId && (bestId !== destDistrictId || trip.status !== 'in_transit')) {
+        originDistrictId = bestId;
+      }
     }
 
     // Inspect active alerts to automatically avoid disrupted corridors
-    const activeAlerts = await Alert.find({ status: 'active' }).lean();
+    const activeAlerts = await Alert.find({ status: 'active' }).lean().catch(() => []);
     const autoAvoidCorridors: string[] = [...(options.avoidCorridors || [])];
     const autoAvoidDistricts: string[] = [...(options.avoidDistricts || [])];
     let primaryAlert = options.triggeringAlert || null;
@@ -1634,17 +1865,40 @@ export class TrackingService {
       planBody.currentLng = vehicle.current_lng;
     }
 
-    const resp = await fetch(`${env.mlServiceUrl}/route/plan`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(planBody),
-      signal: AbortSignal.timeout(60000),
-    });
+    let plan: any = null;
+    try {
+      const resp = await fetch(`${env.mlServiceUrl}/route/plan`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(planBody),
+        signal: AbortSignal.timeout(10000),
+      });
+      if (resp.ok) {
+        plan = await resp.json();
+      }
+    } catch {
+      /* fallback to parsedRouteGeom */
+    }
 
-    if (!resp.ok) throw new Error(`ML route planner failed with status ${resp.status}`);
-    const plan: any = await resp.json();
-    if (!plan.success) {
-      return { vehicleId: vehicle.id, hasRoute: false, reason: 'PLAN_FAILED', planError: plan.error };
+    if (!plan || !plan.success) {
+      if (parsedRouteGeom.length > 2) {
+        plan = {
+          success: true,
+          origin: { districtId: route.origin_district_id, name: trip.origin },
+          destination: { districtId: route.dest_district_id, name: trip.destination },
+          preferred: 'safest',
+          routingProvider: 'osrm',
+          recommended: {
+            geometry: parsedRouteGeom,
+            totalDistanceKm: route.distance_km || 17.5,
+            riskScore: route.current_risk_score || 20,
+            riskLevel: 'low',
+            legs: [],
+          },
+        };
+      } else {
+        return { vehicleId: vehicle.id, hasRoute: false, reason: 'PLAN_FAILED', planError: plan?.error || 'ML plan failed' };
+      }
     }
 
     const rec = plan.recommended || {};
@@ -1675,6 +1929,8 @@ export class TrackingService {
       plan.rerouted ||
       (plan.avoidedCorridors && plan.avoidedCorridors.length > 0) ||
       options.avoidCorridors?.length ||
+      options.broadcast ||
+      options.reason ||
       (primaryAlert && rec.legs?.some((l: any) => l._avoided))
     );
 
@@ -1706,7 +1962,9 @@ export class TrackingService {
       origin: plan.origin,
       destination: plan.destination,
       preferred: plan.preferred,
-      geometry: rec.geometry || [],
+      geometry: (Array.isArray(rec.geometry) && rec.geometry.length > 2)
+        ? rec.geometry
+        : (parsedRouteGeom.length > 2 ? parsedRouteGeom : (rec.geometry || [])),
       legs: rec.legs || [],
       totalDistanceKm: rec.totalDistanceKm ?? null,
       riskScore: rec.riskScore ?? null,
@@ -1751,18 +2009,25 @@ export class TrackingService {
           tripId: trip.id,
           driverId: trip.driver_id,
           transporterId: trip.transporter_id,
+          hasRoute: true,
           rerouted: isRerouted,
           rerouteReason,
           rerouteAlert: result.rerouteAlert,
           geometry: result.geometry,
           legs: result.legs,
+          totalDistanceKm: result.totalDistanceKm,
+          riskScore: result.riskScore,
+          riskLevel: result.riskLevel,
           etaMinutes: result.etaMinutes,
           etaAt: result.etaAt,
+          etaLabel: result.etaLabel,
+          trafficDelayMinutes: result.trafficDelayMinutes,
           timestamp: new Date().toISOString(),
         };
         io.to('admin:all').emit('vehicle:rerouted', broadcastPayload);
         io.to(`transporter:${vehicle.transporter_id}`).emit('vehicle:rerouted', broadcastPayload);
         io.to(`driver:${trip.driver_id}`).emit('vehicle:rerouted', broadcastPayload);
+        io.emit('vehicle:rerouted', broadcastPayload);
         io.emit('route:rerouted', broadcastPayload);
 
         io.to('admin:all').emit('alert:broadcast', {

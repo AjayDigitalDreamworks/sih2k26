@@ -22,6 +22,9 @@ import {
   AuditLog,
 } from '../../models/mongo';
 import { TrackingService } from '../tracking/tracking.service';
+import { getSocketServer } from '../../sockets/socket.gateway';
+import { notifyRiskRecalculation } from '../../utils/mlRiskTrigger';
+import { ContinualLearningService } from '../ml-proxy/continual-learning.service';
 
 const EVIDENCE_DIR = path.join(__dirname, '../../../uploads/field-evidence');
 if (!fs.existsSync(EVIDENCE_DIR)) {
@@ -346,6 +349,19 @@ export class FieldOfficerController {
         });
       } catch {}
 
+      // Broadcast task update via WebSockets
+      const io = getSocketServer();
+      if (io) {
+        io.emit('field_task:updated', {
+          taskId: task.id,
+          status: targetStatus,
+          assignedOfficerId: task.assigned_officer_id,
+          distanceMeters,
+          proximityWarning,
+          updatedAt: task.updatedAt,
+        });
+      }
+
       return sendSuccess(
         res,
         {
@@ -396,16 +412,51 @@ export class FieldOfficerController {
       const officerId = req.user.id;
       const verificationId = `VER-${Date.now()}-${uuidv4().substring(0, 6)}`;
 
+      // Normalize enum values to avoid PostgreSQL ENUM constraint mismatch
+      const validResults = ['CONFIRMED', 'PARTIALLY_CONFIRMED', 'NOT_FOUND', 'DIFFERENT_ISSUE', 'UNSAFE_TO_VERIFY', 'CANNOT_VERIFY'];
+      const resUpper = String(verification_result || 'CONFIRMED').toUpperCase();
+      const normResult = validResults.includes(resUpper) ? resUpper : 'CONFIRMED';
+
+      const validSeverities = ['LOW', 'MEDIUM', 'HIGH', 'CRITICAL'];
+      const sevUpper = String(observed_severity || 'MEDIUM').toUpperCase();
+      const normSeverity = validSeverities.includes(sevUpper) ? sevUpper : 'MEDIUM';
+
+      const validPassabilities = ['PASSABLE', 'PARTIALLY_BLOCKED', 'SINGLE_LANE_ONLY', 'IMPASSABLE_4W', 'IMPASSABLE_ALL'];
+      const passUpper = String(road_passability || 'PASSABLE').toUpperCase();
+      const normPassability = validPassabilities.includes(passUpper)
+        ? passUpper
+        : passUpper === 'CLOSED'
+        ? 'IMPASSABLE_ALL'
+        : 'PARTIALLY_BLOCKED';
+
+      const validSafetyStatuses = ['SAFE', 'CAUTION_REQUIRED', 'HIGH_DANGER', 'EVACUATE'];
+      const safetyUpper = String(safety_status || 'SAFE').toUpperCase();
+      const normSafetyStatus = validSafetyStatuses.includes(safetyUpper)
+        ? safetyUpper
+        : safetyUpper === 'CAUTION'
+        ? 'CAUTION_REQUIRED'
+        : 'SAFE';
+
+      const validActions = ['NONE', 'ROUTE_DIVERSION', 'TEMPORARY_CLOSURE', 'EMERGENCY_REPAIR', 'STRUCTURAL_INSPECTION'];
+      const actUpper = String(action_recommended || 'NONE').toUpperCase();
+      const normAction = validActions.includes(actUpper)
+        ? actUpper
+        : actUpper.includes('CLOSURE')
+        ? 'TEMPORARY_CLOSURE'
+        : actUpper.includes('ROUTE') || actUpper.includes('REROUTE')
+        ? 'ROUTE_DIVERSION'
+        : 'EMERGENCY_REPAIR';
+
       // Create Verification record
       const verification = await FieldVerification.create({
         id: verificationId,
         task_id: task.id,
         officer_id: officerId,
-        verification_result,
-        observed_severity,
-        road_passability,
-        safety_status,
-        action_recommended,
+        verification_result: normResult as any,
+        observed_severity: normSeverity as any,
+        road_passability: normPassability as any,
+        safety_status: normSafetyStatus as any,
+        action_recommended: normAction as any,
         observation_notes,
         unsafe_reason,
         latitude: parseFloat(String(latitude)),
@@ -417,13 +468,27 @@ export class FieldOfficerController {
       // Link any media attachments
       if (Array.isArray(photos) && photos.length > 0) {
         for (const photo of photos) {
-          if (photo.file_path) {
+          let filePath = photo.file_path || photo.url || (typeof photo === 'string' ? photo : null);
+          if (filePath && filePath.startsWith('data:image/')) {
+            const matches = filePath.match(/^data:([A-Za-z-+\/]+);base64,(.+)$/);
+            if (matches && matches.length === 3) {
+              const mimeType = matches[1];
+              const buffer = Buffer.from(matches[2], 'base64');
+              const uploadRes = await uploadImageToCloudinary(buffer, {
+                folder: 'raahi/field-officer',
+                filename: `fo-verification-${Date.now()}`,
+                mimetype: mimeType,
+              });
+              filePath = uploadRes.url;
+            }
+          }
+          if (filePath) {
             await FieldMedia.create({
               id: `MED-${Date.now()}-${uuidv4().substring(0, 6)}`,
               task_id: task.id,
               verification_id: verification.id,
-              file_path: photo.file_path,
-              file_name: photo.file_name || path.basename(photo.file_path),
+              file_path: filePath,
+              file_name: photo.file_name || path.basename(filePath),
               mime_type: photo.mime_type || 'image/jpeg',
               file_size: photo.file_size || 0,
               caption: photo.caption || null,
@@ -443,25 +508,33 @@ export class FieldOfficerController {
 
       // If road is impassable or severely hazardous, update linked Alert or Road
       const isRoadImpassable =
-        road_passability === 'IMPASSABLE_ALL' ||
-        road_passability === 'IMPASSABLE_4W' ||
-        safety_status === 'HIGH_DANGER' ||
-        safety_status === 'EVACUATE';
+        normPassability === 'IMPASSABLE_ALL' ||
+        normPassability === 'IMPASSABLE_4W' ||
+        normPassability === 'PARTIALLY_BLOCKED' ||
+        normPassability === 'SINGLE_LANE_ONLY' ||
+        normSafetyStatus === 'HIGH_DANGER' ||
+        normSafetyStatus === 'EVACUATE' ||
+        normSafetyStatus === 'CAUTION_REQUIRED' ||
+        normSeverity === 'HIGH' ||
+        normSeverity === 'CRITICAL' ||
+        normResult === 'CONFIRMED';
 
+      let targetAlert: any = null;
       if (task.alert_id) {
         try {
-          await MongoAlert.findOneAndUpdate(
+          targetAlert = await MongoAlert.findOneAndUpdate(
             { id: task.alert_id },
             {
               status: isRoadImpassable ? 'active' : 'resolved',
               message: `[VERIFIED BY FIELD OFFICER] ${observation_notes || verification_result}. Passability: ${road_passability}. Safety: ${safety_status}.`,
-            }
+            },
+            { new: true }
           );
         } catch {}
       } else if (isRoadImpassable) {
         // Create emergency Alert in MongoDB so transporters and drivers receive it immediately
         try {
-          const newAlert = await MongoAlert.create({
+          targetAlert = await MongoAlert.create({
             id: `ALT-VER-${Date.now()}`,
             title: `CRITICAL: ${task.title} (Field Verified)`,
             type: task.issue_type.toLowerCase(),
@@ -474,8 +547,38 @@ export class FieldOfficerController {
             channel: 'app',
             status: 'active',
           });
-          TrackingService.evaluateDynamicReroutesForAlert(newAlert).catch(() => {});
         } catch {}
+      }
+
+      // 1. Broadcast alert & verification event via WebSockets to Transporter, Driver, and Authorities
+      const io = getSocketServer();
+      if (io) {
+        if (targetAlert) {
+          const alertPayload = targetAlert.toObject ? targetAlert.toObject() : targetAlert;
+          io.emit('alert:created', alertPayload);
+          io.to('admin:all').emit('alert:created', alertPayload);
+          io.to('transporters').emit('alert:created', alertPayload);
+          io.to('drivers').emit('alert:created', alertPayload);
+        }
+        io.emit('field_task:verified', {
+          taskId: task.id,
+          title: task.title,
+          verificationResult: verification_result,
+          roadPassability: road_passability,
+          safetyStatus: safety_status,
+          officerId,
+          verifiedAt: new Date(),
+        });
+      }
+
+      // 2. Trigger ML risk recalculation for corridor update
+      try {
+        notifyRiskRecalculation(`Field officer verification for ${task.title} (${verification_result}, ${road_passability})`);
+      } catch {}
+
+      // 3. If road is impassable, trigger dynamic rerouting for active in-transit vehicles
+      if (isRoadImpassable && targetAlert) {
+        TrackingService.evaluateDynamicReroutesForAlert(targetAlert).catch(() => {});
       }
 
       // Log in Mongo AuditLog
@@ -560,6 +663,25 @@ export class FieldOfficerController {
       const assignedDistrict = district_id || req.user.districtId || 'kamrup';
       const reportId = `FR-${Date.now()}-${uuidv4().substring(0, 6)}`;
 
+      // Normalize enum values to avoid PostgreSQL ENUM constraint mismatch
+      const validSeverities = ['LOW', 'MEDIUM', 'HIGH', 'CRITICAL'];
+      const sevUpper = String(severity || 'MEDIUM').toUpperCase();
+      const normSeverity = validSeverities.includes(sevUpper) ? (sevUpper as any) : 'MEDIUM';
+
+      const validRoadStatuses = ['OPEN', 'PARTIALLY_BLOCKED', 'CLOSED', 'DANGEROUS', 'UNKNOWN'];
+      const roadUpper = String(road_status || 'OPEN').toUpperCase();
+      const normRoadStatus = validRoadStatuses.includes(roadUpper)
+        ? (roadUpper as any)
+        : roadUpper === 'PASSABLE'
+        ? 'OPEN'
+        : roadUpper === 'BLOCKED'
+        ? 'CLOSED'
+        : 'OPEN';
+
+      const validSafetyStatuses = ['SAFE', 'CAUTION_REQUIRED', 'HIGH_DANGER', 'EVACUATE'];
+      const safetyUpper = String(safety_status || 'SAFE').toUpperCase();
+      const normSafetyStatus = validSafetyStatuses.includes(safetyUpper) ? (safetyUpper as any) : 'SAFE';
+
       // 1. Create in PostgreSQL
       const pgReport = await FieldReportPostgres.create({
         id: reportId,
@@ -567,29 +689,43 @@ export class FieldOfficerController {
         officer_id: officerId,
         district_id: assignedDistrict,
         issue_type,
-        severity,
-        road_status,
-        safety_status,
+        severity: normSeverity,
+        road_status: normRoadStatus,
+        safety_status: normSafetyStatus,
         immediate_action_required: Boolean(immediate_action_required),
         recommended_actions: recommended_actions || null,
         description,
         latitude: parseFloat(String(latitude)),
         longitude: parseFloat(String(longitude)),
-        accuracy_m: accuracy_m != null ? parseFloat(String(accuracy_m)) : null,
+        accuracy_m: accuracy_m ? parseFloat(String(accuracy_m)) : null,
         status: 'SUBMITTED',
-        source: 'FIELD_OFFICER_WEB',
+        source: 'FIELD_OFFICER_APP',
       });
 
       // 2. Link media
       const savedMedia: any[] = [];
       if (Array.isArray(photos) && photos.length > 0) {
         for (const photo of photos) {
-          if (photo.file_path) {
+          let filePath = photo.file_path || photo.url || (typeof photo === 'string' ? photo : null);
+          if (filePath && filePath.startsWith('data:image/')) {
+            const matches = filePath.match(/^data:([A-Za-z-+\/]+);base64,(.+)$/);
+            if (matches && matches.length === 3) {
+              const mimeType = matches[1];
+              const buffer = Buffer.from(matches[2], 'base64');
+              const uploadRes = await uploadImageToCloudinary(buffer, {
+                folder: 'raahi/field-officer',
+                filename: `fo-report-${Date.now()}`,
+                mimetype: mimeType,
+              });
+              filePath = uploadRes.url;
+            }
+          }
+          if (filePath) {
             const media = await FieldMedia.create({
               id: `MED-${Date.now()}-${uuidv4().substring(0, 6)}`,
               report_id: pgReport.id,
-              file_path: photo.file_path,
-              file_name: photo.file_name || path.basename(photo.file_path),
+              file_path: filePath,
+              file_name: photo.file_name || path.basename(filePath),
               mime_type: photo.mime_type || 'image/jpeg',
               file_size: photo.file_size || 0,
               caption: photo.caption || null,
@@ -637,6 +773,72 @@ export class FieldOfficerController {
           notes: `Direct ground-truth report: ${description}`,
         });
       } catch {}
+
+      // 5. If road is obstructed or severity is high, create live Alert & broadcast
+      let createdAlert: any = null;
+      if (normRoadStatus === 'CLOSED' || normRoadStatus === 'PARTIALLY_BLOCKED' || normSeverity === 'HIGH' || normSeverity === 'CRITICAL') {
+        try {
+          createdAlert = await MongoAlert.create({
+            id: `ALT-REP-${Date.now()}`,
+            title: `HAZARD: ${issue_type} at ${assignedDistrict}`,
+            type: issue_type.toLowerCase(),
+            severity: normSeverity === 'CRITICAL' ? 'Critical' : normSeverity === 'HIGH' ? 'High' : 'Medium',
+            severityClass: normSeverity.toLowerCase(),
+            districtId: assignedDistrict,
+            location: `${latitude.toFixed(4)}, ${longitude.toFixed(4)} (${assignedDistrict})`,
+            time: new Date().toLocaleTimeString(),
+            message: `Field reported disruption: ${description}. Road Status: ${normRoadStatus}. Immediate Action: ${immediate_action_required ? 'YES' : 'NO'}.`,
+            channel: 'app',
+            status: 'active',
+          });
+        } catch {}
+      }
+
+      // Broadcast report & alert to Transporters, Drivers, and Admin
+      const io = getSocketServer();
+      if (io) {
+        if (createdAlert) {
+          const alertPayload = createdAlert.toObject ? createdAlert.toObject() : createdAlert;
+          io.emit('alert:created', alertPayload);
+          io.to('admin:all').emit('alert:created', alertPayload);
+          io.to('transporters').emit('alert:created', alertPayload);
+          io.to('drivers').emit('alert:created', alertPayload);
+        }
+        io.emit('field_report:created', {
+          id: pgReport.id,
+          title: `${issue_type} at ${assignedDistrict}`,
+          description,
+          issueType: issue_type,
+          severity: normSeverity,
+          roadStatus: normRoadStatus,
+          districtId: assignedDistrict,
+          latitude,
+          longitude,
+          createdAt: pgReport.createdAt,
+        });
+      }
+
+      // Trigger ML risk recalculation
+      try {
+        notifyRiskRecalculation(`Field officer report: ${issue_type} in ${assignedDistrict} (${normRoadStatus})`);
+      } catch {}
+
+      // Closed-loop active learning: mine verified disruption for continual learning
+      ContinualLearningService.mineFieldReportIncident({
+        id: pgReport.id,
+        type: issue_type,
+        districtId: assignedDistrict,
+        priority: severity,
+        latitude,
+        longitude,
+        roadStatus: normRoadStatus,
+        description,
+      }).catch(() => {});
+
+      // If road is impassable, trigger dynamic rerouting for active in-transit trucks
+      if ((normRoadStatus === 'CLOSED' || normSeverity === 'CRITICAL') && createdAlert) {
+        TrackingService.evaluateDynamicReroutesForAlert(createdAlert).catch(() => {});
+      }
 
       // Log in Mongo AuditLog
       try {
@@ -830,6 +1032,7 @@ export class FieldOfficerController {
       if ((req as any).file) {
         const file = (req as any).file;
         const uploadRes = await uploadImageToCloudinary(file.path, {
+          folder: 'raahi/field-officer',
           filename: file.originalname,
           mimetype: file.mimetype,
         });
@@ -863,15 +1066,16 @@ export class FieldOfficerController {
           buffer = Buffer.from(image, 'base64');
         }
 
-        const allowedMimes = ['image/jpeg', 'image/png', 'image/webp', 'image/jpg'];
+        const allowedMimes = ['image/jpeg', 'image/png', 'image/webp', 'image/jpg', 'image/gif'];
         if (!allowedMimes.includes(mimeType)) {
-          return sendError(res, `Unsupported image type: ${mimeType}. Allowed: JPEG, PNG, WebP`, 400);
+          return sendError(res, `Unsupported image type: ${mimeType}. Allowed: JPEG, PNG, WebP, GIF`, 400);
         }
 
         const ext = mimeType.split('/')[1] === 'jpeg' ? 'jpg' : mimeType.split('/')[1];
         const generatedFilename = `evidence-${Date.now()}-${uuidv4().substring(0, 8)}.${ext}`;
 
         const uploadRes = await uploadImageToCloudinary(buffer, {
+          folder: 'raahi/field-officer',
           filename: fileName || generatedFilename,
           mimetype: mimeType,
         });
@@ -969,6 +1173,17 @@ export class FieldOfficerController {
                 description: payload.description,
                 coordinates: { lat: payload.latitude, lng: payload.longitude },
               });
+
+              // Closed-loop continual learning
+              ContinualLearningService.mineFieldReportIncident({
+                id: reportId,
+                type: payload.issue_type,
+                districtId: assignedDistrict,
+                priority: payload.severity,
+                latitude: payload.latitude,
+                longitude: payload.longitude,
+                description: payload.description,
+              }).catch(() => {});
             } catch {}
 
             processed++;

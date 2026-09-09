@@ -3,15 +3,19 @@ import { CloudRain, Droplets, Wind, CloudSun, ChevronRight } from 'lucide-react'
 import { useApp } from '@/contexts/AppContext';
 
 export const WeatherCard = () => {
-  const { openModal, weather } = useApp();
+  const { setCurrentPage, weather } = useApp();
   const wx = weather || {};
 
   return (
     <div className="card" style={{ marginTop: '16px' }}>
       <div className="card-header" style={{ marginBottom: '12px' }}>
         <h2 className="card-title" style={{ margin: 0 }}>Weather Overview</h2>
-        <button className="card-link" onClick={() => openModal('support', { topic: 'Weather Forecast' })}>
-          <span>View Details</span><ChevronRight size={14} />
+        <button
+          className="card-link"
+          onClick={() => setCurrentPage('live-map')}
+          title="Open Live Weather Radar Map"
+        >
+          <span>Radar Map</span><ChevronRight size={14} />
         </button>
       </div>
       <div className="weather-card-inner">

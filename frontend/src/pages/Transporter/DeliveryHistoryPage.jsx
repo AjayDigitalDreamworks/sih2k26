@@ -250,7 +250,7 @@ export default function DeliveryHistoryPage() {
                 <Download className="w-3.5 h-3.5 text-slate-500" /> Export CSV
               </button>
               <div className="inline-flex items-center gap-2 px-4 py-2 rounded-full bg-white border border-slate-200/90 shadow-2xs text-xs font-bold text-slate-600">
-                <span className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse" /> Live · {deliveries.length} records
+                <span>{deliveries.length} records</span>
               </div>
             </div>
           </div>
@@ -270,9 +270,6 @@ export default function DeliveryHistoryPage() {
                 </div>
                 <div className="mt-3 pt-2.5 border-t border-slate-100 flex items-center justify-between text-[10px] font-bold">
                   <span className="text-slate-400">{card.sub}</span>
-                  <span className="inline-flex items-center gap-1 text-emerald-600 bg-emerald-50 border border-emerald-100 px-1.5 py-0.5 rounded-full">
-                    <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse" /> LIVE
-                  </span>
                 </div>
               </div>
             ))}

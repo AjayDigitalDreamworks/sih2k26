@@ -30,7 +30,7 @@ const COMMODITY_LABEL = {
   medicine: 'Medicine / Relief',
   food: 'Food / Supplies',
   agri: 'Agricultural',
-  fuel: 'Fuel',
+  industrial: 'Industrial Equipment',
   construction: 'Construction',
   general: 'General Cargo',
 };
@@ -297,11 +297,12 @@ export default function MyConsignments() {
                   Loading consignments…
                 </div>
               ) : paginatedConsignments.length > 0 ? (
-                paginatedConsignments.map((item) => (
+                paginatedConsignments.map((item, idx) => (
                   <ConsignmentRow
                     key={item.id}
                     item={item}
                     consignment={item}
+                    rowNumber={(currentPage - 1) * pageSize + idx + 1}
                     onViewDetails={(c) => setSelectedConsignment(c)}
                   />
                 ))

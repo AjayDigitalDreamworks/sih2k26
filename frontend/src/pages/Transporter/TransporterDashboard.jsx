@@ -1,6 +1,7 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import TransporterSidebar from '../../components/transporter/TransporterSidebar';
 import TransporterHeader from '../../components/transporter/TransporterHeader';
+import TransporterOperationsWorkflow from '../../components/transporter/TransporterOperationsWorkflow';
 import TransporterKPIs from '../../components/transporter/TransporterKPIs';
 import LiveTrackingMap from '../../components/transporter/LiveTrackingMap';
 import AlertsPanel from '../../components/transporter/AlertsPanel';
@@ -10,10 +11,59 @@ import TopRoutesList from '../../components/transporter/TopRoutesList';
 import RecentConsignmentsTable from '../../components/transporter/RecentConsignmentsTable';
 import TransporterFooter from '../../components/transporter/TransporterFooter';
 import NewConsignmentModal from '../../components/consignments/NewConsignmentModal';
+import FleetHealthPulseBar from '../../components/transporter/FleetHealthPulseBar';
+import ActionableHazardBanner from '../../components/transporter/ActionableHazardBanner';
+import DynamicRerouteModal from '../../components/transporter/DynamicRerouteModal';
+import ApiClient from '../../lib/api';
+import { subscribeToTripUpdates, subscribeToRouteCleared } from '../../lib/socket';
 
 export default function TransporterDashboard() {
   const [sidebarOpen, setSidebarOpen] = useState(false);
   const [showNewModal, setShowNewModal] = useState(false);
+  const [showRerouteModal, setShowRerouteModal] = useState(false);
+  const [vehicles, setVehicles] = useState([]);
+  const [alerts, setAlerts] = useState([]);
+  const [fleetFilter, setFleetFilter] = useState('all');
+  const mapSectionRef = useRef(null);
+  const alertsSectionRef = useRef(null);
+
+  const loadVehicles = async () => {
+    try {
+      const res = await ApiClient.getTransporterVehicles();
+      if (res?.success && Array.isArray(res.data)) {
+        setVehicles(res.data);
+      }
+    } catch (e) {
+      console.warn('Transporter dashboard vehicles load failed:', e);
+    }
+  };
+
+  const loadAlerts = async () => {
+    try {
+      const res = await ApiClient.getTransporterAlerts();
+      if (res?.success && Array.isArray(res.data)) {
+        setAlerts(res.data);
+      }
+    } catch (e) {
+      console.warn('Transporter dashboard alerts load failed:', e);
+    }
+  };
+
+  useEffect(() => {
+    loadVehicles();
+    loadAlerts();
+    const unsubTrip = subscribeToTripUpdates(() => {
+      loadVehicles();
+    });
+    const unsubClear = subscribeToRouteCleared(() => {
+      loadVehicles();
+      loadAlerts();
+    });
+    return () => {
+      unsubTrip();
+      unsubClear();
+    };
+  }, []);
 
   return (
     <div className="min-h-screen bg-[#F8FAFC] flex selection:bg-emerald-500 selection:text-white font-sans antialiased text-slate-900">
@@ -34,6 +84,28 @@ export default function TransporterDashboard() {
 
         {/* Transporter Dashboard Content */}
         <main className="flex-1 p-4 sm:p-5 lg:p-6 space-y-5">
+          {/* Fleet Health Pulse Bar — 10-Second Morning Check */}
+          <section>
+            <FleetHealthPulseBar
+              vehicles={vehicles}
+              activeFilter={fleetFilter}
+              onSelectFilter={setFleetFilter}
+              onQuickDispatch={() => setShowNewModal(true)}
+              onFocusHazard={() => {
+                mapSectionRef.current?.scrollIntoView({ behavior: 'smooth', block: 'center' });
+              }}
+            />
+          </section>
+
+          {/* Actionable 1-Click Hazard Intervention Banner */}
+          <section>
+            <ActionableHazardBanner
+              alerts={alerts}
+              vehicles={vehicles}
+              onRerouted={loadVehicles}
+            />
+          </section>
+
           {/* Top 5 Horizontal KPI Cards */}
           <section>
             <TransporterKPIs />
@@ -42,12 +114,12 @@ export default function TransporterDashboard() {
           {/* Main Dashboard Row: Live Tracking Map + Alerts */}
           <section className="grid grid-cols-1 lg:grid-cols-12 gap-5 items-stretch">
             {/* Live Tracking Map (8 cols on lg ~ 68%) */}
-            <div className="lg:col-span-8 h-full">
+            <div ref={mapSectionRef} className="lg:col-span-8 h-full">
               <LiveTrackingMap />
             </div>
 
             {/* Alerts & Notifications (4 cols on lg ~ 32%) */}
-            <div className="lg:col-span-4 h-full">
+            <div ref={alertsSectionRef} className="lg:col-span-4 h-full">
               <AlertsPanel />
             </div>
           </section>
@@ -70,6 +142,20 @@ export default function TransporterDashboard() {
             <RecentConsignmentsTable />
           </section>
 
+          {/* End-to-End Transporter Operations Lifecycle Pipeline Banner (Bottom of Page) */}
+          <section>
+            <TransporterOperationsWorkflow
+              onNewTrip={() => setShowNewModal(true)}
+              onOpenRerouteModal={() => setShowRerouteModal(true)}
+              onFocusMap={() => {
+                mapSectionRef.current?.scrollIntoView({ behavior: 'smooth', block: 'center' });
+              }}
+              onFocusAlerts={() => {
+                alertsSectionRef.current?.scrollIntoView({ behavior: 'smooth', block: 'center' });
+              }}
+            />
+          </section>
+
           {/* Page Footer */}
           <TransporterFooter />
         </main>
@@ -79,7 +165,19 @@ export default function TransporterDashboard() {
       <NewConsignmentModal
         isOpen={showNewModal}
         onClose={() => setShowNewModal(false)}
-        onConsignmentAdded={() => {}}
+        onConsignmentAdded={() => {
+          loadVehicles();
+        }}
+      />
+
+      {/* Dynamic Route Recalculation Modal */}
+      <DynamicRerouteModal
+        isOpen={showRerouteModal}
+        onClose={() => setShowRerouteModal(false)}
+        vehicles={vehicles}
+        onRerouted={() => {
+          loadVehicles();
+        }}
       />
     </div>
   );

@@ -14,7 +14,7 @@ Integrations: Open-Meteo (free fallback), OSRM (free routing)
 from contextlib import asynccontextmanager
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
-from app.routers import risk, disruption, route_suggestion, route_planner, realtime, alerts, pipeline, simulation
+from app.routers import risk, disruption, route_suggestion, route_planner, realtime, alerts, pipeline, simulation, continual_learning
 from app.services.config import APIConfig
 from app.engine.ml_inference import get_model_status
 
@@ -95,6 +95,7 @@ app.include_router(realtime.router)
 app.include_router(alerts.router)
 app.include_router(pipeline.router)
 app.include_router(simulation.router)
+app.include_router(continual_learning.router)
 
 
 @app.get("/health")
@@ -125,6 +126,12 @@ async def health_check():
         "mlModels": model_status.get("models_loaded", {}),
         "supportedRegions": list(APIConfig.NER_DISTRICTS.keys()),
         "endpoints": {
+            # Continual Learning & Active Feedback Loop
+            "continual_learning_status": "/continual-learning/status",
+            "continual_learning_retrain": "/continual-learning/retrain",
+            "continual_learning_history": "/continual-learning/history",
+            "continual_learning_drift": "/continual-learning/drift-check",
+
             # Risk Scoring (ML)
             "risk_scoring": "/risk/route-score",
             "live_risk_scoring": "/risk/route-score/live",

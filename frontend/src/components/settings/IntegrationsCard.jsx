@@ -38,9 +38,9 @@ export default function IntegrationsCard({ onToggleIntegration, onViewAll }) {
       connected: true,
     },
     {
-      id: 'fuel',
-      name: 'Fuel Card Partner',
-      description: 'Track fuel & expenses',
+      id: 'fastag',
+      name: 'FASTag Electronic Pass',
+      description: 'Automate plaza clearances & tolls',
       icon: CreditCard,
       iconColor: 'text-purple-600 bg-purple-50',
       connected: false,

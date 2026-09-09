@@ -308,7 +308,7 @@ export const ModalManager = () => {
                   <option value="Accident">Accident</option>
                   <option value="Road Block">Road Block</option>
                   <option value="Weather Issue">Weather Issue</option>
-                  <option value="Fuel Shortage">Fuel Shortage</option>
+                  <option value="Infrastructure Damage">Infrastructure Damage</option>
                   <option value="Vehicle Breakdown">Vehicle Breakdown</option>
                 </select>
               </div>
@@ -583,7 +583,7 @@ export const ModalManager = () => {
             <div style={{ padding: '24px', border: '2px dashed var(--border-strong)', borderRadius: 'var(--radius-md)', textAlign: 'center', backgroundColor: 'var(--bg-card-alt)' }}>
               <Download size={32} color="#059669" style={{ margin: '0 auto 8px auto' }} />
               <strong style={{ fontSize: '13px', display: 'block' }}>Export Full Regional Corridor Telemetry</strong>
-              <span style={{ fontSize: '11px', color: 'var(--text-muted)' }}>Includes SLA compliance, risk indices, and fuel metrics.</span>
+              <span style={{ fontSize: '11px', color: 'var(--text-muted)' }}>Includes SLA compliance, risk indices, and corridor transit metrics.</span>
             </div>
           </div>
 

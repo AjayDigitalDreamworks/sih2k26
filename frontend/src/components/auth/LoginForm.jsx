@@ -5,7 +5,6 @@ import { Mail, Lock, Eye, EyeOff, ArrowRight } from 'lucide-react';
 import { toast } from 'sonner';
 import { useAuth } from '@/contexts/AuthContext';
 import { useLang } from '@/contexts/LanguageContext';
-import LoginTypeTabs from './LoginTypeTabs';
 import SocialLoginButtons from './SocialLoginButtons';
 import SecurityNotice from './SecurityNotice';
 
@@ -15,7 +14,6 @@ export default function LoginForm() {
   const { login, isLoading } = useAuth();
   const { t } = useLang();
   
-  const [activeTab, setActiveTab] = useState('official');
   const [showPassword, setShowPassword] = useState(false);
   const [emailOrPhone, setEmailOrPhone] = useState('');
   const [password, setPassword] = useState('');
@@ -28,7 +26,7 @@ export default function LoginForm() {
       return;
     }
 
-    const result = await login(activeTab, emailOrPhone, password, rememberMe);
+    const result = await login('user', emailOrPhone, password, rememberMe);
     if (result.success) {
       toast.success(result.message);
       
@@ -80,10 +78,10 @@ export default function LoginForm() {
   };
 
   return (
-    <div className="w-full max-w-[490px] mx-auto bg-white rounded-3xl p-6 sm:p-8 lg:p-10 shadow-2xl border border-slate-100/90 relative z-20">
+    <div className="w-full max-w-[480px] mx-auto bg-white rounded-2xl sm:rounded-3xl p-5 sm:p-8 lg:p-10 shadow-xl sm:shadow-2xl border border-slate-100/90 relative z-20">
       {/* Top Scenic Logistics/Bridge Illustration */}
-      <div className="w-full flex items-center justify-center mb-4">
-        <svg viewBox="0 0 280 90" className="w-56 h-auto" fill="none" xmlns="http://www.w3.org/2000/svg">
+      <div className="w-full flex items-center justify-center mb-3 sm:mb-4">
+        <svg viewBox="0 0 280 90" className="w-40 sm:w-56 h-auto" fill="none" xmlns="http://www.w3.org/2000/svg">
           <path d="M40 70L80 20L120 70Z" fill="#E6F4EA" stroke="#A7D7B5" strokeWidth="1.2" />
           <path d="M90 70L145 12L200 70Z" fill="#F0FDF4" stroke="#86EFAC" strokeWidth="1.5" />
           <path d="M170 70L210 25L250 70Z" fill="#E6F4EA" stroke="#A7D7B5" strokeWidth="1.2" />
@@ -113,7 +111,7 @@ export default function LoginForm() {
       </div>
 
       {/* Header Heading */}
-      <div className="text-center mb-6">
+      <div className="text-center mb-5 sm:mb-6">
         <h2 className="text-2xl sm:text-3xl font-black text-[#0B1E36] tracking-tight">
           {t('auth.welcomeBack')}
         </h2>
@@ -122,9 +120,6 @@ export default function LoginForm() {
           <span className="font-extrabold text-emerald-600">Raahi</span>
         </p>
       </div>
-
-      {/* Login Role Tabs (User, Official, Operator) */}
-      <LoginTypeTabs activeTab={activeTab} setActiveTab={setActiveTab} />
 
       {/* Form Elements */}
       <form onSubmit={handleSubmit} className="space-y-4">
@@ -177,13 +172,13 @@ export default function LoginForm() {
         </div>
 
         {/* Remember Me & Forgot Password */}
-        <div className="flex items-center justify-between pt-0.5">
+        <div className="flex flex-wrap items-center justify-between gap-2 pt-0.5">
           <label className="flex items-center gap-2 cursor-pointer select-none">
             <input
               type="checkbox"
               checked={rememberMe}
               onChange={(e) => setRememberMe(e.target.checked)}
-              className="w-4 h-4 rounded text-emerald-600 focus:ring-emerald-500 border-slate-300 rounded cursor-pointer"
+              className="w-4 h-4 rounded text-emerald-600 focus:ring-emerald-500 border-slate-300 cursor-pointer"
             />
             <span className="text-xs text-slate-600 font-medium">{t('auth.rememberMe')}</span>
           </label>

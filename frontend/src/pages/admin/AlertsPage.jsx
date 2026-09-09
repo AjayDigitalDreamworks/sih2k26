@@ -120,6 +120,10 @@ export const AlertsPage = () => {
     });
 
   const allRows = [...mlRows, ...broadcastRows];
+  const highCount = allRows.filter((r) => sevGroup(r.severity) === 'High').length;
+  const medCount = allRows.filter((r) => sevGroup(r.severity) === 'Medium').length;
+  const lowCount = allRows.filter((r) => sevGroup(r.severity) === 'Low').length;
+
   const filtered = filterGroup === 'All'
     ? allRows
     : allRows.filter((r) => sevGroup(r.severity) === filterGroup);
@@ -144,18 +148,42 @@ export const AlertsPage = () => {
 
       {/* Filter Row */}
       <div className="card" style={{ padding: '12px 20px', display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', gap: '8px' }}>
-        <div style={{ display: 'flex', alignItems: 'center', gap: '12px', flexWrap: 'wrap' }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: '10px', flexWrap: 'wrap' }}>
           <span style={{ fontSize: '13px', fontWeight: 600, color: 'var(--text-muted)', display: 'flex', alignItems: 'center', gap: 4 }}>
             <Filter size={14} /> Filter Severity:
           </span>
-          {['All', 'High', 'Medium', 'Low'].map((g) => (
+          {[
+            { id: 'All', label: 'All Alerts', count: allRows.length, color: 'var(--text-main)' },
+            { id: 'High', label: 'Critical / High', count: highCount, color: '#EF4444' },
+            { id: 'Medium', label: 'Warning / Med', count: medCount, color: '#F59E0B' },
+            { id: 'Low', label: 'Advisory / Low', count: lowCount, color: '#10B981' },
+          ].map((item) => (
             <button
-              key={g}
-              onClick={() => setFilterGroup(g)}
-              className={`btn ${filterGroup === g ? 'btn-primary' : 'btn-outline'}`}
-              style={{ padding: '4px 12px', fontSize: '12px' }}
+              key={item.id}
+              onClick={() => setFilterGroup(item.id)}
+              className={`btn ${filterGroup === item.id ? 'btn-primary' : 'btn-outline'}`}
+              style={{
+                padding: '4px 12px',
+                fontSize: '12px',
+                display: 'inline-flex',
+                alignItems: 'center',
+                gap: '6px',
+                borderColor: filterGroup === item.id ? undefined : 'var(--border-color)',
+              }}
             >
-              {g}
+              <span>{item.label}</span>
+              <span
+                style={{
+                  background: filterGroup === item.id ? 'rgba(255,255,255,0.25)' : 'rgba(0,0,0,0.06)',
+                  color: filterGroup === item.id ? '#fff' : item.color,
+                  padding: '1px 6px',
+                  borderRadius: '10px',
+                  fontSize: '11px',
+                  fontWeight: 700,
+                }}
+              >
+                {item.count}
+              </span>
             </button>
           ))}
         </div>

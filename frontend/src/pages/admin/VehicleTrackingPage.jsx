@@ -140,7 +140,6 @@ export const VehicleTrackingPage = () => {
             </div>
             <div style={{ display: "flex", alignItems: "center", gap: "12px", fontSize: "12px" }}>
               <span style={{ fontWeight: 600 }}>Speed: {selectedVehicle.speed}</span>
-              <span style={{ fontWeight: 600 }}>Fuel: {selectedVehicle.fuel}</span>
               <span className={"status-badge " + selectedVehicle.statusClass}>{selectedVehicle.status}</span>
               <button
                 className="btn btn-primary"
@@ -168,13 +167,14 @@ export const VehicleTrackingPage = () => {
         </div>
       )}
 
-      <div style={{ display: "grid", gridTemplateColumns: "1.8fr 1.2fr", gap: "24px", marginBottom: "24px" }}>
+      {/* Expansive Full-Width Fleet Tracking Map */}
+      <div style={{ marginBottom: "24px", width: "100%" }}>
         <FleetTrackingMap selectedVehicleId={selectedVehicleId} onSelectVehicle={setSelectedVehicleId} />
-        <LiveVehiclesTable selectedVehicleId={selectedVehicleId} onSelectVehicle={setSelectedVehicleId} />
       </div>
 
-      {/* Trip end summary — real GPS stats of the selected vehicle's last trip */}
-      <div style={{ display: "grid", gridTemplateColumns: "1fr", gap: "24px", marginBottom: "24px" }}>
+      {/* Live Vehicles Table & Trip Summary side by side */}
+      <div style={{ display: "grid", gridTemplateColumns: "1.2fr 1fr", gap: "24px", marginBottom: "24px" }}>
+        <LiveVehiclesTable selectedVehicleId={selectedVehicleId} onSelectVehicle={setSelectedVehicleId} />
         <TripSummaryCard vehicleId={selectedVehicleId} />
       </div>
 

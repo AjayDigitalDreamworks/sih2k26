@@ -15,6 +15,8 @@ import {
   Clock,
   CheckCircle2,
   XCircle,
+  MapPin,
+  AlertTriangle,
 } from 'lucide-react';
 import StatusTimeline from './StatusTimeline';
 
@@ -27,7 +29,7 @@ const STATUS_BADGE = {
   cancelled: 'bg-rose-50 text-rose-700 border-rose-200/80',
 };
 
-export default function ConsignmentRow({ item, consignment, onViewDetails = () => {} }) {
+export default function ConsignmentRow({ item, consignment, rowNumber, onViewDetails = () => {} }) {
   const navigate = useNavigate();
   const rowItem = item || consignment;
   if (!rowItem) return null;
@@ -142,8 +144,13 @@ export default function ConsignmentRow({ item, consignment, onViewDetails = () =
 
   return (
     <div className="bg-white rounded-2xl border border-slate-200/80 shadow-2xs hover:shadow-xs transition-all p-4 sm:p-5 flex flex-col lg:flex-row items-stretch lg:items-center justify-between gap-4 sm:gap-6 overflow-hidden">
-      {/* 1. Left Thumbnail */}
-      <div className="w-full sm:w-24 h-20 sm:h-24 rounded-xl overflow-hidden flex-shrink-0 bg-gradient-to-br from-emerald-500/80 to-teal-600/80 border border-emerald-200 flex items-center justify-center text-white self-center sm:self-auto">
+      {/* 1. Left Thumbnail with row number */}
+      <div className="relative w-full sm:w-24 h-20 sm:h-24 rounded-xl overflow-hidden flex-shrink-0 bg-gradient-to-br from-emerald-500/80 to-teal-600/80 border border-emerald-200 flex items-center justify-center text-white self-center sm:self-auto">
+        {rowNumber != null && (
+          <span className="absolute top-1.5 left-1.5 bg-black/60 backdrop-blur-xs text-white text-[10px] font-black px-1.5 py-0.5 rounded-md shadow-xs">
+            #{rowNumber}
+          </span>
+        )}
         <Package className="w-8 h-8" />
       </div>
 
@@ -151,6 +158,11 @@ export default function ConsignmentRow({ item, consignment, onViewDetails = () =
       <div className="flex flex-col justify-between flex-1 min-w-[220px] max-w-[300px]">
         <div className="flex items-center gap-2">
           {getHeaderIcon()}
+          {rowNumber != null && (
+            <span className="text-[10px] font-black px-1.5 py-0.5 rounded bg-slate-100 text-slate-700 border border-slate-200">
+              #{rowNumber}
+            </span>
+          )}
           <span className="text-xs sm:text-sm font-black text-slate-900 tracking-tight">
             {id}
           </span>
@@ -252,20 +264,107 @@ export default function ConsignmentRow({ item, consignment, onViewDetails = () =
         )}
       </div>
 
-      {/* 6. Actions */}
+      {/* 6. Actions for every consignment status */}
       <div className="relative flex items-center justify-end gap-1.5 border-t lg:border-t-0 lg:border-l border-slate-100 pt-3 lg:pt-0 lg:pl-4">
+        {/* State: Pending -> Plan Route & Dispatch */}
         {statusType === 'pending' && (
           <button
             type="button"
             title="Plan Route & Dispatch"
             onClick={(e) => {
               e.stopPropagation();
-              navigate(`/transporter/route-planning?consignmentId=${encodeURIComponent(rowItem.id)}`);
+              const originParam = rowItem.raw?.origin_district_id || '';
+              const destParam = rowItem.raw?.dest_district_id || '';
+              const commodityParam = rowItem.cargoType || '';
+              const weightParam = rowItem.raw?.weight_kg || '';
+              navigate(
+                `/transporter/route-planning?consignmentId=${encodeURIComponent(rowItem.id)}&origin=${encodeURIComponent(originParam)}&dest=${encodeURIComponent(destParam)}&commodity=${encodeURIComponent(commodityParam)}&weight=${encodeURIComponent(weightParam)}`
+              );
             }}
-            className="px-2.5 py-1.5 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white text-[11px] font-bold flex items-center gap-1.5 shadow-sm shadow-emerald-600/20 transition-all cursor-pointer mr-1"
+            className="px-3 py-1.5 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white text-[11px] font-bold flex items-center gap-1.5 shadow-sm shadow-emerald-600/20 transition-all cursor-pointer mr-1"
           >
             <span>Plan Route</span>
             <ArrowRight className="w-3 h-3" />
+          </button>
+        )}
+
+        {/* State: In Transit -> Live Tracking & Mark Delivered */}
+        {(statusType === 'in_transit' || statusType === 'in-transit') && (
+          <div className="flex items-center gap-1 mr-1">
+            <button
+              type="button"
+              title="Track Live Vehicle on Map"
+              onClick={(e) => {
+                e.stopPropagation();
+                navigate('/transporter/live-tracking');
+              }}
+              className="px-2.5 py-1.5 rounded-xl bg-blue-600 hover:bg-blue-700 text-white text-[11px] font-bold flex items-center gap-1.5 shadow-sm shadow-blue-600/20 transition-all cursor-pointer"
+            >
+              <MapPin className="w-3 h-3" />
+              <span>Track Map</span>
+            </button>
+            {onMarkDelivered && (
+              <button
+                type="button"
+                title="Mark Shipment as Delivered"
+                onClick={(e) => {
+                  e.stopPropagation();
+                  onMarkDelivered(rowItem);
+                }}
+                className="px-2 py-1.5 rounded-xl bg-emerald-50 hover:bg-emerald-100 text-emerald-700 border border-emerald-200 text-[11px] font-bold flex items-center gap-1 transition-all cursor-pointer"
+              >
+                <CheckCircle2 className="w-3 h-3 text-emerald-600" />
+                <span className="hidden sm:inline">Delivered</span>
+              </button>
+            )}
+          </div>
+        )}
+
+        {/* State: Delayed -> Inspect Delay & Mark Delivered */}
+        {statusType === 'delayed' && (
+          <div className="flex items-center gap-1 mr-1">
+            <button
+              type="button"
+              title="Inspect Delay on Map"
+              onClick={(e) => {
+                e.stopPropagation();
+                navigate('/transporter/live-tracking');
+              }}
+              className="px-2.5 py-1.5 rounded-xl bg-amber-500 hover:bg-amber-600 text-slate-950 text-[11px] font-black flex items-center gap-1.5 shadow-sm shadow-amber-500/20 transition-all cursor-pointer"
+            >
+              <AlertTriangle className="w-3 h-3" />
+              <span>Inspect Delay</span>
+            </button>
+            {onMarkDelivered && (
+              <button
+                type="button"
+                title="Mark Shipment as Delivered"
+                onClick={(e) => {
+                  e.stopPropagation();
+                  onMarkDelivered(rowItem);
+                }}
+                className="px-2 py-1.5 rounded-xl bg-emerald-50 hover:bg-emerald-100 text-emerald-700 border border-emerald-200 text-[11px] font-bold flex items-center gap-1 transition-all cursor-pointer"
+              >
+                <CheckCircle2 className="w-3 h-3 text-emerald-600" />
+                <span className="hidden sm:inline">Delivered</span>
+              </button>
+            )}
+          </div>
+        )}
+
+        {/* State: Delivered -> View Summary */}
+        {statusType === 'delivered' && (
+          <button
+            type="button"
+            title="View Delivery Proof & Details"
+            onClick={(e) => {
+              e.stopPropagation();
+              onViewDetails(rowItem);
+            }}
+            className="px-2.5 py-1.5 rounded-xl bg-slate-100 hover:bg-slate-200 text-slate-700 text-[11px] font-bold flex items-center gap-1.5 transition-all cursor-pointer mr-1"
+          >
+            <Eye className="w-3 h-3 text-slate-500" />
+            <span>Summary</span>
           </button>
         )}
 

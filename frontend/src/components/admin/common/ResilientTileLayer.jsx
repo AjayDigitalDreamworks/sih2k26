@@ -1,20 +1,21 @@
 import React, { useState, useCallback } from 'react';
 import { TileLayer } from 'react-leaflet';
 
+const CARTO_VOYAGER = 'https://{s}.basemaps.cartocdn.com/rastertiles/voyager/{z}/{x}/{y}{r}.png';
 const OSM_FALLBACK = 'https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png';
 const OSM_ATTR = '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors';
 
 /**
- * ResilientTileLayer — renders a keyless tile provider and, if that provider
- * fails to serve tiles (blocked network, placeholder tiles, errors), falls
- * back to OpenStreetMap standard tiles so the map is never blank.
+ * ResilientTileLayer — renders a tile provider (Mappls, Esri, OSM) and, if that
+ * provider fails to serve tiles, seamlessly falls back to Carto Voyager / OSM
+ * so the map is always 100% resilient and never blank.
  */
 export const ResilientTileLayer = ({
   url = OSM_FALLBACK,
   attribution = OSM_ATTR,
   maxZoom = 19,
   maxNativeZoom,
-  fallbackUrl = OSM_FALLBACK,
+  fallbackUrl = CARTO_VOYAGER,
   fallbackAttribution = OSM_ATTR,
 }) => {
   const safeInitial = url || fallbackUrl || OSM_FALLBACK;
@@ -28,9 +29,6 @@ export const ResilientTileLayer = ({
     setFailCount(0);
   }, [url, fallbackUrl]);
 
-  // If the URL is an Esri service, ArcGIS tiles cap out at zoom 16 (or 17 for satellite, 15 for canvas) in North-East India.
-  // Setting maxNativeZoom prevents Leaflet from requesting non-existent tiles
-  // that return the "Map data not supported at this zoom level" watermark.
   const isEsri = Boolean(current && (current.includes('arcgisonline.com') || current.includes('esri')));
   const isSatellite = Boolean(isEsri && current.includes('World_Imagery'));
   const isCanvas = Boolean(isEsri && current.includes('Canvas'));
@@ -42,7 +40,9 @@ export const ResilientTileLayer = ({
   const onTileError = useCallback(() => {
     setFailCount((n) => {
       const next = n + 1;
-      if (next >= 4 && current !== fallbackUrl) setCurrent(fallbackUrl);
+      if (next >= 3 && current !== fallbackUrl) {
+        setCurrent(fallbackUrl || CARTO_VOYAGER);
+      }
       return next;
     });
   }, [current, fallbackUrl]);

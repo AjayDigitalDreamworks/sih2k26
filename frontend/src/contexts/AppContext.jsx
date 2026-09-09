@@ -21,7 +21,6 @@ export const mapVehicle = (v) => ({
   route: v.current_route || '',
   lat: v.current_lat ?? null,
   lng: v.current_lng ?? null,
-  fuel: `${v.fuel_percent ?? 0}%`,
   // Real-GPS live-tracking fields (server-computed from actual timestamps)
   liveStatus: v.live_status || null,
   lastGpsAt: v.last_gps_at || null,
@@ -276,18 +275,27 @@ export const AppProvider = ({ children, scope = 'admin' }) => {
   // Socket.io
   useEffect(() => {
     const unsubVehicles = subscribeToVehiclePositions((payload) => {
+      const vId = payload?.id || payload?.vehicleId;
+      if (!vId) return;
       setVehicles(prev => {
-        const idx = prev.findIndex(v => v.id === payload.id);
+        const idx = prev.findIndex(v => v.id === vId);
         if (idx >= 0) {
           const updated = [...prev];
-          updated[idx] = { ...updated[idx], lat: payload.lat, lng: payload.lng, speed: `${payload.speed} km/h`, fuel: `${payload.fuel}%`,
+          updated[idx] = {
+            ...updated[idx],
+            lat: payload.lat ?? updated[idx].lat,
+            lng: payload.lng ?? updated[idx].lng,
+            speed: payload.speed != null ? `${Math.round(payload.speed)} km/h` : updated[idx].speed,
+            speedNum: payload.speed != null ? payload.speed : updated[idx].speedNum,
             status: payload.status ? payload.status.charAt(0).toUpperCase() + payload.status.slice(1) : updated[idx].status,
             statusClass: payload.status || updated[idx].statusClass,
+            liveStatus: payload.liveStatus || 'LIVE',
             time: new Date(payload.timestamp || Date.now()).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
+            heading: payload.heading ?? updated[idx].heading,
           };
           return updated;
         }
-        return [payload, ...prev];
+        return [mapVehicle({ ...payload, id: vId }), ...prev];
       });
     });
 

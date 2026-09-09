@@ -1,23 +1,60 @@
 {
-  "mae": 2.614,
-  "rmse": 3.302,
-  "r2": 0.9402,
-  "level_accuracy": 0.938,
-  "f1_score": 0.938,
+  "mae": 2.728,
+  "rmse": 3.693,
+  "r2": 0.9294,
+  "level_accuracy": 0.9135,
+  "f1_score": 0.913,
   "feature_importance": {
-    "road_condition": 0.3212,
-    "landslide_probability": 0.237,
-    "historical_disruptions": 0.1677,
-    "bridge_condition": 0.1232,
-    "rainfall_24h_mm": 0.0351,
-    "flood_risk_level": 0.0342,
-    "congestion_level": 0.0315,
-    "river_proximity": 0.0161,
-    "slope_risk": 0.01,
-    "road_distance_km": 0.0081,
-    "elevation_m": 0.008,
-    "month": 0.0079
+    "road_condition": 0.3574,
+    "landslide_probability": 0.2248,
+    "historical_disruptions": 0.1384,
+    "bridge_condition": 0.0839,
+    "flood_risk_level": 0.0708,
+    "rainfall_24h_mm": 0.033,
+    "congestion_level": 0.0301,
+    "river_proximity": 0.0227,
+    "month": 0.0122,
+    "elevation_m": 0.012,
+    "slope_risk": 0.0092,
+    "road_distance_km": 0.0055
   },
-  "trained_at": "2026-09-02T13:40:04.998412",
-  "n_samples": 5000
+  "trained_at": "2026-09-09T09:50:33.718446",
+  "n_samples": 3002,
+  "continual_learning": {
+    "iteration": 1,
+    "timestamp": "2026-09-09T09:50:33.716444",
+    "total_samples": 3002,
+    "new_feedback_samples": 2,
+    "hard_false_negatives": 1,
+    "smooth_transits": 1,
+    "metrics": {
+      "mae": 2.728,
+      "rmse": 3.693,
+      "r2": 0.9294,
+      "level_accuracy": 0.9135,
+      "f1_score": 0.913
+    },
+    "top_features": [
+      [
+        "road_condition",
+        0.3573589622974396
+      ],
+      [
+        "landslide_probability",
+        0.2248493731021881
+      ],
+      [
+        "historical_disruptions",
+        0.13841447234153748
+      ],
+      [
+        "bridge_condition",
+        0.08392069488763809
+      ],
+      [
+        "flood_risk_level",
+        0.07081867754459381
+      ]
+    ]
+  }
 }

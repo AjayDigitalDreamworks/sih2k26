@@ -165,6 +165,21 @@ class MLModels:
             "all_loaded": all("loaded" in v for v in self.model_status.values()),
         }
 
+    def reload_risk_model(self) -> bool:
+        """Hot-reload risk model and scaler into memory after continual retraining."""
+        try:
+            risk_path = os.path.join(MODELS_DIR, "risk_model.joblib")
+            risk_scaler_path = os.path.join(MODELS_DIR, "risk_scaler.joblib")
+            if os.path.exists(risk_path) and os.path.exists(risk_scaler_path):
+                self.risk_model = joblib.load(risk_path)
+                self.risk_scaler = joblib.load(risk_scaler_path)
+                self.model_status["risk"] = "loaded"
+                print("[CONTINUAL LEARNING] Hot-reloaded risk model and scaler into memory successfully!")
+                return True
+        except Exception as e:
+            print(f"[CONTINUAL LEARNING] Hot-reload failed: {e}")
+        return False
+
 
 # ═══════════════════════════════════════════════════════════════════════════════
 # Risk Score Prediction

@@ -29,6 +29,16 @@ export const AuthProvider = ({ children }) => {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
+  useEffect(() => {
+    const handleAuthExpired = () => {
+      setUser(null);
+      localStorage.removeItem("ner_logismart_user");
+      sessionStorage.removeItem("ner_logismart_user");
+    };
+    window.addEventListener("raahi:auth_expired", handleAuthExpired);
+    return () => window.removeEventListener("raahi:auth_expired", handleAuthExpired);
+  }, []);
+
   const saveUserSession = (userProfile, rememberMe = true) => {
     setUser(userProfile);
     const json = JSON.stringify(userProfile);

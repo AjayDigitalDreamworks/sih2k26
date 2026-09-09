@@ -19,6 +19,7 @@ import time
 from datetime import datetime, timedelta
 from typing import Dict, Any, List, Optional, Callable
 import traceback
+import httpx
 
 from app.services.config import APIConfig
 from app.services.weather_service import WeatherService
@@ -45,6 +46,7 @@ INTERVALS = {
     "alert_generation": 300,     # 5 minutes
     "map_update": 600,           # 10 minutes
     "route_optimization": 1800,  # 30 minutes
+    "continual_learning_check": 3600,  # 1 hour periodic check
 }
 
 ALERT_THRESHOLDS = {
@@ -649,8 +651,48 @@ def _create_pipeline_alert(district_id: str, type: str, severity: str,
 
 
 # ═══════════════════════════════════════════════════════════════════════════════
-# Pipeline Scheduler
+# Pipeline Scheduler & Continual Learning Feedback Loop
 # ═══════════════════════════════════════════════════════════════════════════════
+
+async def _continual_learning_task(state: PipelineState):
+    """
+    Automated Closed-Loop Continual Learning Task:
+    Periodically queries core-backend for pending field/trip feedback samples.
+    If >= 5 samples or weekly threshold elapsed, auto-triggers model retraining
+    with elevated loss weight on Hard False Negatives (predicted score < 40).
+    """
+    print("\n[ACTIVE LEARNING] Checking pending feedback samples for continual retraining...")
+    try:
+        core_backend_url = os.environ.get("CORE_BACKEND_URL", "http://localhost:5000")
+        internal_key = os.environ.get("CORE_BACKEND_INTERNAL_KEY", "raahi_internal_secret_key_2026")
+
+        async with httpx.AsyncClient(timeout=10.0) as client:
+            resp = await client.get(
+                f"{core_backend_url}/api/internal/ml/active-learning/samples?status=pending",
+                headers={"x-internal-key": internal_key},
+            )
+            if resp.status_code == 200:
+                data = resp.json()
+                samples = data.get("data", [])
+                if len(samples) >= 5:
+                    print(f"  [ACTIVE LEARNING] Threshold reached ({len(samples)} pending samples). Triggering automated closed-loop retraining...")
+                    from app.engine.train import retrain_risk_model_with_feedback
+                    retrain_risk_model_with_feedback(samples)
+
+                    # Mark samples as incorporated
+                    sample_ids = [s.get("sampleId") for s in samples if s.get("sampleId")]
+                    if sample_ids:
+                        await client.patch(
+                            f"{core_backend_url}/api/internal/ml/active-learning/mark-incorporated",
+                            headers={"x-internal-key": internal_key},
+                            json={"sampleIds": sample_ids},
+                        )
+                    print(f"  [OK] Continual retraining complete. XGBoost weights updated and hot-reloaded.")
+                else:
+                    print(f"  [ACTIVE LEARNING] {len(samples)} pending samples (batch threshold is 5). Model weights current.")
+    except Exception as e:
+        print(f"  [WARN] Continual learning check skipped: {e}")
+
 
 async def _run_task_loop(task_func, interval: int, task_name: str, state: PipelineState):
     """Run a task in a loop with the specified interval."""
@@ -697,6 +739,10 @@ async def start_pipeline():
         asyncio.create_task(_run_task_loop(
             _map_update_task, INTERVALS["map_update"],
             "Map Update", state
+        )),
+        asyncio.create_task(_run_task_loop(
+            _continual_learning_task, INTERVALS["continual_learning_check"],
+            "Continual Learning Retraining", state
         )),
     ]
 

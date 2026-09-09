@@ -1,6 +1,7 @@
 import React, { useState } from 'react';
+import { useNavigate } from 'react-router-dom';
 import { motion, AnimatePresence } from 'framer-motion';
-import { X, Package, User, Phone, Check, AlertCircle } from 'lucide-react';
+import { X, Package, User, Phone, Check, AlertCircle, ArrowRight } from 'lucide-react';
 import ApiClient from '../../lib/api';
 import { toast } from 'sonner';
 
@@ -24,6 +25,7 @@ const inputCls =
   'w-full px-3.5 py-2 rounded-xl border border-slate-200 text-xs font-semibold text-slate-800 focus:outline-none focus:border-emerald-500';
 
 export default function NewConsignmentModal({ isOpen, onClose, onConsignmentAdded }) {
+  const navigate = useNavigate();
   const [loading, setLoading] = useState(false);
   const [formData, setFormData] = useState({
     originDistrictId: 'kamrup',
@@ -37,8 +39,8 @@ export default function NewConsignmentModal({ isOpen, onClose, onConsignmentAdde
 
   if (!isOpen) return null;
 
-  const handleSubmit = async (e) => {
-    e.preventDefault();
+  const handleSubmit = async (e, planImmediately = false) => {
+    if (e && e.preventDefault) e.preventDefault();
     if (formData.originDistrictId === formData.destDistrictId) {
       toast.error('Origin and destination districts must be different.');
       return;
@@ -62,15 +64,23 @@ export default function NewConsignmentModal({ isOpen, onClose, onConsignmentAdde
         consigneeName: formData.consigneeName.trim(),
         consigneePhone: formData.consigneePhone.trim(),
         weightKg: parseInt(String(formData.weightKg).replace(/[^\d]/g, ''), 10) || 1000,
-        status: 'in_transit',
+        status: 'pending',
       });
       if (!res?.success) {
         toast.error(res?.message || 'Could not create consignment.');
         return;
       }
-      toast.success(`Consignment ${res.data.id} registered for dispatch.`);
-      onConsignmentAdded();
+      if (onConsignmentAdded) onConsignmentAdded(res.data);
       onClose();
+
+      if (planImmediately) {
+        toast.success(`Consignment ${res.data.id} defined! Opening Route Planning & Vehicle Assignment.`);
+        navigate(
+          `/transporter/route-planning?consignmentId=${encodeURIComponent(res.data.id)}&origin=${encodeURIComponent(formData.originDistrictId)}&dest=${encodeURIComponent(formData.destDistrictId)}&commodity=${encodeURIComponent(formData.commodityType)}&weight=${encodeURIComponent(formData.weightKg || '1000')}`
+        );
+      } else {
+        toast.success(`Consignment ${res.data.id} registered as Pending.`);
+      }
     } catch (err) {
       console.error(err);
       toast.error('Server error while creating consignment.');
@@ -153,7 +163,7 @@ export default function NewConsignmentModal({ isOpen, onClose, onConsignmentAdde
                   <option value="medicine">Medicine / Relief</option>
                   <option value="food">Food / Essential Supplies</option>
                   <option value="agri">Agricultural Produce</option>
-                  <option value="fuel">Fuel</option>
+                  <option value="industrial">Industrial Equipment</option>
                   <option value="construction">Construction Material</option>
                   <option value="general">General Cargo</option>
                 </select>
@@ -225,21 +235,30 @@ export default function NewConsignmentModal({ isOpen, onClose, onConsignmentAdde
             </p>
 
             {/* Actions */}
-            <div className="flex items-center justify-end gap-3 pt-4 border-t border-slate-100">
+            <div className="flex flex-wrap items-center justify-end gap-2.5 pt-4 border-t border-slate-100">
               <button
                 type="button"
                 onClick={onClose}
-                className="px-4.5 py-2 rounded-full border border-slate-200 text-xs font-bold text-slate-600 hover:bg-slate-50 transition-colors cursor-pointer"
+                className="px-4 py-2 rounded-xl border border-slate-200 text-xs font-bold text-slate-600 hover:bg-slate-50 transition-colors cursor-pointer"
               >
                 Cancel
               </button>
               <button
-                type="submit"
+                type="button"
                 disabled={loading}
-                className="inline-flex items-center gap-1.5 px-5 py-2 rounded-full bg-[#087f4d] hover:bg-[#06663e] text-xs font-bold text-white shadow-sm shadow-emerald-700/30 transition-all cursor-pointer disabled:opacity-50"
+                onClick={(e) => handleSubmit(e, false)}
+                className="px-4 py-2 rounded-xl border border-slate-300 text-xs font-bold text-slate-700 hover:bg-slate-50 transition-all cursor-pointer disabled:opacity-50"
               >
-                <Check className="w-4 h-4" />
-                <span>{loading ? 'Creating…' : 'Create Consignment'}</span>
+                Save Consignment
+              </button>
+              <button
+                type="button"
+                disabled={loading}
+                onClick={(e) => handleSubmit(e, true)}
+                className="inline-flex items-center gap-1.5 px-4.5 py-2 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-xs font-bold text-white shadow-sm shadow-emerald-700/30 transition-all cursor-pointer disabled:opacity-50"
+              >
+                <span>Assign Vehicle &amp; Plan Route</span>
+                <ArrowRight className="w-3.5 h-3.5" />
               </button>
             </div>
           </form>

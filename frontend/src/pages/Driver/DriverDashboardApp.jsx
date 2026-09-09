@@ -25,6 +25,8 @@ import {
   Activity,
   X,
   Gauge,
+  Package,
+  Phone,
 } from 'lucide-react';
 import { useAuth } from '@/contexts/AuthContext';
 import { useDriverTracking } from '@/hooks/useDriverTracking';
@@ -32,7 +34,7 @@ import DriverLiveMap from '@/components/driver/DriverLiveMap';
 import DriverReportForm from '@/components/driver/DriverReportForm';
 import DriverHistory from '@/components/driver/DriverHistory';
 import ApiClient from '@/lib/api';
-import { subscribeToDynamicReroute } from '@/lib/socket';
+import { subscribeToDynamicReroute, subscribeToRouteCleared } from '@/lib/socket';
 import { toast } from 'sonner';
 
 const TABS = [
@@ -79,12 +81,14 @@ export default function DriverDashboardApp() {
 
   // Live map data: real-time road route with alert-avoidance, or GIS fallback
   const loadRoute = useCallback(async () => {
-    if (!trip?.route_id && !vehicle?.id) {
+    // If trip is completed/canceled or no active trip, clear route immediately
+    if (!trip || trip.status === 'completed' || trip.status === 'canceled' || (!trip?.route_id && !vehicle?.id)) {
       setRouteCoords(null);
+      setReroutedNotice(null);
       return;
     }
     // 1. Try alert-aware live road route first
-    if (vehicle?.id) {
+    if (vehicle?.id && (trip.status === 'in_transit' || trip.status === 'planned')) {
       try {
         const liveRes = await ApiClient.getLiveRoute(vehicle.id);
         const d = liveRes?.data || {};
@@ -94,29 +98,36 @@ export default function DriverDashboardApp() {
             setReroutedNotice(d.rerouteReason || 'Dynamic safe detour active');
           }
           return;
+        } else {
+          setRouteCoords(null);
+          setReroutedNotice(null);
         }
       } catch {
         // Fallback to GIS routes below
       }
     }
-    // 2. Fallback to GIS corridor geometries
-    try {
-      const res = await ApiClient.getGisRoutes();
-      const feats = res?.success ? res.data?.features || [] : [];
-      const feat = feats.find((f) => f.properties?.id === trip?.route_id) ||
-        feats.find(
-          (f) =>
-            (f.properties?.name || '').toLowerCase().includes(
-              String((vehicle?.current_route || '').toLowerCase().split('(')[0].trim() || '').toLowerCase()
-            ) && f.properties?.name
-        );
-      if (feat?.geometry?.coordinates?.length) {
-        setRouteCoords(feat.geometry.coordinates);
+    // 2. Fallback to GIS corridor geometries only if trip is active
+    if (trip?.status === 'in_transit' || trip?.status === 'planned') {
+      try {
+        const res = await ApiClient.getGisRoutes();
+        const feats = res?.success ? res.data?.features || [] : [];
+        const feat = feats.find((f) => f.properties?.id === trip?.route_id) ||
+          feats.find(
+            (f) =>
+              (f.properties?.name || '').toLowerCase().includes(
+                String((vehicle?.current_route || '').toLowerCase().split('(')[0].trim() || '').toLowerCase()
+              ) && f.properties?.name
+          );
+        if (feat?.geometry?.coordinates?.length) {
+          setRouteCoords(feat.geometry.coordinates);
+        }
+      } catch {
+        // GIS unavailable — map will show GPS trail only
       }
-    } catch {
-      // GIS unavailable — map will show GPS trail only
+    } else {
+      setRouteCoords(null);
     }
-  }, [trip?.route_id, vehicle?.id, vehicle?.current_route]);
+  }, [trip, vehicle?.id, vehicle?.current_route]);
 
   const loadTrail = useCallback(async () => {
     if (!vehicle?.id) {
@@ -163,14 +174,30 @@ export default function DriverDashboardApp() {
   }, [t.tripStarted, vehicle?.id, loadLive, loadTrail]);
 
   useEffect(() => {
-    if (trip?.id && vehicle?.id) {
+    if (trip?.id && vehicle?.id && trip.status !== 'completed' && trip.status !== 'canceled') {
       loadRoute();
       loadTrail();
     } else {
       setRouteCoords(null);
       setTrail([]);
+      setReroutedNotice(null);
+      setLive(null);
     }
-  }, [trip?.id, vehicle?.id, loadRoute, loadTrail, t.lastCompleted]);
+  }, [trip?.id, trip?.status, vehicle?.id, loadRoute, loadTrail, t.lastCompleted]);
+
+  // Real-time route clearing listener when trip ends
+  useEffect(() => {
+    const unsub = subscribeToRouteCleared((data) => {
+      if (!data) return;
+      if (data.vehicleId === vehicle?.id || data.tripId === trip?.id) {
+        setRouteCoords(null);
+        setTrail([]);
+        setReroutedNotice(null);
+        setLive(null);
+      }
+    });
+    return () => unsub();
+  }, [vehicle?.id, trip?.id]);
 
   // Real-time dynamic reroute push listener for in-transit hazards
   useEffect(() => {
@@ -229,7 +256,10 @@ export default function DriverDashboardApp() {
   };
 
   const handleStart = async () => {
-    if (!trip || trip.status !== 'planned') return;
+    if (!trip || trip.status !== 'planned' || !trip.route_id) {
+      toast.error('Trip cannot be started: route corridor has not been evaluated or assigned by transporter');
+      return;
+    }
     const ok = await t.startTrip();
     if (ok) {
       toast.success('Trip started — live GPS tracking active');
@@ -242,7 +272,25 @@ export default function DriverDashboardApp() {
     if (!window.confirm('Stop tracking and complete this trip? All telemetry will be finalized.')) return;
     const ok = await t.stopTrip();
     if (ok) {
-      toast.success('Trip completed — tracking stopped');
+      setRouteCoords(null);
+      setTrail([]);
+      setLive(null);
+      setReroutedNotice(null);
+      toast.success('Trip completed — tracking stopped and route cleared');
+    }
+  };
+
+  const handleConfirmDelivery = async (deliveryId) => {
+    try {
+      const res = await ApiClient.confirmDelivery(deliveryId);
+      if (res?.success) {
+        toast.success('Consignment delivery & handover confirmed successfully!');
+        await t.reload();
+      } else {
+        toast.error(res?.message || 'Could not confirm delivery');
+      }
+    } catch (e) {
+      toast.error(e.message || 'Could not confirm delivery');
     }
   };
 
@@ -364,6 +412,8 @@ export default function DriverDashboardApp() {
                 onStop={handleStop}
                 onOpenSos={() => setSosModalOpen(true)}
                 reroutedNotice={reroutedNotice}
+                deliveries={t.ctx?.deliveries || []}
+                onConfirmDelivery={handleConfirmDelivery}
               />
             )}
 
@@ -509,7 +559,12 @@ function TrackingView({
   onStop,
   onOpenSos,
   reroutedNotice,
+  deliveries = [],
+  onConfirmDelivery,
 }) {
+  const hasEvaluatedTrip = Boolean(trip && trip.status === 'planned' && trip.route_id);
+  const isInTransit = Boolean(trip && trip.status === 'in_transit');
+
   return (
     <div className="space-y-3.5">
       {/* ── Assigned Vehicle & Trip Banner ── */}
@@ -529,41 +584,72 @@ function TrackingView({
                 )}
               </div>
               <p className="text-xs text-slate-500 font-medium mt-0.5">
-                {trip
+                {hasEvaluatedTrip || isInTransit
                   ? `${trip.origin || 'Origin'} → ${trip.destination || 'Destination'}`
                   : t.lastCompleted
                   ? `Completed: ${t.lastCompleted.origin} → ${t.lastCompleted.destination}`
-                  : 'Waiting for trip dispatch'}
+                  : 'Awaiting Transporter Route Assignment'}
               </p>
             </div>
           </div>
 
           <div>
-            {trip?.status === 'in_transit' && (
+            {isInTransit && (
               <span className="inline-flex items-center gap-1.5 text-[10px] font-black text-emerald-700 bg-emerald-50 border border-emerald-200 px-2.5 py-1 rounded-full">
                 <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse" /> IN TRANSIT
               </span>
             )}
-            {trip?.status === 'planned' && (
+            {hasEvaluatedTrip && (
               <span className="inline-flex items-center gap-1.5 text-[10px] font-black text-amber-700 bg-amber-50 border border-amber-200 px-2.5 py-1 rounded-full">
-                TRIP ASSIGNED
+                CORRIDOR ASSIGNED
               </span>
             )}
-            {!trip && t.lastCompleted && (
+            {!hasEvaluatedTrip && !isInTransit && t.lastCompleted && (
               <span className="inline-flex items-center gap-1.5 text-[10px] font-bold text-slate-600 bg-slate-100 border border-slate-200 px-2.5 py-1 rounded-full">
                 ✓ COMPLETED
               </span>
             )}
-            {!trip && !t.lastCompleted && (
-              <span className="inline-flex items-center gap-1.5 text-[10px] font-bold text-slate-400 bg-slate-50 border border-slate-200 px-2.5 py-1 rounded-full">
-                IDLE
+            {!hasEvaluatedTrip && !isInTransit && !t.lastCompleted && (
+              <span className="inline-flex items-center gap-1.5 text-[10px] font-bold text-amber-700 bg-amber-50 border border-amber-200 px-2.5 py-1 rounded-full">
+                AWAITING ROUTE
               </span>
             )}
           </div>
         </div>
 
-        {/* Start / Stop Tactical Buttons */}
-        {trip?.status === 'planned' && (
+        {/* Assigned Corridor Detail Card (Shown ONLY when Transporter has evaluated and assigned a route corridor) */}
+        {hasEvaluatedTrip && (
+          <div className="p-3 bg-emerald-50/50 rounded-xl border border-emerald-200/80 space-y-1.5">
+            <div className="flex items-center justify-between text-xs">
+              <span className="font-bold text-emerald-800 flex items-center gap-1">
+                <Route className="w-3.5 h-3.5 text-emerald-600" /> Assigned Route Corridor:
+              </span>
+              <span className="font-black text-slate-900">{trip.route_id}</span>
+            </div>
+            <div className="flex items-center justify-between text-[11px] text-slate-600">
+              <span>{trip.origin} → {trip.destination}</span>
+              {(trip.distance_km || trip.distanceKm) && (
+                <span className="font-bold text-slate-800">{trip.distance_km || trip.distanceKm} km</span>
+              )}
+            </div>
+          </div>
+        )}
+
+        {/* Awaiting Transporter Route Assignment Notice (Shown when NO evaluated corridor is assigned) */}
+        {!hasEvaluatedTrip && !isInTransit && (
+          <div className="p-3.5 rounded-xl bg-slate-50 border border-slate-200/80 space-y-1.5">
+            <div className="flex items-center gap-2 text-xs font-black text-slate-700">
+              <Clock className="w-3.5 h-3.5 text-amber-600 shrink-0" />
+              <span>Awaiting Transporter Route Assignment</span>
+            </div>
+            <p className="text-[11px] text-slate-500 leading-relaxed font-medium">
+              Your transporter has not evaluated or assigned a route corridor yet. Once your transporter selects and evaluates a corridor in Route Planning, the trip assignment and <strong>Start Trip</strong> option will appear here automatically.
+            </p>
+          </div>
+        )}
+
+        {/* Start Button: Strictly rendered ONLY when transporter has evaluated and assigned the corridor */}
+        {hasEvaluatedTrip && (
           <button
             onClick={onStart}
             disabled={t.tripBusy}
@@ -574,7 +660,7 @@ function TrackingView({
           </button>
         )}
 
-        {trip?.status === 'in_transit' && (
+        {isInTransit && (
           <button
             onClick={onStop}
             disabled={t.tripBusy}
@@ -754,6 +840,83 @@ function TrackingView({
               <span className="font-bold text-slate-800">{live?.eta || '—'}</span>
             </div>
           </div>
+        </div>
+      )}
+
+      {/* ── Consignment Cargo & Delivery / Pickup Card ── */}
+      {(hasEvaluatedTrip || isInTransit) && deliveries && deliveries.length > 0 && (
+        <div className="bg-white rounded-2xl border border-slate-200 shadow-xs p-4 space-y-3">
+          <div className="flex items-center justify-between">
+            <h4 className="text-xs font-black text-slate-900 uppercase tracking-wider flex items-center gap-1.5">
+              <Package className="w-3.5 h-3.5 text-emerald-600" /> Consignment & Cargo Handover
+            </h4>
+            <span className="text-[10px] font-bold text-slate-400">Delivery / Pickup</span>
+          </div>
+
+          {deliveries.map((del) => {
+            const isDelivered = del.status === 'delivered';
+            return (
+              <div key={del.id} className="p-3.5 bg-slate-50 rounded-xl border border-slate-200/80 space-y-2.5">
+                <div className="flex items-start justify-between gap-2">
+                  <div>
+                    <div className="flex items-center gap-2 flex-wrap">
+                      <span className="text-xs font-black text-slate-900">{del.id}</span>
+                      <span className="px-2 py-0.5 rounded text-[9px] font-extrabold bg-emerald-100 text-emerald-800 uppercase">
+                        {del.commodity_type || 'General Cargo'}
+                      </span>
+                      {del.weight_kg && (
+                        <span className="text-[10px] font-bold text-slate-500 bg-white px-2 py-0.5 rounded border border-slate-200">
+                          {del.weight_kg} kg
+                        </span>
+                      )}
+                    </div>
+                    <div className="flex items-center gap-1.5 mt-1 text-[11px] text-slate-600">
+                      <span className="font-semibold text-slate-700">Consignee:</span>
+                      <span>{del.consignee_name}</span>
+                      {del.consignee_phone && (
+                        <span className="text-slate-400">({del.consignee_phone})</span>
+                      )}
+                    </div>
+                  </div>
+
+                  <div>
+                    {isDelivered ? (
+                      <span className="inline-flex items-center gap-1 text-[10px] font-bold px-2 py-0.5 rounded-full bg-emerald-50 text-emerald-700 border border-emerald-200">
+                        <CheckCircle2 className="w-3 h-3" /> DELIVERED
+                      </span>
+                    ) : (
+                      <span className="inline-flex items-center gap-1 text-[10px] font-bold px-2 py-0.5 rounded-full bg-amber-50 text-amber-700 border border-amber-200">
+                        <Clock className="w-3 h-3" /> IN TRANSIT
+                      </span>
+                    )}
+                  </div>
+                </div>
+
+                <div className="grid grid-cols-2 gap-2 text-[11px] pt-1.5 border-t border-slate-200/60">
+                  <div>
+                    <span className="text-[10px] font-bold text-slate-400 block uppercase">Pickup Point</span>
+                    <span className="font-bold text-slate-800">{trip.origin}</span>
+                  </div>
+                  <div>
+                    <span className="text-[10px] font-bold text-slate-400 block uppercase">Drop-off / Handover</span>
+                    <span className="font-bold text-slate-800">{trip.destination}</span>
+                  </div>
+                </div>
+
+                {/* Handover Action */}
+                {!isDelivered && isInTransit && (
+                  <button
+                    type="button"
+                    onClick={() => onConfirmDelivery && onConfirmDelivery(del.id)}
+                    className="w-full mt-2 py-2 px-3 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-bold transition-all flex items-center justify-center gap-1.5 shadow-2xs cursor-pointer"
+                  >
+                    <CheckCircle2 className="w-3.5 h-3.5" />
+                    <span>Confirm Consignment Handover / Delivered</span>
+                  </button>
+                )}
+              </div>
+            );
+          })}
         </div>
       )}
 

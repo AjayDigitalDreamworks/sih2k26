@@ -1,0 +1,100 @@
+name: Automated Continual Learning Retraining
+
+on:
+  schedule:
+    # Run weekly every Sunday at 00:00 UTC (Automated Weekly Retraining Job)
+    - cron: '0 0 * * 0'
+  workflow_dispatch:
+    inputs:
+      force:
+        description: 'Force retraining even if pending feedback sample threshold is not reached'
+        required: false
+        default: false
+        type: boolean
+
+jobs:
+  retrain-xgboost-models:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout Repository
+        uses: actions/checkout@v4
+
+      - name: Set up Python 3.11
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+          cache: 'pip'
+          cache-dependency-path: 'ml-service/requirements.txt'
+
+      - name: Install Dependencies
+        run: |
+          python -m pip install --upgrade pip
+          # Install CPU-only PyTorch to avoid downloading heavy CUDA wheels on GitHub runner
+          pip install torch torchvision --index-url https://download.pytorch.org/whl/cpu
+          pip install -r ml-service/requirements.txt
+
+      - name: Run Continual Learning Retraining Job
+        env:
+          CORE_BACKEND_URL: ${{ secrets.CORE_BACKEND_URL }}
+          CORE_BACKEND_INTERNAL_KEY: ${{ secrets.CORE_BACKEND_INTERNAL_KEY || 'raahi_internal_secret_key_2026' }}
+          FORCE_RETRAIN: ${{ inputs.force || false }}
+        run: |
+          cd ml-service
+          python -c "
+          import os, httpx
+          from app.engine.train import retrain_risk_model_with_feedback
+
+          backend_url = os.getenv('CORE_BACKEND_URL')
+          internal_key = os.getenv('CORE_BACKEND_INTERNAL_KEY')
+          force = os.getenv('FORCE_RETRAIN', 'false').lower() == 'true'
+
+          samples = []
+          sample_ids = []
+
+          if backend_url:
+              try:
+                  print(f'Fetching pending feedback from {backend_url}...')
+                  resp = httpx.get(
+                      f'{backend_url}/api/internal/ml/active-learning/samples?status=pending',
+                      headers={'x-internal-key': internal_key},
+                      timeout=15.0
+                  )
+                  if resp.status_code == 200:
+                      samples = resp.json().get('data', [])
+                      sample_ids = [s.get('sampleId') for s in samples if s.get('sampleId')]
+                      print(f'Fetched {len(samples)} pending feedback samples.')
+                  else:
+                      print(f'Core backend responded with status: {resp.status_code}')
+              except Exception as err:
+                  print(f'Warning: Could not fetch samples from backend: {err}')
+
+          if not samples and not force:
+              print('No pending feedback samples found and force=false. Skipping retraining.')
+          else:
+              print('Executing Continual Retraining...')
+              metrics = retrain_risk_model_with_feedback(samples)
+              print('Updated Evaluation Metrics:', metrics.get('continual_learning', {}).get('metrics'))
+
+              if backend_url and sample_ids:
+                  try:
+                      httpx.patch(
+                          f'{backend_url}/api/internal/ml/active-learning/mark-incorporated',
+                          headers={'x-internal-key': internal_key},
+                          json={'sampleIds': sample_ids},
+                          timeout=15.0
+                      )
+                      print(f'Successfully marked {len(sample_ids)} samples as incorporated.')
+                  except Exception as e:
+                      print(f'Warning: Failed to mark samples incorporated: {e}')
+          "
+
+      - name: Upload Retrained Model Artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: retrained-xgboost-models
+          path: |
+            ml-service/app/engine/saved_models/risk_model.joblib
+            ml-service/app/engine/saved_models/risk_scaler.joblib
+            ml-service/app/engine/saved_models/risk_metrics.json
+            ml-service/app/engine/saved_models/continual_learning_history.json
+          retention-days: 30

@@ -17,24 +17,13 @@ export default function Navbar() {
         <div className="flex items-center justify-between h-20">
           {/* Logo & Brand Name */}
           <Link to="/" className="flex items-center gap-3 group focus:outline-none">
-            {/* Custom Mountain & Road Brand Icon */}
-            <div className="relative w-11 h-11 flex-shrink-0 flex items-center justify-center rounded-xl bg-gradient-to-br from-emerald-50 to-teal-50 border border-emerald-100 shadow-sm group-hover:scale-105 transition-transform">
-              <svg viewBox="0 0 40 40" className="w-8 h-8" fill="none" xmlns="http://www.w3.org/2000/svg">
-                {/* Background mountain peak */}
-                <path d="M20 7L33 29H7L20 7Z" fill="#059669" />
-                {/* Secondary green gradient peak */}
-                <path d="M20 7L28 29H12L20 7Z" fill="#10B981" fillOpacity="0.85" />
-                {/* Snow cap highlight */}
-                <path d="M20 7L23 13H17L20 7Z" fill="#D1FAE5" />
-                {/* River / Highway winding road in deep navy */}
-                <path 
-                  d="M10 29C15 24 17 27 24 22C28 19 31 29 31 29" 
-                  stroke="#1E3A8A" 
-                  strokeWidth="3.2" 
-                  strokeLinecap="round" 
-                  strokeLinejoin="round" 
-                />
-              </svg>
+            {/* Actual Raahi Logo */}
+            <div className="relative w-10 h-10 flex-shrink-0 flex items-center justify-center rounded-xl overflow-hidden shadow-xs border border-slate-200/80 group-hover:scale-105 transition-transform">
+              <img
+                src="/raahi-logo.jpg"
+                alt="RAAHI"
+                className="w-full h-full object-cover rounded-xl"
+              />
             </div>
             
             <div className="flex flex-col">

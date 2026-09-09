@@ -13,6 +13,7 @@ import {
   HelpCircle,
   AlertTriangle,
   Check,
+  Search,
 } from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
 import { useAuth } from '../../contexts/AuthContext';
@@ -63,6 +64,7 @@ export default function TransporterHeader({ onToggleSidebar, isDashboard = true,
   const [notificationsOpen, setNotificationsOpen] = useState(false);
   const [notifications, setNotifications] = useState([]);
   const [unreadCount, setUnreadCount] = useState(0);
+  const [searchTerm, setSearchTerm] = useState('');
 
   // Real transporter-scoped alerts from the backend — no hardcoded notices.
   useEffect(() => {
@@ -140,6 +142,25 @@ export default function TransporterHeader({ onToggleSidebar, isDashboard = true,
               <span className="text-xs sm:text-sm font-bold text-slate-700 flex items-center gap-1.5">
                 {greeting()}, {user?.name || 'Operator'}! 👋
               </span>
+            </div>
+          </div>
+
+          {/* Middle: Quick Fleet & Route Finder */}
+          <div className="hidden md:flex items-center flex-1 max-w-sm mx-4">
+            <div className="relative w-full">
+              <Search className="w-3.5 h-3.5 text-slate-400 absolute left-3 top-1/2 -translate-y-1/2" />
+              <input
+                type="text"
+                value={searchTerm}
+                onChange={(e) => setSearchTerm(e.target.value)}
+                onKeyDown={(e) => {
+                  if (e.key === 'Enter' && searchTerm.trim()) {
+                    navigate(`/transporter/live-tracking?q=${encodeURIComponent(searchTerm.trim())}`);
+                  }
+                }}
+                placeholder="Find truck, driver, or city... (Press Enter)"
+                className="w-full pl-8.5 pr-3 py-1.5 rounded-full border border-slate-200/90 bg-slate-50/80 focus:bg-white focus:outline-none focus:border-emerald-500 focus:ring-2 focus:ring-emerald-500/15 text-xs font-semibold text-slate-800 placeholder:text-slate-400 transition-all"
+              />
             </div>
           </div>
 

@@ -635,5 +635,227 @@ def train_all_models():
     return all_metrics
 
 
+def retrain_risk_model_with_feedback(feedback_samples: list = None) -> Dict[str, Any]:
+    """
+    Automated Closed-Loop Continual Retraining:
+    Incorporates operational feedback (smooth transits & hard false negatives)
+    with elevated sample_weights into the XGBoost Risk Scoring model.
+    """
+    print("\n" + "="*60)
+    print("  Raahi Continual Learning: Retraining Risk Model with Feedback")
+    print("  " + datetime.utcnow().isoformat())
+    print("="*60)
+
+    # 1. Load base training data or generate fresh baseline
+    base_data_path = os.path.join(TRAINING_DATA_DIR, "risk_training_data.csv")
+    if os.path.exists(base_data_path):
+        base_df = pd.read_csv(base_data_path)
+    else:
+        base_df = generate_risk_training_data(n_samples=3000)
+
+    base_df["sample_weight"] = 1.0
+
+    feedback_rows = []
+    hard_samples_count = 0
+    smooth_samples_count = 0
+
+    road_cond_map = {"good": 0, "damaged": 1, "blocked": 2}
+    bridge_cond_map = {"operational": 0, "damaged": 1, "closed": 2}
+    congestion_map = {"low": 0, "moderate": 1, "high": 2, "blocked": 3}
+
+    if feedback_samples and len(feedback_samples) > 0:
+        for s in feedback_samples:
+            feat = s.get("features", {})
+
+            # Scale slope_risk to 0-100 if given as ratio
+            slope = float(feat.get("slope_risk", 25.0))
+            if slope <= 1.0:
+                slope *= 100.0
+
+            # Encode categorical / handle string features
+            rc = feat.get("road_condition", 0)
+            if isinstance(rc, str):
+                rc = road_cond_map.get(rc.lower(), 0)
+
+            bc = feat.get("bridge_condition", 0)
+            if isinstance(bc, str):
+                bc = bridge_cond_map.get(bc.lower(), 0)
+
+            cg = feat.get("congestion_level", 0)
+            if isinstance(cg, str):
+                cg = congestion_map.get(cg.lower(), 0)
+
+            # Flood risk scale
+            fr = float(feat.get("flood_risk_level", 15.0))
+            if fr <= 1.0:
+                fr *= 100.0
+
+            # Landslide prob scale
+            lp = float(feat.get("landslide_probability", 0.2))
+            if lp > 1.0:
+                lp /= 100.0
+
+            predicted_score = float(s.get("predictedRiskScore", 50.0))
+            actual_score = float(s.get("actualRiskScore", 80.0))
+            outcome = s.get("actualOutcome", "disruption")
+            is_fn = s.get("isFalseNegative", False)
+
+            # Automated Hard Sample Mining:
+            # If model predicted score < 40 and disruption occurred, elevate sample weight to 4.0x
+            if (predicted_score < 40.0 and (outcome in ["disruption", "stranded"] or actual_score >= 70.0)) or is_fn:
+                sample_weight = max(float(s.get("sampleWeight", 4.0)), 4.0)
+                hard_samples_count += 1
+            elif outcome == "smooth_transit":
+                sample_weight = 1.0
+                smooth_samples_count += 1
+            else:
+                sample_weight = float(s.get("sampleWeight", 1.5))
+
+            row = {
+                "slope_risk": slope,
+                "rainfall_24h_mm": float(feat.get("rainfall_24h_mm", 20.0)),
+                "road_condition": float(rc),
+                "bridge_condition": float(bc),
+                "historical_disruptions": float(feat.get("historical_disruptions", 2)),
+                "congestion_level": float(cg),
+                "flood_risk_level": fr,
+                "landslide_probability": lp,
+                "elevation_m": float(feat.get("elevation_m", 300.0)),
+                "river_proximity": float(feat.get("river_proximity", 1.5)),
+                "month": float(feat.get("month", datetime.utcnow().month)),
+                "road_distance_km": float(feat.get("road_distance_km", 70.0)),
+                "risk_score": actual_score,
+                "sample_weight": sample_weight,
+            }
+            feedback_rows.append(row)
+
+        print(f"  [ACTIVE LEARNING] Ingested {len(feedback_rows)} operational samples ({hard_samples_count} Hard False Negatives with 4.0x+ weights, {smooth_samples_count} smooth runs).")
+
+    if feedback_rows:
+        feedback_df = pd.DataFrame(feedback_rows)
+        combined_df = pd.concat([base_df, feedback_df], ignore_index=True)
+    else:
+        combined_df = base_df
+
+    X = combined_df[RISK_FEATURES].copy()
+    y = combined_df["risk_score"].values
+    weights = combined_df["sample_weight"].values
+
+    # Train / test split (preserving weights)
+    X_train, X_test, y_train, y_test, w_train, w_test = train_test_split(
+        X, y, weights, test_size=0.2, random_state=42
+    )
+
+    # Scale features
+    scaler = StandardScaler()
+    X_train_scaled = scaler.fit_transform(X_train)
+    X_test_scaled = scaler.transform(X_test)
+
+    # Train XGBoost regressor with sample weights
+    model = xgb.XGBRegressor(
+        n_estimators=320,
+        max_depth=8,
+        learning_rate=0.05,
+        subsample=0.85,
+        colsample_bytree=0.8,
+        reg_alpha=0.1,
+        reg_lambda=1.0,
+        random_state=42,
+        objective="reg:squarederror",
+    )
+
+    model.fit(
+        X_train_scaled, y_train,
+        sample_weight=w_train,
+        eval_set=[(X_test_scaled, y_test)],
+        verbose=False,
+    )
+
+    # Evaluate
+    y_pred = model.predict(X_test_scaled)
+    y_pred = np.clip(y_pred, 0, 100)
+
+    mae = mean_absolute_error(y_test, y_pred)
+    rmse = np.sqrt(mean_squared_error(y_test, y_pred))
+    r2 = r2_score(y_test, y_pred)
+
+    def score_to_level(s):
+        if s > 80: return "critical"
+        elif s > 60: return "high"
+        elif s > 30: return "medium"
+        else: return "low"
+
+    true_levels = [score_to_level(s) for s in y_test]
+    pred_levels = [score_to_level(s) for s in y_pred]
+    level_accuracy = accuracy_score(true_levels, pred_levels)
+    f1 = f1_score(true_levels, pred_levels, average="weighted")
+
+    # Feature importance
+    importance = dict(zip(RISK_FEATURES, [float(x) for x in model.feature_importances_]))
+    sorted_imp = sorted(importance.items(), key=lambda x: x[1], reverse=True)
+
+    # Save updated weights and scaler
+    os.makedirs(MODELS_DIR, exist_ok=True)
+    joblib.dump(model, os.path.join(MODELS_DIR, "risk_model.joblib"))
+    joblib.dump(scaler, os.path.join(MODELS_DIR, "risk_scaler.joblib"))
+
+    # Track continual learning history
+    history_path = os.path.join(MODELS_DIR, "continual_learning_history.json")
+    history = []
+    if os.path.exists(history_path):
+        try:
+            with open(history_path, "r") as f:
+                history = json.load(f)
+        except Exception:
+            history = []
+
+    iteration_num = len(history) + 1
+    record = {
+        "iteration": iteration_num,
+        "timestamp": datetime.utcnow().isoformat(),
+        "total_samples": int(len(combined_df)),
+        "new_feedback_samples": len(feedback_rows),
+        "hard_false_negatives": hard_samples_count,
+        "smooth_transits": smooth_samples_count,
+        "metrics": {
+            "mae": round(float(mae), 3),
+            "rmse": round(float(rmse), 3),
+            "r2": round(float(r2), 4),
+            "level_accuracy": round(float(level_accuracy), 4),
+            "f1_score": round(float(f1), 4),
+        },
+        "top_features": sorted_imp[:5],
+    }
+    history.append(record)
+    with open(history_path, "w") as f:
+        json.dump(history, f, indent=2)
+
+    metrics = {
+        "mae": round(float(mae), 3),
+        "rmse": round(float(rmse), 3),
+        "r2": round(float(r2), 4),
+        "level_accuracy": round(float(level_accuracy), 4),
+        "f1_score": round(float(f1), 4),
+        "feature_importance": {k: round(float(v), 4) for k, v in sorted_imp},
+        "trained_at": datetime.utcnow().isoformat(),
+        "n_samples": int(len(combined_df)),
+        "continual_learning": record,
+    }
+
+    with open(os.path.join(MODELS_DIR, "risk_metrics.json"), "w") as f:
+        json.dump(metrics, f, indent=2)
+
+    # Hot-reload in-memory model in MLModels singleton
+    try:
+        from app.engine.ml_inference import MLModels
+        MLModels().reload_risk_model()
+        print("  [OK] Hot-reloaded MLModels into active FastAPI memory!")
+    except Exception as reload_err:
+        print(f"  [WARN] In-memory hot-reload notification: {reload_err}")
+
+    print(f"  [OK] Retraining complete (Iteration #{iteration_num}) | MAE: {mae:.2f} | R²: {r2:.4f} | Accuracy: {level_accuracy:.2%}")
+    return metrics
+
+
 if __name__ == "__main__":
     train_all_models()

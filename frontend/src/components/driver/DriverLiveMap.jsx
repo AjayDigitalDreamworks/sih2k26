@@ -11,53 +11,97 @@ L.Icon.Default.mergeOptions({
   shadowUrl: 'https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.7.1/images/marker-shadow.png',
 });
 
-// CartoDB Dark Matter / Voyager tiles
-const TILES = 'https://{s}.basemaps.cartocdn.com/rastertiles/voyager/{z}/{x}/{y}{r}.png';
-const TILE_ATTR = '&copy; <a href="https://carto.com/">CARTO</a> &copy; <a href="https://www.openstreetmap.org/copyright">OSM</a>';
+const CARTO_TILES = 'https://{s}.basemaps.cartocdn.com/rastertiles/voyager/{z}/{x}/{y}{r}.png';
+const OSM_TILES = 'https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png';
+const TILE_ATTR = '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors &copy; <a href="https://carto.com/attributions">CARTO</a>';
 
 const isValid = (p) => p && Number.isFinite(p.lat) && Number.isFinite(p.lng) && Math.abs(p.lat) <= 90 && Math.abs(p.lng) <= 180;
 
+function calculateBearing(lat1, lng1, lat2, lng2) {
+  const dLng = ((lng2 - lng1) * Math.PI) / 180;
+  const lat1Rad = (lat1 * Math.PI) / 180;
+  const lat2Rad = (lat2 * Math.PI) / 180;
+  const y = Math.sin(dLng) * Math.cos(lat2Rad);
+  const x = Math.cos(lat1Rad) * Math.sin(lat2Rad) - Math.sin(lat1Rad) * Math.cos(lat2Rad) * Math.cos(dLng);
+  return ((Math.atan2(y, x) * 180) / Math.PI + 360) % 360;
+}
+
+function haversineM(lat1, lng1, lat2, lng2) {
+  const R = 6371000;
+  const dLat = ((lat2 - lat1) * Math.PI) / 180;
+  const dLng = ((lng2 - lng1) * Math.PI) / 180;
+  const a =
+    Math.sin(dLat / 2) ** 2 +
+    Math.cos((lat1 * Math.PI) / 180) *
+      Math.cos((lat2 * Math.PI) / 180) *
+      Math.sin(dLng / 2) ** 2;
+  return 2 * R * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
+}
+
 function AnimatedTacticalDriverMarker({ target, heading }) {
-  const [pos, setPos] = useState(target);
-  const [rot, setRot] = useState(heading || 0);
-  const fromRef = useRef(target);
-  const fromHeadingRef = useRef(heading || 0);
+  const markerRef = useRef(null);
+  const currentPosRef = useRef(target);
+  const currentBearingRef = useRef(heading || 0);
   const rafRef = useRef(null);
 
   useEffect(() => {
-    if (!isValid(target)) { fromRef.current = target; setPos(target); return undefined; }
-    const from = isValid(fromRef.current) ? fromRef.current : target;
-    const startT = performance.now();
-    const dur = 800;
+    if (!isValid(target)) return;
 
-    let diffRot = ((heading || 0) - fromHeadingRef.current) % 360;
+    const from = { ...currentPosRef.current };
+    const distM = haversineM(from.lat, from.lng, target.lat, target.lng);
+
+    let toHeading = heading;
+    if (toHeading == null || toHeading === 0) {
+      if (distM >= 0.5) {
+        toHeading = calculateBearing(from.lat, from.lng, target.lat, target.lng);
+      } else {
+        toHeading = currentBearingRef.current;
+      }
+    }
+
+    const fromHeading = currentBearingRef.current;
+    let diffRot = (toHeading - fromHeading) % 360;
     if (diffRot > 180) diffRot -= 360;
     if (diffRot < -180) diffRot += 360;
-    const startHeading = fromHeadingRef.current;
+
+    const startT = performance.now();
+    const dur = Math.max(350, Math.min(1800, distM * 18));
+
+    if (rafRef.current) cancelAnimationFrame(rafRef.current);
 
     const step = (now) => {
       const k = Math.min(1, (now - startT) / dur);
       const eased = 1 - Math.pow(1 - k, 3);
-      const cur = {
-        lat: from.lat + (target.lat - from.lat) * eased,
-        lng: from.lng + (target.lng - from.lng) * eased,
-      };
-      if (!isValid(cur)) { setPos(target); fromRef.current = target; return; }
-      setPos(cur);
-      setRot(((startHeading + diffRot * eased) % 360 + 360) % 360);
+      const curLat = from.lat + (target.lat - from.lat) * eased;
+      const curLng = from.lng + (target.lng - from.lng) * eased;
+      const curRot = ((fromHeading + diffRot * eased) % 360 + 360) % 360;
+
+      currentPosRef.current = { lat: curLat, lng: curLng };
+      currentBearingRef.current = curRot;
+
+      if (markerRef.current) {
+        markerRef.current.setLatLng([curLat, curLng]);
+        const el = markerRef.current.getElement();
+        if (el) {
+          const rotator = el.querySelector('.driver-rotator');
+          if (rotator) rotator.style.transform = `rotate(${Math.round(curRot)}deg)`;
+        }
+      }
 
       if (k < 1) {
         rafRef.current = requestAnimationFrame(step);
-      } else {
-        fromRef.current = target;
-        fromHeadingRef.current = heading || 0;
       }
     };
+
     rafRef.current = requestAnimationFrame(step);
-    return () => cancelAnimationFrame(rafRef.current);
+    return () => {
+      if (rafRef.current) cancelAnimationFrame(rafRef.current);
+    };
   }, [target?.lat, target?.lng, heading]);
 
-  if (!isValid(pos)) return null;
+  if (!isValid(target)) return null;
+
+  const initialRot = currentBearingRef.current;
 
   const icon = L.divIcon({
     className: '',
@@ -66,7 +110,7 @@ function AnimatedTacticalDriverMarker({ target, heading }) {
         <!-- Radar Pulse Ring -->
         <div style="position:absolute;top:50%;left:50%;width:36px;height:36px;border-radius:50%;border:2px solid #10B981;animation:driverPing 2s cubic-bezier(0,0,0.2,1) infinite;transform:translate(-50%,-50%);pointer-events:none;"></div>
         <!-- Directional Vector Icon -->
-        <div style="position:relative;width:36px;height:36px;transform:rotate(${Math.round(rot)}deg);filter:drop-shadow(0 0 6px rgba(16,185,129,0.8));">
+        <div class="driver-rotator" style="position:relative;width:36px;height:36px;transform:rotate(${Math.round(initialRot)}deg);filter:drop-shadow(0 0 6px rgba(16,185,129,0.8));">
           <svg viewBox="0 0 40 40" width="36" height="36">
             <circle cx="20" cy="20" r="17" fill="#0B1E36" stroke="#10B981" stroke-width="2.5" />
             <path d="M20 7 L29 28 L20 23 L11 28 Z" fill="#10B981" stroke="#FFFFFF" stroke-width="1.5" stroke-linejoin="round" />
@@ -85,7 +129,7 @@ function AnimatedTacticalDriverMarker({ target, heading }) {
     iconAnchor: [18, 18],
   });
 
-  return <Marker position={[pos.lat, pos.lng]} icon={icon} zIndexOffset={1000} />;
+  return <Marker ref={markerRef} position={[target.lat, target.lng]} icon={icon} zIndexOffset={1000} />;
 }
 
 export default function DriverLiveMap({ marker, route, trail, height = 280 }) {
@@ -101,19 +145,32 @@ export default function DriverLiveMap({ marker, route, trail, height = 280 }) {
     ? trail.filter((p) => p && Number.isFinite(p.lat) && Number.isFinite(p.lng)).map((p) => [p.lat, p.lng])
     : [];
 
+  const hasFittedRef = useRef(false);
+
+  // Initial fit to route corridor
   useEffect(() => {
     if (!map) return;
-    const pts = [];
-    if (marker) pts.push([marker.lat, marker.lng]);
-    if (routeLatLngs.length) pts.push(...routeLatLngs);
-    if (trailLatLngs.length) pts.push(...trailLatLngs);
-    if (pts.length === 0) return;
-    if (pts.length === 1) {
-      map.setView(pts[0], 15);
+    if (routeLatLngs.length > 1 && !hasFittedRef.current) {
+      hasFittedRef.current = true;
+      try {
+        map.fitBounds(L.latLngBounds(routeLatLngs), { padding: [35, 35], maxZoom: 15 });
+      } catch {}
       return;
     }
-    map.fitBounds(L.latLngBounds(pts.map((p) => L.latLng(p[0], p[1]))), { padding: [28, 28], maxZoom: 15 });
-  }, [map, marker?.lat, marker?.lng, routeLatLngs.length, trailLatLngs.length]);
+  }, [map, routeLatLngs.length]);
+
+  // Google Maps turn-by-turn smooth vehicle camera follow
+  useEffect(() => {
+    if (!map || !marker || !Number.isFinite(marker.lat) || !Number.isFinite(marker.lng)) return;
+    try {
+      if (!hasFittedRef.current && routeLatLngs.length === 0) {
+        map.setView([marker.lat, marker.lng], 15);
+        hasFittedRef.current = true;
+      } else {
+        map.panTo([marker.lat, marker.lng], { animate: true, duration: 1.0 });
+      }
+    } catch {}
+  }, [map, marker?.lat, marker?.lng, routeLatLngs.length]);
 
   const destPoint = routeLatLngs.length > 0 ? routeLatLngs[routeLatLngs.length - 1] : null;
   const destIcon = L.divIcon({
@@ -134,13 +191,13 @@ export default function DriverLiveMap({ marker, route, trail, height = 280 }) {
       {hasAnything ? (
         <MapContainer
           ref={setMap}
-          center={marker ? [marker.lat, marker.lng] : [26.14, 91.73]}
-          zoom={10}
+          center={marker ? [marker.lat, marker.lng] : [28.38, 77.28]}
+          zoom={14}
           scrollWheelZoom={false}
           style={{ height: '100%', width: '100%' }}
           zoomControl={false}
         >
-          <ResilientTileLayer url={TILES} attribution={TILE_ATTR} maxZoom={19} maxNativeZoom={18} />
+          <ResilientTileLayer url={CARTO_TILES} fallbackUrl={OSM_TILES} attribution={TILE_ATTR} maxZoom={19} maxNativeZoom={19} />
 
           {/* Glowing Outer Polyline */}
           {routeLatLngs.length > 1 && (

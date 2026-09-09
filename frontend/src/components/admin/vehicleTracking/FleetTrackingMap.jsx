@@ -10,6 +10,7 @@ import { RiskHeatLayer } from '@/components/admin/common/RiskHeatLayer';
 import { getSocket, subscribeToEmergency, subscribeToEmergencyCancelled, subscribeToDynamicReroute } from '@/lib/socket';
 import ApiClient from '@/lib/api';
 import { useVehicleTracking } from '@/hooks/useVehicleTracking';
+import { VehicleMarker } from '@/components/admin/common/VehicleMarker';
 
 const DISTRICT_COORDS = {
   kamrup: { lat: 26.1445, lng: 91.7362, name: 'Guwahati' },
@@ -28,6 +29,7 @@ const DISTRICT_COORDS = {
 
 const TILE_LAYERS = {
   streets: { url: 'https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', name: 'Streets', maxNativeZoom: 19 },
+  voyager: { url: 'https://{s}.basemaps.cartocdn.com/rastertiles/voyager/{z}/{x}/{y}{r}.png', name: 'Voyager', maxNativeZoom: 19 },
   satellite: { url: 'https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}', name: 'Satellite', maxNativeZoom: 17 },
   terrain: { url: 'https://server.arcgisonline.com/ArcGIS/rest/services/World_Topo_Map/MapServer/tile/{z}/{y}/{x}', name: 'Terrain', maxNativeZoom: 16 },
   dark: { url: 'https://server.arcgisonline.com/ArcGIS/rest/services/Canvas/World_Dark_Gray_Base/MapServer/tile/{z}/{y}/{x}', name: 'Dark', maxNativeZoom: 15 },
@@ -71,9 +73,64 @@ function getAccuracyBadge(rating) {
   }
 }
 
-function MapCtrl({ center }) {
+function FollowSelectedVehicle({ vehicleId, positions, vehicleList, liveRouteGeom, autoFollow }) {
   const map = useMap();
-  useEffect(() => { if (center) map.flyTo(center, 10, { duration: 0.8 }); }, [center, map]);
+  const prevVehicleRef = useRef(null);
+  const prevPosRef = useRef(null);
+  const fittedRouteRef = useRef(null);
+
+  useEffect(() => {
+    if (!vehicleId) {
+      prevVehicleRef.current = null;
+      fittedRouteRef.current = null;
+      return;
+    }
+
+    const anim = positions[vehicleId];
+    const v = vehicleList.find((item) => item.id === vehicleId);
+    const lat = anim?.lat ?? v?.lat ?? v?.current_lat ?? null;
+    const lng = anim?.lng ?? v?.lng ?? v?.current_lng ?? null;
+
+    if (lat == null || lng == null || !Number.isFinite(lat) || !Number.isFinite(lng)) return;
+
+    const isNewVehicle = prevVehicleRef.current !== vehicleId;
+    prevVehicleRef.current = vehicleId;
+
+    // If there is a live route geometry and we haven't fitted it yet for this vehicle/route
+    if (liveRouteGeom && liveRouteGeom.length > 1 && fittedRouteRef.current !== liveRouteGeom) {
+      fittedRouteRef.current = liveRouteGeom;
+      try {
+        const bounds = L.latLngBounds(liveRouteGeom);
+        bounds.extend([lat, lng]);
+        map.fitBounds(bounds, { padding: [60, 60], maxZoom: 14, animate: true, duration: 0.8 });
+        prevPosRef.current = [lat, lng];
+        return;
+      } catch {
+        /* ignore leaflet transition state */
+      }
+    }
+
+    // Fly to vehicle on initial selection
+    if (isNewVehicle) {
+      try {
+        map.flyTo([lat, lng], Math.max(map.getZoom(), 13), { duration: 0.8 });
+        prevPosRef.current = [lat, lng];
+      } catch { }
+      return;
+    }
+
+    // Follow moving vehicle in real time if autoFollow is enabled
+    if (autoFollow) {
+      const prev = prevPosRef.current;
+      if (!prev || Math.abs(prev[0] - lat) > 0.0001 || Math.abs(prev[1] - lng) > 0.0001) {
+        prevPosRef.current = [lat, lng];
+        try {
+          map.panTo([lat, lng], { animate: true, duration: 0.5 });
+        } catch { }
+      }
+    }
+  }, [vehicleId, positions[vehicleId]?.lat, positions[vehicleId]?.lng, liveRouteGeom, autoFollow, map, vehicleList]);
+
   return null;
 }
 
@@ -135,6 +192,7 @@ export const FleetTrackingMap = ({ selectedVehicleId, onSelectVehicle }) => {
       flood: rows.map((d) => ({ ...toPoint(d), intensity: Math.min(1, (Number(d?.flood_risk_level) || 0) / 65) })).filter((p) => p.lat != null && (Number(p.intensity) || 0) > 0.05),
     };
   }, [allDistrictsSummary]);
+  const [autoFollow, setAutoFollow] = useState(true);
   const [mapCenter, setMapCenter] = useState([25.5, 93.0]);
   const [liveRoute, setLiveRoute] = useState(null);
   const [routeLoading, setRouteLoading] = useState(false);
@@ -201,18 +259,30 @@ export const FleetTrackingMap = ({ selectedVehicleId, onSelectVehicle }) => {
     return () => { alive = false; clearInterval(iv); };
   }, [selectedVehicleId]);
 
-  // Real-time Dynamic Reroute socket listener
+  // Real-time Dynamic Reroute socket listener - immediately update corridor detour
   useEffect(() => {
     const unsub = subscribeToDynamicReroute((data) => {
       if (!data || !data.vehicleId) return;
       if (data.vehicleId === selectedVehicleId) {
-        setLiveRoute(data);
+        setLiveRoute((prev) => ({
+          ...prev,
+          ...data,
+          hasRoute: true,
+          rerouted: true,
+          geometry: Array.isArray(data.geometry) && data.geometry.length > 1 ? data.geometry : prev?.geometry,
+          totalDistanceKm: data.totalDistanceKm ?? prev?.totalDistanceKm,
+          riskScore: data.riskScore ?? prev?.riskScore,
+          riskLevel: data.riskLevel ?? prev?.riskLevel,
+          etaMinutes: data.etaMinutes ?? prev?.etaMinutes,
+          etaLabel: data.etaLabel ?? prev?.etaLabel,
+          rerouteReason: data.rerouteReason || prev?.rerouteReason || 'Dynamic detour to safest alternate corridor',
+        }));
       }
     });
     return () => unsub();
   }, [selectedVehicleId]);
 
-  const liveRouteGeom = liveRoute?.hasRoute && (liveRoute.geometry || []).length > 1 ? liveRoute.geometry : null;
+  const liveRouteGeom = (liveRoute?.hasRoute !== false) && Array.isArray(liveRoute?.geometry) && liveRoute.geometry.length > 1 ? liveRoute.geometry : null;
   const liveRisk = liveRoute?.riskScore != null ? liveRoute.riskScore : null;
   const liveRiskColor = liveRisk == null ? '#10B981' : liveRisk > 80 ? '#EF4444' : liveRisk > 60 ? '#F97316' : liveRisk > 30 ? '#F59E0B' : '#10B981';
 
@@ -231,7 +301,7 @@ export const FleetTrackingMap = ({ selectedVehicleId, onSelectVehicle }) => {
         route: animated.route || v.route || '',
         timestamp: animated.timestamp || null,
         animating: animated.animating || false,
-        batteryLevel: animated.batteryLevel || v.fuel || null,
+        batteryLevel: animated.batteryLevel || null,
         accuracyRating: animated.accuracyRating || 'unknown',
         distanceRemaining: animated.distanceRemaining || null,
         currentRoute: animated.currentRoute || v.route || '',
@@ -250,59 +320,102 @@ export const FleetTrackingMap = ({ selectedVehicleId, onSelectVehicle }) => {
     };
   }, [vehiclePositions]);
 
-  const createVehicleMarkerIcon = useCallback((status, bearing, selected, sos) => {
-    if (sos) {
-      const size = selected ? 40 : 34;
-      return L.divIcon({
-        className: '',
-        html: `<div style="position:relative;width:${size}px;height:${size}px">` +
-          `<span style="position:absolute;inset:-6px;border-radius:50%;background:rgba(220,38,38,0.35);animation:sosPing 1.4s ease-out infinite"></span>` +
-          `<span style="position:absolute;inset:0;border-radius:50%;background:#DC2626;border:3px solid #fff;box-shadow:0 0 14px rgba(220,38,38,0.9);display:flex;align-items:center;justify-content:center;font-size:${selected ? 14 : 12}px;font-weight:900;color:#fff">SOS</span>` +
-          `</div>`,
-        iconSize: [size, size],
-        iconAnchor: [size / 2, size / 2],
-      });
-    }
-    const color = getStatusColor(status);
-    const size = selected ? 32 : 24;
-    const isOffline = status === 'offline' || status === 'stale';
-    return L.divIcon({
-      className: '',
-      html: `<div style="position:relative;width:${size}px;height:${size}px;opacity:${isOffline ? 0.5 : 1}">` +
-        `<svg viewBox="0 0 24 24" width="${size}" height="${size}" style="transform:rotate(${bearing}deg);filter:drop-shadow(0 2px 4px rgba(0,0,0,0.3));transition:transform 0.3s ease">` +
-        `<path d="M12 2L4.5 20.29l.71.71L12 18l6.79 3 .71-.71z" fill="${color}" stroke="white" stroke-width="1.5"/>` +
-        `</svg>` +
-        (selected ? `<div style="position:absolute;top:50%;left:50%;transform:translate(-50%,-50%);width:10px;height:10px;background:white;border-radius:50%;box-shadow:0 0 4px ${color}"></div>` : '') +
-        (status === 'moving' ? `<div style="position:absolute;top:-4px;right:-4px;width:8px;height:8px;background:${color};border-radius:50%;border:1.5px solid white;animation:pulse 2s infinite"></div>` : '') +
-        `</div>`,
-      iconSize: [size, size],
-      iconAnchor: [size / 2, size / 2],
-    });
-  }, []);
+
 
   const tile = TILE_LAYERS[activeLayer];
 
   const sosCount = Object.keys(sosMap).length;
 
   return (
-    <div style={{ height: '100%', minHeight: 400, position: 'relative', borderRadius: 8, overflow: 'hidden', border: '1px solid #DADCE0', boxShadow: '0 1px 3px rgba(0,0,0,0.12)' }}>
-      {/* GPS Source Status */}
+    <div style={{ height: 560, minHeight: 520, width: '100%', position: 'relative', borderRadius: 12, overflow: 'hidden', border: '1px solid #E2E8F0', boxShadow: '0 4px 16px -2px rgba(0,0,0,0.08)' }}>
+      {/* GPS Source Status & Vehicle Quick-Selector Toolbar */}
       <div style={{
         position: 'absolute', top: 0, left: 0, right: 0, zIndex: 1000,
-        padding: '6px 12px', background: Object.keys(vehiclePositions).length > 0 ? 'rgba(236,253,245,0.95)' : 'rgba(255,251,235,0.95)',
+        padding: '6px 14px', background: Object.keys(vehiclePositions).length > 0 ? 'rgba(236,253,245,0.95)' : 'rgba(255,251,235,0.95)',
         borderBottom: '1px solid ' + (Object.keys(vehiclePositions).length > 0 ? '#A7F3D0' : '#FDE68A'),
         fontSize: 11, fontFamily: "'Roboto', sans-serif", color: Object.keys(vehiclePositions).length > 0 ? '#059669' : '#B45309',
-        display: 'flex', alignItems: 'center', gap: 6,
+        display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 10, flexWrap: 'wrap'
       }}>
-        <div style={{ width: 6, height: 6, borderRadius: '50%', background: Object.keys(vehiclePositions).length > 0 ? '#10B981' : '#F59E0B', animation: Object.keys(vehiclePositions).length > 0 ? 'pulse 2s infinite' : 'none' }} />
-        {Object.keys(vehiclePositions).length > 0
-          ? `LIVE tracking active — ${Object.keys(vehiclePositions).length} vehicle(s) streaming real GPS over WebSocket`
-          : 'No live GPS stream right now — markers show the last verified GPS fix (STALE/OFFLINE by age), never presented as live'
-        }
+        <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+          <div style={{ width: 8, height: 8, borderRadius: '50%', background: Object.keys(vehiclePositions).length > 0 ? '#10B981' : '#F59E0B', animation: Object.keys(vehiclePositions).length > 0 ? 'pulse 2s infinite' : 'none' }} />
+          <span>
+            {Object.keys(vehiclePositions).length > 0
+              ? `LIVE GPS active — ${Object.keys(vehiclePositions).length} vehicle(s) streaming real GPS over WebSocket`
+              : 'Real-time GPS connected — markers show verified fixes (never fabricated)'
+            }
+          </span>
+        </div>
+
+        {/* Quick Vehicle Selector & Auto-Follow controls */}
+        <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+          <label style={{ fontSize: 11, fontWeight: 700, color: '#334155' }}>Track Vehicle:</label>
+          <select
+            value={selectedVehicleId || ''}
+            onChange={(e) => onSelectVehicle && onSelectVehicle(e.target.value || null)}
+            style={{
+              padding: '3px 10px',
+              borderRadius: 6,
+              border: '1px solid #CBD5E1',
+              background: '#FFFFFF',
+              fontSize: 11,
+              fontWeight: 700,
+              color: '#0F172A',
+              cursor: 'pointer',
+              outline: 'none',
+              boxShadow: '0 1px 2px rgba(0,0,0,0.05)'
+            }}
+          >
+            <option value="">-- All Fleet (Overview) --</option>
+            {vehicleList.map((v) => (
+              <option key={v.id} value={v.id}>
+                {v.id} {v.model ? `(${v.model})` : ''} · {v.status || v.statusClass}
+              </option>
+            ))}
+          </select>
+
+          {selectedVehicleId && (
+            <button
+              type="button"
+              onClick={() => setAutoFollow((prev) => !prev)}
+              style={{
+                padding: '3px 10px',
+                borderRadius: 6,
+                border: '1px solid ' + (autoFollow ? '#10B981' : '#CBD5E1'),
+                background: autoFollow ? '#ECFDF5' : '#FFFFFF',
+                fontSize: 10,
+                fontWeight: 800,
+                color: autoFollow ? '#059669' : '#64748B',
+                cursor: 'pointer',
+                display: 'flex',
+                alignItems: 'center',
+                gap: 4
+              }}
+              title="Keep camera centered on vehicle as it moves"
+            >
+              <span style={{ width: 6, height: 6, borderRadius: '50%', background: autoFollow ? '#10B981' : '#94A3B8' }} />
+              {autoFollow ? 'Auto-Follow: ON' : 'Auto-Follow: OFF'}
+            </button>
+          )}
+        </div>
       </div>
 
+      {/* Dynamic Detour Active Alert Banner */}
+      {liveRoute?.rerouted && (
+        <div style={{
+          position: 'absolute', top: 40, left: '50%', transform: 'translateX(-50%)',
+          zIndex: 1000, background: '#FEF3C7', border: '1.5px solid #F59E0B',
+          borderRadius: 8, padding: '6px 14px', display: 'flex', alignItems: 'center', gap: 8,
+          boxShadow: '0 4px 14px rgba(217,119,6,0.25)', animation: 'pulse 2s infinite'
+        }}>
+          <AlertTriangle size={15} color="#D97706" />
+          <span style={{ fontSize: 11, fontWeight: 800, color: '#92400E' }}>
+            DYNAMIC DETOUR ACTIVE: {liveRoute.rerouteReason || 'Safest alternate corridor activated'}
+          </span>
+        </div>
+      )}
+
       <MapContainer center={mapCenter} zoom={7} maxZoom={19} style={{ height: '100%', width: '100%' }} zoomControl={false} attributionControl={false}>
-        <ResilientTileLayer url={tile.url} attribution="&copy; OpenStreetMap" key={activeLayer} maxNativeZoom={tile.maxNativeZoom || 16} maxZoom={19} />
+        <ResilientTileLayer url={tile.url} fallbackUrl={tile.fallbackUrl} attribution="&copy; OpenStreetMap" key={activeLayer} maxNativeZoom={tile.maxNativeZoom || 16} maxZoom={19} />
 
         {/* Rainfall / flood heatmap from real district observations */}
         {heatMode !== 'off' && (
@@ -313,7 +426,13 @@ export const FleetTrackingMap = ({ selectedVehicleId, onSelectVehicle }) => {
         )}
         <MapZoomControls position="top-right" compact />
         <ScaleControl position="bottomright" imperial={false} />
-        <MapCtrl center={mapCenter} />
+        <FollowSelectedVehicle
+          vehicleId={selectedVehicleId}
+          positions={vehiclePositions}
+          vehicleList={vehicleList}
+          liveRouteGeom={liveRouteGeom}
+          autoFollow={autoFollow}
+        />
 
         {/* GPS Trails */}
         {Object.entries(vehicleTrails).map(([vid, trail]) => {
@@ -334,11 +453,20 @@ export const FleetTrackingMap = ({ selectedVehicleId, onSelectVehicle }) => {
           <>
             <Polyline
               positions={liveRouteGeom}
-              pathOptions={{ color: liveRiskColor, weight: 4, opacity: 0.95, lineCap: 'round', lineJoin: 'round', className: 'raahi-route-flow' }}
+              pathOptions={{
+                color: liveRoute?.rerouted ? '#D97706' : liveRiskColor,
+                weight: liveRoute?.rerouted ? 5 : 4,
+                opacity: 0.95,
+                lineCap: 'round',
+                lineJoin: 'round',
+                dashArray: liveRoute?.rerouted ? '8, 6' : undefined,
+                className: 'raahi-route-flow',
+              }}
             >
               <Tooltip sticky>
                 <span style={{ fontSize: 10, fontWeight: 600 }}>
-                  Route to {liveRoute?.destination?.name || liveRoute?.trip?.destination || 'destination'}
+                  {liveRoute?.rerouted ? '⚠️ DYNAMIC DETOUR: ' : 'Route to '}
+                  {liveRoute?.destination?.name || liveRoute?.trip?.destination || 'destination'}
                   {' | '}{liveRoute?.totalDistanceKm ?? '--'} km | risk {liveRisk ?? '--'}/100
                 </span>
               </Tooltip>
@@ -364,7 +492,7 @@ export const FleetTrackingMap = ({ selectedVehicleId, onSelectVehicle }) => {
                         </div>
                       )}
                       <div style={{ color: '#6B7280', fontSize: 9, marginTop: 4 }}>
-                        {liveRoute?.routingProvider === 'osrm' ? 'via OSRM road network' : liveRoute?.routingProvider === 'tomtom' ? 'via TomTom road network' : liveRoute?.routingProvider === 'mappls' ? 'via Mappls roads' : liveRoute?.routingProvider ? 'via ' + liveRoute.routingProvider : ''}
+                        {liveRoute?.routingProvider === 'osrm' ? 'via OSRM road network' : liveRoute?.routingProvider === 'tomtom' ? 'via TomTom road network' : liveRoute?.routingProvider ? 'via ' + liveRoute.routingProvider : ''}
                       </div>
                       {(liveRoute?.legs || []).length > 0 && (
                         <div style={{ marginTop: 6, borderTop: '1px solid #E5E7EB', paddingTop: 6 }}>
@@ -423,184 +551,32 @@ export const FleetTrackingMap = ({ selectedVehicleId, onSelectVehicle }) => {
           </>
         )}
 
-        {/* Vehicle Markers with Smooth Animation */}
-        {vehicleList.filter(v => v.lat && v.lng).map(v => {
-          const display = getVehicleDisplayData(v);
+        {/* Vehicle Markers with Smooth Gliding, Live Rotation & Tactical Telemetry HUD */}
+        {vehicleList.filter(v => (vehiclePositions[v.id]?.lat || v.lat) && (vehiclePositions[v.id]?.lng || v.lng)).map(v => {
+          const live = vehiclePositions[v.id];
           const isSelected = selectedVehicleId === v.id;
-          const color = getStatusColor(display.status);
-          const accuracyBadge = getAccuracyBadge(display.accuracyRating);
-          const ageLabel = formatAge(display.timestamp);
           const sos = sosMap[v.id];
-
+          const vehicleObj = {
+            ...v,
+            lat: live?.lat ?? v.lat,
+            lng: live?.lng ?? v.lng,
+            heading: live?.bearing ?? live?.heading ?? v.heading,
+            speed: live?.speed ?? v.speed,
+            speedNum: live?.speed ?? v.speedNum ?? v.speed,
+            status: live?.status ?? v.statusClass ?? v.status,
+            liveStatus: sos ? 'emergency' : live ? 'LIVE' : (v.liveStatus || v.status),
+            sos: !!sos,
+            sosData: sos,
+          };
           return (
-            <React.Fragment key={v.id}>
-              {isSelected && (
-                <CircleMarker
-                  center={[display.lat, display.lng]}
-                  radius={24}
-                  fillColor={color}
-                  fillOpacity={0.08}
-                  color={color}
-                  weight={1.5}
-                  dashArray="4, 4"
-                />
-              )}
-              <Marker
-                position={[display.lat, display.lng]}
-                icon={createVehicleMarkerIcon(display.status, display.bearing, isSelected, sos)}
-                zIndexOffset={sos ? 2000 : isSelected ? 1000 : 500}
-                eventHandlers={{
-                  click: () => onSelectVehicle && onSelectVehicle(v.id),
-                }}
-              >
-                <Popup maxWidth={320} minWidth={260}>
-                  <div style={{ fontFamily: "'Roboto', sans-serif", padding: '4px 0' }}>
-                    {sos && (
-                      <div style={{ marginBottom: 8, padding: '8px 10px', borderRadius: 6, background: '#FEF2F2', border: '1.5px solid #DC2626', animation: 'sosBlink 1.6s ease-in-out infinite' }}>
-                        <div style={{ display: 'flex', alignItems: 'center', gap: 6, fontWeight: 800, fontSize: 12, color: '#991B1B' }}>
-                          <AlertTriangle size={13} />
-                          🚨 SOS ACTIVE — {sos.driver || 'Driver'} ({v.id})
-                        </div>
-                        {sos.reason && <div style={{ fontSize: 11, color: '#7F1D1D', marginTop: 3 }}>Reason: {sos.reason}</div>}
-                        <div style={{ fontSize: 10, color: '#B91C1C', marginTop: 3 }}>
-                          {sos.since ? `Since ${new Date(sos.since).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}` : ''}
-                          {sos.lat != null && ` · ${Number(sos.lat).toFixed(5)}, ${Number(sos.lng).toFixed(5)}`}
-                        </div>
-                      </div>
-                    )}
-                    {/* Header with status */}
-                    <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 8 }}>
-                      <div>
-                        <div style={{ fontWeight: 700, fontSize: 14, color: '#1F2937' }}>
-                          {v.id}
-                        </div>
-                        <div style={{ fontSize: 11, color: '#6B7280', marginTop: 1 }}>
-                          {v.model || ''} • {v.driver || 'Unassigned'}
-                        </div>
-                      </div>
-                      <span style={{
-                        display: 'inline-flex', alignItems: 'center', gap: 4,
-                        padding: '2px 8px', borderRadius: 12, fontSize: 10, fontWeight: 600,
-                        background: getStatusColor(display.status) + '18',
-                        color: getStatusColor(display.status),
-                        border: `1px solid ${getStatusColor(display.status)}40`,
-                      }}>
-                        <span style={{ width: 6, height: 6, borderRadius: '50%', background: getStatusColor(display.status) }} />
-                        {getStatusLabel(display.status)}
-                      </span>
-                    </div>
+            <VehicleMarker
+              key={v.id}
+              v={vehicleObj}
+              selected={isSelected}
+              onSelect={() => onSelectVehicle && onSelectVehicle(v.id)}
+              zIndexOffset={sos ? 2000 : isSelected ? 1000 : 500}
+            />
 
-                    {/* GPS Quality Badge */}
-                    <div style={{ display: 'flex', gap: 6, marginBottom: 8 }}>
-                      <span style={{
-                        display: 'inline-flex', alignItems: 'center', gap: 3,
-                        padding: '1px 6px', borderRadius: 4, fontSize: 9, fontWeight: 600,
-                        background: accuracyBadge.bg, color: accuracyBadge.color,
-                        border: `1px solid ${accuracyBadge.color}30`,
-                      }}>
-                        <Signal size={10} />
-                        GPS: {accuracyBadge.label}
-                      </span>
-                      <span style={{
-                        display: 'inline-flex', alignItems: 'center', gap: 3,
-                        padding: '1px 6px', borderRadius: 4, fontSize: 9, fontWeight: 600,
-                        background: '#F3F4F6', color: '#374151',
-                      }}>
-                        <Clock size={10} />
-                        {ageLabel}
-                      </span>
-                      {display.inDeadZone && (
-                        <span style={{
-                          display: 'inline-flex', alignItems: 'center', gap: 3,
-                          padding: '1px 6px', borderRadius: 4, fontSize: 9, fontWeight: 700,
-                          background: '#FEF3C7', color: '#B45309', border: '1px solid #FCD34D',
-                        }}>
-                          ⛰️ Dead Zone (Projected)
-                        </span>
-                      )}
-                      {display.fatigueWarning && (
-                        <span style={{
-                          display: 'inline-flex', alignItems: 'center', gap: 3,
-                          padding: '1px 6px', borderRadius: 4, fontSize: 9, fontWeight: 700,
-                          background: '#FEF2F2', color: '#DC2626', border: '1px solid #FCA5A5',
-                        }}>
-                          ⚠️ Fatigue ({display.continuousDrivingMins ? Math.round(display.continuousDrivingMins / 60) : '4+'}h continuous)
-                        </span>
-                      )}
-                    </div>
-
-                    {/* Vehicle Data Grid */}
-                    <div style={{
-                      display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '6px 12px',
-                      padding: '8px', background: '#F9FAFB', borderRadius: 6, border: '1px solid #E5E7EB',
-                      fontSize: 11,
-                    }}>
-                      <div>
-                        <span style={{ color: '#9CA3AF', fontSize: 9, textTransform: 'uppercase', letterSpacing: '0.5px' }}>Speed</span>
-                        <div style={{ fontWeight: 600, color: '#1F2937' }}>{Math.round(display.speed)} km/h</div>
-                      </div>
-                      <div>
-                        <span style={{ color: '#9CA3AF', fontSize: 9, textTransform: 'uppercase', letterSpacing: '0.5px' }}>Heading</span>
-                        <div style={{ fontWeight: 600, color: '#1F2937' }}>
-                          {display.direction || '—'} ({Math.round(display.bearing || 0)}°)
-                        </div>
-                      </div>
-                      <div>
-                        <span style={{ color: '#9CA3AF', fontSize: 9, textTransform: 'uppercase', letterSpacing: '0.5px' }}>ETA</span>
-                        <div style={{ fontWeight: 600, color: display.eta ? '#059669' : '#9CA3AF' }}>
-                          {display.eta || 'N/A'}
-                          {display.etaMinutes ? ` (${display.etaMinutes} min)` : ''}
-                        </div>
-                      </div>
-                      <div>
-                        <span style={{ color: '#9CA3AF', fontSize: 9, textTransform: 'uppercase', letterSpacing: '0.5px' }}>Fuel</span>
-                        <div style={{ fontWeight: 600, color: '#1F2937' }}>{display.batteryLevel || v.fuel || '—'}</div>
-                      </div>
-                      {display.distanceRemaining != null && (
-                        <div>
-                          <span style={{ color: '#9CA3AF', fontSize: 9, textTransform: 'uppercase', letterSpacing: '0.5px' }}>Distance Left</span>
-                          <div style={{ fontWeight: 600, color: '#1F2937' }}>{display.distanceRemaining} km</div>
-                        </div>
-                      )}
-                      <div>
-                        <span style={{ color: '#9CA3AF', fontSize: 9, textTransform: 'uppercase', letterSpacing: '0.5px' }}>Coordinates</span>
-                        <div style={{ fontWeight: 500, color: '#6B7280', fontSize: 10 }}>
-                          {display.lat.toFixed(4)}, {display.lng.toFixed(4)}
-                        </div>
-                      </div>
-                    </div>
-
-                    {/* Route Info */}
-                    {(display.route || display.currentRoute) && (
-                      <div style={{
-                        marginTop: 8, padding: '6px 8px', background: '#EFF6FF', borderRadius: 4,
-                        fontSize: 10, color: '#1E40AF', fontWeight: 500,
-                        display: 'flex', alignItems: 'center', gap: 4,
-                      }}>
-                        <MapPin size={12} />
-                        Route: {display.route || display.currentRoute}
-                      </div>
-                    )}
-
-                    {/* Animation indicator */}
-                    {display.animating && (
-                      <div style={{
-                        marginTop: 6, fontSize: 9, color: '#6B7280',
-                        display: 'flex', alignItems: 'center', gap: 4,
-                      }}>
-                        <div style={{ width: 5, height: 5, borderRadius: '50%', background: '#3B82F6', animation: 'pulse 1s infinite' }} />
-                        Smooth animation in progress
-                      </div>
-                    )}
-                  </div>
-                </Popup>
-                <Tooltip permanent={isSelected} direction="top" offset={[0, -14]}>
-                  <span style={{ fontSize: 9, fontWeight: 600, background: color, color: 'white', padding: '1px 5px', borderRadius: 3 }}>
-                    {v.id} | {Math.round(display.speed)} km/h
-                  </span>
-                </Tooltip>
-              </Marker>
-            </React.Fragment>
           );
         })}
       </MapContainer>

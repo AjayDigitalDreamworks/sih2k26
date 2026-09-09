@@ -84,22 +84,24 @@ export function useVehicleTracking(socket) {
   const handleGpsUpdate = useCallback((vehicleId, data) => {
     const now = Date.now();
     const prev = animStates.current[vehicleId];
-    let bearing = data.heading || 0;
+    let bearing = typeof data.heading === 'number' && data.heading !== 0 ? data.heading : (prev?.targetBearing || 0);
     let animDuration = ANIMATION_DURATION;
     if (prev) {
-      bearing = calculateBearing(prev.targetLat, prev.targetLng, data.lat, data.lng);
       const dist = haversineDistance(prev.targetLat, prev.targetLng, data.lat, data.lng);
+      if ((!data.heading || data.heading === 0) && dist >= 0.5) {
+        bearing = calculateBearing(prev.targetLat, prev.targetLng, data.lat, data.lng);
+      }
       const speedMs = Math.max(data.speed || 20, 5) * 0.277778;
-      animDuration = Math.max(600, Math.min(3000, (dist / speedMs) * 1000));
+      animDuration = Math.max(400, Math.min(2000, (dist / speedMs) * 1000));
     }
     let status = data.inDeadZone ? 'in_dead_zone' : data.status || 'moving';
     if (data.accuracyRating === 'invalid') status = 'gps_error';
-    else if (!data.isValid && !data.inDeadZone) status = 'stale';
+    else if (!data.isValid && data.isValid !== undefined && !data.inDeadZone) status = 'stale';
 
     animStates.current[vehicleId] = {
       startLat: prev ? prev.targetLat : data.lat,
       startLng: prev ? prev.targetLng : data.lng,
-      startBearing: prev ? bearing : undefined,
+      startBearing: prev ? prev.targetBearing : bearing,
       targetLat: data.lat, targetLng: data.lng, targetBearing: bearing,
       startTimestamp: now, animDuration,
       speed: data.speed || 0, status,
@@ -107,7 +109,7 @@ export function useVehicleTracking(socket) {
       timestamp: data.timestamp || new Date(now).toISOString(),
       route: data.route || data.currentRoute || '',
       accuracyRating: data.accuracyRating || 'unknown',
-      batteryLevel: data.fuel != null ? `${data.fuel}%` : data.batteryLevel || null,
+      batteryLevel: data.batteryLevel || null,
       lastUpdate: now,
       inDeadZone: !!data.inDeadZone,
       fatigueWarning: !!data.fatigueWarning,
@@ -131,7 +133,11 @@ export function useVehicleTracking(socket) {
       if (vehicleId && data.lat && data.lng) handleGpsUpdate(vehicleId, data);
     };
     socket.on('vehicle:position', handlePosition);
-    return () => { socket.off('vehicle:position', handlePosition); };
+    socket.on('vehicle.location.updated', handlePosition);
+    return () => {
+      socket.off('vehicle:position', handlePosition);
+      socket.off('vehicle.location.updated', handlePosition);
+    };
   }, [socket, handleGpsUpdate]);
 
   useEffect(() => { return () => { stopAnimation(); }; }, [stopAnimation]);

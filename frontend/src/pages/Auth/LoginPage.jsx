@@ -6,6 +6,7 @@ import AuthBranding from '../../components/auth/AuthBranding';
 import LoginForm from '../../components/auth/LoginForm';
 import LanguageSelector from '../../components/common/LanguageSelector';
 import AuthFooter from '../../components/auth/AuthFooter';
+import Logo from '../../components/common/Logo';
 import loginFooterImg from '../../assets/login-footer.jpeg';
 
 export default function LoginPage() {
@@ -27,36 +28,41 @@ export default function LoginPage() {
 
   return (
     <div className="w-full min-h-screen flex flex-col justify-between bg-[#F8FAFC] selection:bg-emerald-500 selection:text-white relative overflow-x-hidden">
-      {/* 2-Column Split Screen Layout */}
+      {/* 2-Column Split Screen Layout (Responsive: 1 col on mobile/tablet, 12 cols on desktop) */}
       <div className="grid grid-cols-1 lg:grid-cols-12 w-full flex-1">
-        {/* Left Visual Marketing Panel (50% Desktop) */}
-        <div className="lg:col-span-6 w-full relative">
+        {/* Left Visual Marketing Panel (50% Desktop, hidden on mobile/tablet for clean fast login) */}
+        <div className="hidden lg:block lg:col-span-6 w-full relative">
           <AuthBranding />
         </div>
 
-        {/* Right Authentication Panel (50% Desktop) */}
-        <div className="lg:col-span-6 w-full flex flex-col justify-between p-4 sm:p-6 lg:p-8 relative bg-[#F8FAFC]">
-          {/* Top Floating Language Selector */}
-          <div className="flex justify-end w-full relative z-30 mb-2">
-            <LanguageSelector />
+        {/* Right Authentication Panel (Full width on mobile/tablet, 50% on Desktop) */}
+        <div className="w-full lg:col-span-6 flex flex-col justify-between p-4 sm:p-6 lg:p-8 relative bg-[#F8FAFC] min-h-[calc(100vh-60px)] lg:min-h-0">
+          {/* Top Bar: Mobile Logo + Language Selector */}
+          <div className="flex items-center justify-between w-full relative z-30 mb-2 sm:mb-4">
+            <div className="lg:hidden">
+              <Logo size="default" />
+            </div>
+            <div className="ml-auto">
+              <LanguageSelector />
+            </div>
           </div>
 
           {/* Centered Login Card Container */}
           <motion.div
             initial={{ opacity: 0, scale: 0.97 }}
             animate={{ opacity: 1, scale: 1 }}
-            transition={{ duration: 0.4 }}
-            className="w-full flex items-center justify-center my-auto relative z-20 py-4"
+            transition={{ duration: 0.35 }}
+            className="w-full flex items-center justify-center my-auto relative z-20 py-2 sm:py-4"
           >
             <LoginForm />
           </motion.div>
 
           {/* Decorative Cityscape Footer Image (login-footer.jpeg) - ONLY inside Right Panel */}
-          <div className="absolute bottom-0 left-0 right-0 w-full h-24 sm:h-28 pointer-events-none z-0 overflow-hidden">
+          <div className="absolute bottom-0 left-0 right-0 w-full h-20 sm:h-24 pointer-events-none z-0 overflow-hidden">
             <img
               src={loginFooterImg}
               alt="Raahi Landmark Silhouette"
-              className="w-full h-full object-cover object-bottom opacity-50 mix-blend-multiply"
+              className="w-full h-full object-cover object-bottom opacity-40 mix-blend-multiply"
             />
           </div>
         </div>

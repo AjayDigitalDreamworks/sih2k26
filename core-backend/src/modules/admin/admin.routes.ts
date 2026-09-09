@@ -60,4 +60,9 @@ router.delete('/users/:id', AdminController.deleteUser);
 // 10. Data Source Health
 router.get('/data-sources', DataSourceHealthController.getDataSources);
 
+// 11. Continual Learning / Active Learning Feedback Loop
+router.get('/continual-learning/status', AdminController.getContinualLearningStatus);
+router.post('/continual-learning/retrain', AdminController.triggerContinualRetraining);
+router.post('/continual-learning/simulate-feedback', AdminController.simulateActiveLearningIncident);
+
 export default router;

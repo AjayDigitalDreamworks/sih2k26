@@ -15,7 +15,26 @@ export const LiveMapPage = () => {
   const [activeState, setActiveState] = useState('All');
   const [showLayerPanel, setShowLayerPanel] = useState(true);
 
+  const [activePreset, setActivePreset] = useState('all');
+
+  const applyPreset = (preset) => {
+    setActivePreset(preset);
+    if (preset === 'fleet') {
+      setActiveLayers(['base_map', 'roads', 'routes', 'vehicles', 'traffic']);
+    } else if (preset === 'weather') {
+      setActiveLayers(['base_map', 'roads', 'routes', 'weather', 'rainfall', 'risk_flood', 'risk_landslide', 'disruptions']);
+    } else if (preset === 'emergency') {
+      setActiveLayers(['base_map', 'roads', 'routes', 'vehicles', 'disruptions', 'hospitals', 'warehouses', 'logistics_hubs']);
+    } else {
+      setActiveLayers([
+        'base_map', 'districts', 'roads', 'routes', 'vehicles', 'weather', 'rainfall',
+        'risk_flood', 'risk_landslide', 'traffic', 'disruptions', 'hospitals', 'warehouses', 'logistics_hubs',
+      ]);
+    }
+  };
+
   const handleToggleLayer = useCallback((layerId) => {
+    setActivePreset('custom');
     setActiveLayers(prev =>
       prev.includes(layerId) ? prev.filter(id => id !== layerId) : [...prev, layerId]
     );
@@ -23,23 +42,26 @@ export const LiveMapPage = () => {
 
   return (
     <div className="live-map-page" style={{ display: 'flex', flexDirection: 'column', gap: '12px', height: '100%' }}>
-      {/* Top Header Bar */}
+      {/* Top Header Bar with 1-Click Smart Presets */}
       <div className="card" style={{
         padding: '10px 16px', display: 'flex', alignItems: 'center',
         justifyContent: 'space-between', flexWrap: 'wrap', gap: '10px',
       }}>
-        <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: '14px', flexWrap: 'wrap' }}>
           <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
             <MapPin size={20} color="#059669" />
-            <strong style={{ fontSize: '14px' }}>Raahi GIS Intelligence Map</strong>
+            <div>
+              <strong style={{ fontSize: '14px', color: '#0F172A' }}>Raahi GIS Intelligence Map</strong>
+              <div style={{ fontSize: '11px', color: '#64748B' }}>Live satellite, IMD weather radar & fleet telemetry</div>
+            </div>
           </div>
 
           <select
             value={activeState}
             onChange={(e) => setActiveState(e.target.value)}
-            style={{ fontSize: '11px', padding: '4px 10px', borderRadius: 4, border: '1px solid #D1D5DB' }}
+            style={{ fontSize: '11px', padding: '5px 10px', borderRadius: 6, border: '1px solid #D1D5DB', fontWeight: 600 }}
           >
-            <option value="All">All NER States</option>
+            <option value="All">All 8 NER States</option>
             <option value="Assam">Assam</option>
             <option value="Meghalaya">Meghalaya</option>
             <option value="Nagaland">Nagaland</option>
@@ -49,31 +71,85 @@ export const LiveMapPage = () => {
             <option value="Arunachal Pradesh">Arunachal Pradesh</option>
             <option value="Sikkim">Sikkim</option>
           </select>
+
+          {/* 1-Click Smart Presets */}
+          <div style={{ display: 'flex', alignItems: 'center', gap: '6px', backgroundColor: '#F1F5F9', padding: '3px', borderRadius: '8px' }}>
+            <button
+              type="button"
+              onClick={() => applyPreset('all')}
+              style={{
+                fontSize: '11px', fontWeight: 700, padding: '4px 10px', borderRadius: '6px', border: 'none',
+                backgroundColor: activePreset === 'all' ? '#FFFFFF' : 'transparent',
+                color: activePreset === 'all' ? '#0F172A' : '#64748B',
+                boxShadow: activePreset === 'all' ? '0 1px 2px rgba(0,0,0,0.08)' : 'none',
+                cursor: 'pointer',
+              }}
+            >
+              🌐 Full GIS
+            </button>
+            <button
+              type="button"
+              onClick={() => applyPreset('fleet')}
+              style={{
+                fontSize: '11px', fontWeight: 700, padding: '4px 10px', borderRadius: '6px', border: 'none',
+                backgroundColor: activePreset === 'fleet' ? '#FFFFFF' : 'transparent',
+                color: activePreset === 'fleet' ? '#059669' : '#64748B',
+                boxShadow: activePreset === 'fleet' ? '0 1px 2px rgba(0,0,0,0.08)' : 'none',
+                cursor: 'pointer',
+              }}
+            >
+              🚚 Fleet Only
+            </button>
+            <button
+              type="button"
+              onClick={() => applyPreset('weather')}
+              style={{
+                fontSize: '11px', fontWeight: 700, padding: '4px 10px', borderRadius: '6px', border: 'none',
+                backgroundColor: activePreset === 'weather' ? '#FFFFFF' : 'transparent',
+                color: activePreset === 'weather' ? '#2563EB' : '#64748B',
+                boxShadow: activePreset === 'weather' ? '0 1px 2px rgba(0,0,0,0.08)' : 'none',
+                cursor: 'pointer',
+              }}
+            >
+              🌧️ Weather & Flood
+            </button>
+            <button
+              type="button"
+              onClick={() => applyPreset('emergency')}
+              style={{
+                fontSize: '11px', fontWeight: 700, padding: '4px 10px', borderRadius: '6px', border: 'none',
+                backgroundColor: activePreset === 'emergency' ? '#FFFFFF' : 'transparent',
+                color: activePreset === 'emergency' ? '#DC2626' : '#64748B',
+                boxShadow: activePreset === 'emergency' ? '0 1px 2px rgba(0,0,0,0.08)' : 'none',
+                cursor: 'pointer',
+              }}
+            >
+              🏥 Emergency Relief
+            </button>
+          </div>
         </div>
 
         <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-          {/* Active layer count */}
           <span style={{
             fontSize: 10, color: '#059669', background: '#ECFDF5',
-            padding: '2px 8px', borderRadius: 10, fontWeight: 600,
+            padding: '4px 10px', borderRadius: 10, fontWeight: 700,
             border: '1px solid #A7F3D0',
           }}>
-            {activeLayers.length} layers active
+            {activeLayers.length} active layers
           </span>
 
-          {/* Layer panel toggle */}
           <button
             onClick={() => setShowLayerPanel(!showLayerPanel)}
             style={{
               display: 'flex', alignItems: 'center', gap: 4,
-              padding: '4px 10px', borderRadius: 4, border: '1px solid #D1D5DB',
+              padding: '5px 12px', borderRadius: 6, border: '1px solid #CBD5E1',
               background: showLayerPanel ? '#EFF6FF' : 'white',
-              cursor: 'pointer', fontSize: 11, fontWeight: 600,
+              cursor: 'pointer', fontSize: 11, fontWeight: 700,
               color: showLayerPanel ? '#2563EB' : '#374151',
             }}
           >
             <Layers size={14} />
-            {showLayerPanel ? 'Hide Layers' : 'Show Layers'}
+            {showLayerPanel ? 'Hide Controls' : 'Custom Layers'}
           </button>
         </div>
       </div>

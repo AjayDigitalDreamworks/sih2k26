@@ -7,6 +7,7 @@ import { notifyRiskRecalculation } from '../../utils/mlRiskTrigger';
 import { TrackingService } from '../tracking/tracking.service';
 import { uploadImageToCloudinary } from '../../utils/cloudinary';
 import { getSocketServer } from '../../sockets/socket.gateway';
+import { ContinualLearningService } from '../ml-proxy/continual-learning.service';
 
 // Incident types a driver can raise from the road (maps to FieldReport.type).
 const INCIDENT_TYPES = [
@@ -162,6 +163,71 @@ export class DriverController {
     }
   }
 
+  // POST /api/driver/media/upload — upload photo evidence for reports
+  static async uploadMedia(req: Request, res: Response) {
+    try {
+      if ((req as any).file) {
+        const file = (req as any).file;
+        const uploadRes = await uploadImageToCloudinary(file.path, {
+          folder: 'raahi/driver-reports',
+          filename: file.originalname,
+          mimetype: file.mimetype,
+        });
+
+        return sendSuccess(
+          res,
+          {
+            file_path: uploadRes.url,
+            url: uploadRes.url,
+            file_name: file.originalname,
+            file_size: uploadRes.bytes || file.size,
+            mime_type: file.mimetype,
+            provider: uploadRes.provider,
+          },
+          'Driver photo evidence uploaded successfully'
+        );
+      }
+
+      const { image, data, file: bodyFile, photo, fileName } = req.body || {};
+      const rawImage = image || data || bodyFile || photo;
+      if (rawImage && typeof rawImage === 'string') {
+        const matches = rawImage.match(/^data:([A-Za-z-+\/]+);base64,(.+)$/);
+        let mimeType = 'image/jpeg';
+        let buffer: Buffer;
+
+        if (matches && matches.length === 3) {
+          mimeType = matches[1];
+          buffer = Buffer.from(matches[2], 'base64');
+        } else {
+          buffer = Buffer.from(rawImage, 'base64');
+        }
+
+        const uploadRes = await uploadImageToCloudinary(buffer, {
+          folder: 'raahi/driver-reports',
+          filename: fileName || `driver-evidence-${Date.now()}`,
+          mimetype: mimeType,
+        });
+
+        return sendSuccess(
+          res,
+          {
+            file_path: uploadRes.url,
+            url: uploadRes.url,
+            file_name: fileName || `driver-evidence-${Date.now()}`,
+            file_size: uploadRes.bytes || buffer.length,
+            mime_type: mimeType,
+            provider: uploadRes.provider,
+          },
+          'Driver photo evidence uploaded successfully'
+        );
+      }
+
+      return sendError(res, 'No photo file or base64 image provided', 400);
+    } catch (err: any) {
+      return sendError(res, err.message, 500);
+    }
+  }
+
   // POST /api/driver/incidents — driver road/incident report (real FieldReport).
   static async reportIncident(req: Request, res: Response) {
     try {
@@ -170,16 +236,49 @@ export class DriverController {
       const { type, description, districtId, priority, location, coordinates, image, photos } = req.body || {};
 
       let imageUrl = String(image || '').trim();
-      if (imageUrl && imageUrl.startsWith('data:image/')) {
+
+      // 1. Multipart file upload priority
+      if ((req as any).file) {
+        const file = (req as any).file;
+        const uploadRes = await uploadImageToCloudinary(file.path, {
+          folder: 'raahi/driver-reports',
+          filename: file.originalname,
+          mimetype: file.mimetype,
+        });
+        imageUrl = uploadRes.url;
+      } else if (imageUrl && imageUrl.startsWith('data:image/')) {
         const matches = imageUrl.match(/^data:([A-Za-z-+\/]+);base64,(.+)$/);
         if (matches && matches.length === 3) {
           const mimeType = matches[1];
           const buffer = Buffer.from(matches[2], 'base64');
           const uploadRes = await uploadImageToCloudinary(buffer, {
+            folder: 'raahi/driver-reports',
             filename: `driver-incident-${Date.now()}`,
             mimetype: mimeType,
           });
           imageUrl = uploadRes.url;
+        }
+      }
+
+      // Upload any additional photos in array
+      const finalPhotos: string[] = imageUrl ? [imageUrl] : [];
+      if (Array.isArray(photos)) {
+        for (const p of photos) {
+          if (typeof p === 'string' && p.startsWith('data:image/')) {
+            const matches = p.match(/^data:([A-Za-z-+\/]+);base64,(.+)$/);
+            if (matches && matches.length === 3) {
+              const mimeType = matches[1];
+              const buffer = Buffer.from(matches[2], 'base64');
+              const uploadRes = await uploadImageToCloudinary(buffer, {
+                folder: 'raahi/driver-reports',
+                filename: `driver-photo-${Date.now()}`,
+                mimetype: mimeType,
+              });
+              finalPhotos.push(uploadRes.url);
+            }
+          } else if (typeof p === 'string' && p.trim() && !finalPhotos.includes(p.trim())) {
+            finalPhotos.push(p.trim());
+          }
         }
       }
 
@@ -239,6 +338,7 @@ export class DriverController {
       }
 
       notifyRiskRecalculation(`field report created: ${report.id}`);
+      ContinualLearningService.mineFieldReportIncident(report).catch(() => {});
       return sendSuccess(res, report, 'Incident reported to the regional command center', 201);
     } catch (err: any) {
       return sendError(res, err.message);
@@ -256,16 +356,49 @@ export class DriverController {
       const finalType = accepted.includes(type) ? type : 'Road Damage';
 
       let imageUrl = String(image || '').trim();
-      if (imageUrl && imageUrl.startsWith('data:image/')) {
+
+      // 1. Multipart file upload priority
+      if ((req as any).file) {
+        const file = (req as any).file;
+        const uploadRes = await uploadImageToCloudinary(file.path, {
+          folder: 'raahi/driver-reports',
+          filename: file.originalname,
+          mimetype: file.mimetype,
+        });
+        imageUrl = uploadRes.url;
+      } else if (imageUrl && imageUrl.startsWith('data:image/')) {
         const matches = imageUrl.match(/^data:([A-Za-z-+\/]+);base64,(.+)$/);
         if (matches && matches.length === 3) {
           const mimeType = matches[1];
           const buffer = Buffer.from(matches[2], 'base64');
           const uploadRes = await uploadImageToCloudinary(buffer, {
+            folder: 'raahi/driver-reports',
             filename: `driver-road-${Date.now()}`,
             mimetype: mimeType,
           });
           imageUrl = uploadRes.url;
+        }
+      }
+
+      // Upload any additional photos in array
+      const finalPhotos: string[] = imageUrl ? [imageUrl] : [];
+      if (Array.isArray(photos)) {
+        for (const p of photos) {
+          if (typeof p === 'string' && p.startsWith('data:image/')) {
+            const matches = p.match(/^data:([A-Za-z-+\/]+);base64,(.+)$/);
+            if (matches && matches.length === 3) {
+              const mimeType = matches[1];
+              const buffer = Buffer.from(matches[2], 'base64');
+              const uploadRes = await uploadImageToCloudinary(buffer, {
+                folder: 'raahi/driver-reports',
+                filename: `driver-road-photo-${Date.now()}`,
+                mimetype: mimeType,
+              });
+              finalPhotos.push(uploadRes.url);
+            }
+          } else if (typeof p === 'string' && p.trim() && !finalPhotos.includes(p.trim())) {
+            finalPhotos.push(p.trim());
+          }
         }
       }
 
@@ -289,7 +422,7 @@ export class DriverController {
         status: 'Pending',
         reportedOn: new Date().toLocaleString(),
         image: imageUrl,
-        photos: imageUrl ? [imageUrl] : (Array.isArray(photos) ? photos : []),
+        photos: finalPhotos,
         description: String(description || '').trim() || `${finalType} reported by driver.`,
         coordinates: lat != null && lng != null ? { lat, lng } : undefined,
       });
@@ -323,6 +456,7 @@ export class DriverController {
       }
 
       notifyRiskRecalculation(`road report created: ${report.id}`);
+      ContinualLearningService.mineFieldReportIncident(report).catch(() => {});
       return sendSuccess(res, report, 'Road issue reported for the GIS damage pipeline', 201);
     } catch (err: any) {
       return sendError(res, err.message);

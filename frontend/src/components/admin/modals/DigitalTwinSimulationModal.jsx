@@ -949,7 +949,7 @@ export const DigitalTwinSimulationModal = ({ isOpen, onClose }) => {
                         <th style={{ padding: '10px 12px', borderBottom: '1px solid var(--border-subtle, #E2E8F0)' }}>Access State</th>
                         <th style={{ padding: '10px 12px', borderBottom: '1px solid var(--border-subtle, #E2E8F0)' }}>Medical Oxygen</th>
                         <th style={{ padding: '10px 12px', borderBottom: '1px solid var(--border-subtle, #E2E8F0)' }}>Baby Food</th>
-                        <th style={{ padding: '10px 12px', borderBottom: '1px solid var(--border-subtle, #E2E8F0)' }}>Diesel Fuel</th>
+                        <th style={{ padding: '10px 12px', borderBottom: '1px solid var(--border-subtle, #E2E8F0)' }}>First Aid & Meds</th>
                         <th style={{ padding: '10px 12px', borderBottom: '1px solid var(--border-subtle, #E2E8F0)' }}>Grains</th>
                       </tr>
                     </thead>
@@ -957,7 +957,7 @@ export const DigitalTwinSimulationModal = ({ isOpen, onClose }) => {
                       {Object.entries(results.districtsImpact || {}).map(([dId, d], i) => {
                         const isIso = d.status === 'isolated';
                         const oxRem = d.stockDaysRemaining?.medicalOxygen ?? '--';
-                        const fuelRem = d.stockDaysRemaining?.petroleumFuel ?? '--';
+                        const suppRem = d.stockDaysRemaining?.firstAidSupplies ?? '--';
                         return (
                           <tr key={i} style={{ borderBottom: '1px solid var(--border-subtle, #E2E8F0)', background: isIso ? 'rgba(254, 242, 242, 0.4)' : 'transparent' }}>
                             <td style={{ padding: '10px 12px', fontWeight: 600 }}>{d.name}</td>
@@ -977,8 +977,8 @@ export const DigitalTwinSimulationModal = ({ isOpen, onClose }) => {
                               {oxRem} days {typeof oxRem === 'number' && oxRem <= 2.5 && '⚠️'}
                             </td>
                             <td style={{ padding: '10px 12px' }}>{d.stockDaysRemaining?.infantFood ?? '--'} days</td>
-                            <td style={{ padding: '10px 12px', color: typeof fuelRem === 'number' && fuelRem <= 2.0 ? '#DC2626' : 'inherit', fontWeight: typeof fuelRem === 'number' && fuelRem <= 2.0 ? 800 : 400 }}>
-                              {fuelRem} days {typeof fuelRem === 'number' && fuelRem <= 2.0 && '⚠️'}
+                            <td style={{ padding: '10px 12px', color: typeof suppRem === 'number' && suppRem <= 2.0 ? '#DC2626' : 'inherit', fontWeight: typeof suppRem === 'number' && suppRem <= 2.0 ? 800 : 400 }}>
+                              {suppRem} days {typeof suppRem === 'number' && suppRem <= 2.0 && '⚠️'}
                             </td>
                             <td style={{ padding: '10px 12px' }}>{d.stockDaysRemaining?.essentialGrains ?? '--'} days</td>
                           </tr>
@@ -1335,14 +1335,14 @@ function computeClientFallback(params) {
     activeLandslides,
     threatenedPasses: [],
     districtsImpact: {
-      cachar: { name: 'Cachar (Silchar)', status: 'isolated', stockDaysRemaining: { medicalOxygen: 1.8, infantFood: 3.2, petroleumFuel: 1.5, essentialGrains: 6.0 } },
-      dima_hasao: { name: 'Dima Hasao (Haflong)', status: 'isolated', stockDaysRemaining: { medicalOxygen: 1.2, infantFood: 2.1, petroleumFuel: 1.4, essentialGrains: 4.5 } },
-      aizawl: { name: 'Aizawl (Mizoram)', status: 'partial_access', stockDaysRemaining: { medicalOxygen: 4.2, infantFood: 5.0, petroleumFuel: 3.8, essentialGrains: 10.0 } },
-      kamrup: { name: 'Kamrup (Guwahati Hub)', status: 'operational', stockDaysRemaining: { medicalOxygen: 15.0, infantFood: 20.0, petroleumFuel: 14.0, essentialGrains: 30.0 } },
+      cachar: { name: 'Cachar (Silchar)', status: 'isolated', stockDaysRemaining: { medicalOxygen: 1.8, infantFood: 3.2, firstAidSupplies: 1.5, essentialGrains: 6.0 } },
+      dima_hasao: { name: 'Dima Hasao (Haflong)', status: 'isolated', stockDaysRemaining: { medicalOxygen: 1.2, infantFood: 2.1, firstAidSupplies: 1.4, essentialGrains: 4.5 } },
+      aizawl: { name: 'Aizawl (Mizoram)', status: 'partial_access', stockDaysRemaining: { medicalOxygen: 4.2, infantFood: 5.0, firstAidSupplies: 3.8, essentialGrains: 10.0 } },
+      kamrup: { name: 'Kamrup (Guwahati Hub)', status: 'operational', stockDaysRemaining: { medicalOxygen: 15.0, infantFood: 20.0, firstAidSupplies: 14.0, essentialGrains: 30.0 } },
     },
     strandedVehicles: [
       { id: 'AS-01-GC-4412', vehicleType: 'heavy_multi_axle', cargo: 'medical_oxygen', currentRoute: 'kamrup-cachar', impact: 'Route Severed (Bridge Overtopped)', actionRequired: 'Hold at Depot', recommendedHoldingPoint: 'Nagaon Logistics Depot (KM-120)' },
-      { id: 'AS-11-BC-8921', vehicleType: 'hazardous_tanker', cargo: 'diesel', currentRoute: 'kamrup-dima_hasao', impact: 'Route Severed (Landslide at Sonapur)', actionRequired: 'Divert to Ro-Ro', recommendedHoldingPoint: 'Pandu Multi-Modal Port' },
+      { id: 'AS-11-BC-8921', vehicleType: 'heavy_multi_axle', cargo: 'pharmaceuticals', currentRoute: 'kamrup-dima_hasao', impact: 'Route Severed (Landslide at Sonapur)', actionRequired: 'Divert to Ro-Ro', recommendedHoldingPoint: 'Pandu Multi-Modal Port' },
     ],
     activeRoroBypass: [
       { service: 'IWAI Pandu - Silghat Ro-Ro', waterway: 'NW-2 (Brahmaputra)', terminalA: 'Pandu Port', terminalB: 'Silghat Terminal', capacity: '20 Trucks / Voyage', transitTime: '3h 45m', status: 'READY' },

@@ -113,7 +113,7 @@ export const AlternativeRoutesTable = ({ routes, plan, activeRouteId = 'safest',
                   </div>
                   {alt.waterCrossing && (
                     <div style={{ fontSize: '11px', color: '#0369A1', marginTop: '4px', fontWeight: 500 }}>
-                      Vessel: <strong>{alt.waterCrossing.vesselName}</strong> • Bypasses mountain grades • Saves {alt.waterCrossing.fuelSavedLiters}L fuel ({alt.waterCrossing.carbonSavedKg} kg CO₂ ESG)
+                      Vessel: <strong>{alt.waterCrossing.vesselName}</strong> • Bypasses steep mountain grades • Saves ~90 min transit time ({alt.waterCrossing.carbonSavedKg || 42} kg CO₂ ESG)
                     </div>
                   )}
                 </div>

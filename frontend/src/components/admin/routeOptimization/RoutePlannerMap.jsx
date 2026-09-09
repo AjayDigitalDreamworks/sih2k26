@@ -6,7 +6,7 @@ import L from 'leaflet';
 import 'leaflet/dist/leaflet.css';
 import { MapPin, Sparkles, Loader2, AlertTriangle, ShieldCheck, Navigation, Gauge, RefreshCw, Route as RouteIcon, Search, Scale, AlertOctagon } from 'lucide-react';
 import ApiClient from '@/lib/api';
-import { DISTRICTS, districtById } from '@/data/geoMaster';
+import { DISTRICTS, districtById, findDistrictMatch } from '@/data/geoMaster';
 import { useApp } from '@/contexts/AppContext';
 
 const RISK_COLOR = { low: '#10B981', medium: '#F59E0B', high: '#F97316', critical: '#EF4444' };
@@ -153,8 +153,46 @@ export const RoutePlannerMap = ({
   }, [cargoWeightKg, onPlanChange, propOnSelectRoute, searchMode, vehicleType]);
 
   // Handle incoming emergency reroute navigation from GPS (e.g. from VehicleTrackingPage)
+  // or incoming corridor selection from SafeBypassModal / AIPredictionsPage
   useEffect(() => {
-    if (routePlannerInitialState && (routePlannerInitialState.currentLat != null || routePlannerInitialState.vehicleId)) {
+    if (!routePlannerInitialState) return;
+
+    // Case 1: Corridor specified from Safe Bypass Modal / Predictions / Emergency Mode
+    if (
+      routePlannerInitialState.fromDistrictId ||
+      routePlannerInitialState.toDistrictId ||
+      routePlannerInitialState.originName ||
+      routePlannerInitialState.destName ||
+      routePlannerInitialState.corridorName
+    ) {
+      const { fromDistrictId, toDistrictId, originName, destName, corridorName, prefer: initPrefer } = routePlannerInitialState;
+      const fromMatch = findDistrictMatch(fromDistrictId || originName);
+      const toMatch = findDistrictMatch(toDistrictId || destName);
+      const newFrom = fromMatch?.id || 'dima_hasao';
+      const newTo = toMatch?.id || 'imphal_west';
+
+      setFromId(newFrom);
+      setToId(newTo);
+      const effectivePrefer = initPrefer || prefer || 'safest';
+      if (initPrefer) setPrefer(initPrefer);
+
+      const fromLabel = fromMatch?.name || fromMatch?.city || originName || 'Origin';
+      const toLabel = toMatch?.name || toMatch?.city || destName || 'Destination';
+      setReroutedBanner(`🛡️ Safe Bypass Detour Loaded: ${corridorName || `${fromLabel} ➔ ${toLabel}`} (AI calculated safest detour avoiding active hazard zones)`);
+
+      if (fromMatch?.lat && fromMatch?.lng) {
+        setFocusedPoint([fromMatch.lat, fromMatch.lng]);
+      }
+
+      // Automatically plan the route for this exact corridor
+      planRoute(newFrom, newTo, effectivePrefer, vehicleType, false);
+
+      if (setRoutePlannerInitialState) setRoutePlannerInitialState(null);
+      return;
+    }
+
+    // Case 2: Vehicle GPS live fix (from VehicleTrackingPage)
+    if (routePlannerInitialState.currentLat != null || routePlannerInitialState.vehicleId) {
       const { vehicleId, currentLat, currentLng, route, vehicleType: initVType } = routePlannerInitialState;
       if (initVType) setVehicleType(initVType);
       const destCandidate = route && route.includes('→') ? route.split('→')[1].trim().toLowerCase() : 'cachar';
@@ -195,9 +233,9 @@ export const RoutePlannerMap = ({
       };
       runGpsReroute();
     }
-  }, [routePlannerInitialState, cargoWeightKg, onPlanChange, propOnSelectRoute, setRoutePlannerInitialState, vehicleType]);
+  }, [routePlannerInitialState, cargoWeightKg, onPlanChange, propOnSelectRoute, setRoutePlannerInitialState, vehicleType, prefer, planRoute]);
 
-  // Initial real plan on mount with Faridabad hubs
+  // Initial real plan on mount with Faridabad hubs (only if no incoming state)
   useEffect(() => {
     if (!routePlannerInitialState) {
       planRoute('dabua_chowk', 'aravali_college', 'safest', vehicleType, true);
@@ -556,15 +594,14 @@ export const RoutePlannerMap = ({
               ⛰️ Climb: +{Math.round(activeRoute.totalClimbM)} m {activeRoute.maxGradientPct ? `(${activeRoute.maxGradientPct}% slope)` : ''}
             </span>
           )}
-          {activeRoute.fuelLiters > 0 && (
-            <span style={{ display: 'inline-flex', alignItems: 'center', gap: 5, padding: '5px 10px', borderRadius: 8, background: '#F0FDF4', border: '1px solid #BBF7D0', color: '#166534', fontWeight: 700 }} title={`Base: ${activeRoute.baseFuelLiters || activeRoute.fuelLiters}L, Climb Surcharge: +${activeRoute.climbPenaltyLiters || 0}L`}>
-              ⛽ Fuel: ~{activeRoute.fuelLiters} L (₹{activeRoute.fuelCost})
-              {activeRoute.climbPenaltyLiters > 0 && <span style={{ fontSize: 10, color: '#047857', marginLeft: 2 }}> (+{activeRoute.climbPenaltyLiters}L climb)</span>}
+          {(activeRoute.transitCost || activeRoute.totalDistanceKm) > 0 && (
+            <span style={{ display: 'inline-flex', alignItems: 'center', gap: 5, padding: '5px 10px', borderRadius: 8, background: '#F0FDF4', border: '1px solid #BBF7D0', color: '#166534', fontWeight: 700 }}>
+              💰 Est. Transit Cost: ₹{activeRoute.transitCost || Math.round((activeRoute.totalDistanceKm || 15) * 22)}
             </span>
           )}
 
           <span style={{ display: 'inline-flex', alignItems: 'center', gap: 5, padding: '5px 10px', borderRadius: 8, background: '#F8FAFC', border: '1px solid #E2E8F0', color: '#64748B', fontWeight: 600 }}>
-            Geometry: {plan.routingProvider === 'osrm' ? 'OSRM road network' : plan.routingProvider === 'mappls' ? 'Mappls roads' : plan.routingProvider === 'tomtom' ? 'TomTom roads' : 'road network'}
+            Geometry: {plan.routingProvider === 'osrm' ? 'OSRM road network' : plan.routingProvider === 'tomtom' ? 'TomTom roads' : 'road network'}
           </span>
         </div>
       )}

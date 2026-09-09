@@ -80,6 +80,9 @@ export class VehiclesController {
         io.to('admin:all').emit('vehicle:position', livePayload);
         // Broadcast to Transporter room
         io.to(`transporter:${vehicle.transporter_id}`).emit('vehicle:position', livePayload);
+        // Broadcast globally to all connected dashboards with zero delay
+        io.emit('vehicle:position', livePayload);
+        io.emit('vehicle.location.updated', livePayload);
       }
 
       return sendSuccess(res, livePayload, 'GPS Telemetry ping processed');

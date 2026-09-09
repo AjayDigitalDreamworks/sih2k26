@@ -108,7 +108,7 @@ ner-logistics-platform/
 
 ## 4. Authentication & Authorization
 
-- Single auth service in core-backend shared by both dashboards. JWT access token (15 min) + refresh token (7 days, stored hashed in Redis, rotated on use).
+- Single auth service in core-backend shared by both dashboards. JWT access token (15 min) + refresh token (1 day, stored hashed in Redis, rotated on use).
 - Roles: `admin`, `district_officer`, `field_agent`, `transporter`, `driver`, `viewer`. Role embedded as a claim in the JWT; `role.middleware.ts` checks it per-route.
 - Passwords hashed with bcrypt (cost 12). Login endpoint rate-limited via Redis to prevent brute force.
 - Admin-only routes (user management, district config) require `role=admin`. Transporter routes require role in `[transporter, driver]` and are additionally scoped so a transporter only ever sees their own vehicles/trips/deliveries (enforced in the query layer, not just the route guard).
@@ -313,7 +313,7 @@ REDIS_URL=redis://localhost:6379
 JWT_ACCESS_SECRET=replace_me
 JWT_REFRESH_SECRET=replace_me
 JWT_ACCESS_EXPIRES=15m
-JWT_REFRESH_EXPIRES=7d
+JWT_REFRESH_EXPIRES=1d
 
 ML_SERVICE_URL=http://localhost:8000
 

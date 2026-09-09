@@ -12,6 +12,8 @@ import { Alert, FieldReport } from '../../models/mongo';
 import { sendSuccess, sendError } from '../../utils/response';
 import { notifyRiskRecalculation } from '../../utils/mlRiskTrigger';
 import { env } from '../../config/env';
+import { redisClient } from '../../config/redis';
+import { getSocketServer } from '../../sockets/socket.gateway';
 
 export class TransporterController {
   // 0. Self profile (company display data lives on the account's user row)
@@ -77,7 +79,17 @@ export class TransporterController {
   // 2. Trip Planning & Creation
   static async planTrip(req: Request, res: Response) {
     try {
-      const { originDistrictId, destDistrictId, commodityType, weightKg } = req.body;
+      const {
+        originDistrictId,
+        destDistrictId,
+        commodityType,
+        weightKg,
+        prefer,
+        avoidCorridors,
+        avoidDistricts,
+        blockedCorridors,
+        vehicleProfile,
+      } = req.body;
 
       if (!originDistrictId || !destDistrictId) {
         return sendError(res, 'originDistrictId and destDistrictId are required', 400);
@@ -87,7 +99,10 @@ export class TransporterController {
         return sendError(res, 'Origin and destination must be different districts.', 400);
       }
 
-      // Query ML engine for real road network routing (Safest vs Shortest)
+      // Retrieve all active corridor hazard alerts from Mongo (floods, landslides, road damage, blockages)
+      const activeAlerts = await Alert.find({ status: 'active' }).lean().catch(() => []);
+
+      // Query ML engine for real road network routing (Safest vs Shortest with dynamic blockage avoidance)
       let mlPlan: any = null;
       try {
         const mlRes = await fetch(`${env.mlServiceUrl}/route/plan`, {
@@ -96,9 +111,15 @@ export class TransporterController {
           body: JSON.stringify({
             originDistrictId,
             destDistrictId,
-            prefer: 'safest',
+            prefer: prefer || 'safest',
             commodityType: commodityType || 'general',
             weightKg: weightKg || 1000,
+            avoidCorridors: avoidCorridors || [],
+            avoidDistricts: avoidDistricts || [],
+            blockedCorridors: blockedCorridors || [],
+            vehicleProfile: vehicleProfile || 'heavy_multi_axle',
+            corridorAlerts: activeAlerts || [],
+            alerts: activeAlerts || [],
           }),
         });
         if (mlRes.ok) {
@@ -123,20 +144,31 @@ export class TransporterController {
       const routeTravelHours = Math.round((routeDistance / 45) * 10) / 10;
       const routeRisk = mlPlan?.recommended?.riskScore || 25;
 
+      // Extract real road network geometry from ML planner (OSRM/Mappls/TomTom)
+      let roadPoints: any[] = [];
+      if (Array.isArray(mlPlan?.recommended?.geometry) && mlPlan.recommended.geometry.length > 1) {
+        roadPoints = mlPlan.recommended.geometry;
+      } else if (Array.isArray(mlPlan?.safest?.geometry) && mlPlan.safest.geometry.length > 1) {
+        roadPoints = mlPlan.safest.geometry;
+      } else if (Array.isArray(mlPlan?.recommended?.legs?.[0]?.geometry) && mlPlan.recommended.legs[0].geometry.length > 1) {
+        roadPoints = mlPlan.recommended.legs[0].geometry;
+      }
+
+      const oLng = mlPlan?.origin?.lng || 77.2878;
+      const oLat = mlPlan?.origin?.lat || 28.3842;
+      const dLng = mlPlan?.destination?.lng || 77.4125;
+      const dLat = mlPlan?.destination?.lat || 28.4006;
+
+      // PostGIS GeoJSON LineString coordinates: [longitude, latitude]
+      const geoJsonCoords = roadPoints.length > 1
+        ? roadPoints.map((p: any) => (Array.isArray(p) && p.length >= 2 ? [p[1], p[0]] : p))
+        : [[oLng, oLat], [dLng, dLat]];
+      const routeGeom = JSON.stringify({ type: 'LineString', coordinates: geoJsonCoords });
+
       if (!route) {
         const oCode = originDistrictId.replace(/[^a-zA-Z0-9]/g, '').slice(0, 10).toUpperCase();
         const dCode = destDistrictId.replace(/[^a-zA-Z0-9]/g, '').slice(0, 10).toUpperCase();
         const routeId = `R-${oCode}-${dCode}`.slice(0, 50);
-
-        const oLng = mlPlan?.origin?.lng || 77.2878;
-        const oLat = mlPlan?.origin?.lat || 28.3842;
-        const dLng = mlPlan?.destination?.lng || 77.4125;
-        const dLat = mlPlan?.destination?.lat || 28.4006;
-        const rawCoords = mlPlan?.recommended?.legs?.[0]?.geometry?.coordinates;
-        const routeCoords = Array.isArray(rawCoords) && rawCoords.length > 1
-          ? rawCoords
-          : [[oLng, oLat], [dLng, dLat]];
-        const routeGeom = JSON.stringify({ type: 'LineString', coordinates: routeCoords });
 
         route = await Route.create({
           id: routeId,
@@ -149,6 +181,14 @@ export class TransporterController {
           status: routeRisk > 70 ? 'blocked' : routeRisk > 50 ? 'at_risk' : 'good',
           geom: routeGeom,
         });
+      } else if (roadPoints.length > 2) {
+        // Upgrade existing route to high-precision real road network geometry
+        await route.update({
+          geom: routeGeom,
+          distance_km: routeDistance,
+          avg_travel_hours: routeTravelHours,
+          current_risk_score: routeRisk,
+        });
       }
 
       const safestOpt = mlPlan?.safest;
@@ -156,22 +196,101 @@ export class TransporterController {
       const safestDist = safestOpt?.totalDistanceKm || route.distance_km;
       const shortestDist = shortestOpt?.totalDistanceKm || route.distance_km;
 
+      // Extract and format all available alternatives from ML plan or fallbacks
+      const alternativesList: any[] = [];
+      if (Array.isArray(mlPlan?.alternatives) && mlPlan.alternatives.length > 0) {
+        mlPlan.alternatives.forEach((alt: any) => {
+          const dKm = alt.totalDistanceKm || alt.distanceKm || routeDistance;
+          const avgH = alt.avgTravelHours || Math.round((dKm / 45) * 10) / 10;
+          const rScore = alt.riskScore ?? routeRisk;
+          alternativesList.push({
+            id: alt.id || 'alt',
+            routeId: route.id,
+            name: alt.name || (alt.id === 'safest' ? 'Safest Highway Corridor' : alt.id === 'shortest' ? 'Shortest Direct Corridor' : 'Alternative Bypass'),
+            type: alt.type || alt.id || 'safest',
+            label: alt.label || `${alt.name || 'Route'} (${dKm} km)`,
+            distanceKm: dKm,
+            totalDistanceKm: dKm,
+            estimatedHours: avgH,
+            avgTravelHours: avgH,
+            timeText: alt.timeText || `${avgH} hrs`,
+            fuelCostEstimate: Math.round(dKm * 14.5),
+            riskScore: rScore,
+            riskLevel: alt.riskLevel || (rScore > 60 ? 'high' : rScore > 30 ? 'medium' : 'low'),
+            geometry: alt.geometry || [],
+            legs: alt.legs || [],
+            roadCondition: alt.legs?.[0]?.roadCondition || 'good',
+            isRecommended: Boolean(alt.isRecommended),
+          });
+        });
+      }
+      if (alternativesList.length === 0) {
+        alternativesList.push({
+          id: 'safest',
+          routeId: route.id,
+          name: `${route.name} (Safest Highway)`,
+          type: 'safest',
+          label: `${route.name} (Safest Highway - ${routeDistance} km)`,
+          distanceKm: routeDistance,
+          totalDistanceKm: routeDistance,
+          estimatedHours: routeTravelHours,
+          avgTravelHours: routeTravelHours,
+          timeText: `${routeTravelHours} hrs`,
+          fuelCostEstimate: Math.round(routeDistance * 14.5),
+          riskScore: routeRisk,
+          riskLevel: routeRisk > 60 ? 'high' : routeRisk > 30 ? 'medium' : 'low',
+          geometry: [],
+          legs: [],
+          roadCondition: 'good',
+          isRecommended: true,
+        });
+        const shortestDist = Math.round(routeDistance * 0.92);
+        const shortestHours = Math.round((shortestDist / 48) * 10) / 10;
+        alternativesList.push({
+          id: 'shortest',
+          routeId: route.id,
+          name: `${route.name} (Shortest Direct)`,
+          type: 'shortest',
+          label: `${route.name} (Shortest Direct - ${shortestDist} km)`,
+          distanceKm: shortestDist,
+          totalDistanceKm: shortestDist,
+          estimatedHours: shortestHours,
+          avgTravelHours: shortestHours,
+          timeText: `${shortestHours} hrs`,
+          fuelCostEstimate: Math.round(shortestDist * 14.5),
+          riskScore: Math.min(100, Math.round(routeRisk * 1.25)),
+          riskLevel: routeRisk * 1.25 > 60 ? 'high' : 'medium',
+          geometry: [],
+          legs: [],
+          roadCondition: 'fair',
+          isRecommended: false,
+        });
+      }
+
+      const primaryAlt = alternativesList.find((a) => a.isRecommended) || alternativesList[0] || {
+        id: 'primary',
+        routeId: route.id,
+        name: route.name,
+        type: 'safest',
+        distanceKm: routeDistance,
+        totalDistanceKm: routeDistance,
+        estimatedHours: routeTravelHours,
+        avgTravelHours: routeTravelHours,
+        fuelCostEstimate: Math.round(routeDistance * 14.5),
+        riskScore: routeRisk,
+        riskLevel: routeRisk > 60 ? 'high' : 'low',
+        geometry: [],
+        legs: [],
+        roadCondition: 'good',
+        isRecommended: true,
+      };
+
       const suggestion = {
         routeId: route.id,
         name: route.name,
         origin: { districtId: originDistrictId, name: originName },
         destination: { districtId: destDistrictId, name: destName },
-        primary: {
-          routeId: route.id,
-          name: route.name,
-          distanceKm: safestDist,
-          estimatedHours: Math.round((safestDist / 45) * 10) / 10,
-          fuelCostEstimate: Math.round(safestDist * 14.5),
-          riskScore: safestOpt?.riskScore ?? route.current_risk_score,
-          riskLevel: (safestOpt?.riskScore ?? route.current_risk_score) > 60 ? 'high' : 'low',
-          geometry: safestOpt?.geometry || [],
-          legs: safestOpt?.legs || [],
-        },
+        primary: primaryAlt,
         safest: safestOpt ? {
           routeId: route.id,
           name: `Safest Path via ${safestOpt.legs?.[0]?.roadLabel || 'National Highway'}`,
@@ -196,18 +315,13 @@ export class TransporterController {
           legs: shortestOpt.legs,
           roadCondition: shortestOpt.legs?.[0]?.roadCondition || 'good',
         } : null,
+        alternatives: alternativesList,
         alerts: mlPlan?.alerts || [],
-        alternates: [
-          ...(shortestOpt && shortestOpt.totalDistanceKm !== safestDist ? [{
-            routeId: route.id,
-            name: `Shortest Direct Corridor (${originName} → ${destName})`,
-            distanceKm: shortestOpt.totalDistanceKm,
-            estimatedHours: Math.round((shortestOpt.totalDistanceKm / 50) * 10) / 10,
-            fuelCostEstimate: Math.round(shortestOpt.totalDistanceKm * 14.5),
-            riskScore: shortestOpt.riskScore,
-            riskLevel: shortestOpt.riskLevel,
-          }] : []),
-        ],
+        alternates: alternativesList.filter((a) => a.id !== primaryAlt.id),
+        rerouted: mlPlan?.rerouted || false,
+        rerouteReason: mlPlan?.rerouteReason || null,
+        avoidedCorridors: mlPlan?.avoidedCorridors || [],
+        vehicleProfile: mlPlan?.vehicleProfile || null,
       };
 
       return sendSuccess(res, suggestion, 'Trip plan generated with real corridor evaluation');
@@ -235,12 +349,21 @@ export class TransporterController {
         if (!route) {
           const originName = req.body.originDistrictId.replace(/_/g, ' ').replace(/\b\w/g, (c: string) => c.toUpperCase());
           const destName = req.body.destDistrictId.replace(/_/g, ' ').replace(/\b\w/g, (c: string) => c.toUpperCase());
+          let roadPoints: any[] = [];
+          if (Array.isArray(req.body.geometry) && req.body.geometry.length > 1) {
+            roadPoints = req.body.geometry;
+          }
+          const geoJsonCoords = roadPoints.length > 1
+            ? roadPoints.map((p: any) => (Array.isArray(p) && p.length >= 2 ? [p[1], p[0]] : p))
+            : [[77.2878, 28.3842], [77.4125, 28.4006]];
+
           const routeGeom = JSON.stringify({
             type: 'LineString',
-            coordinates: [[77.2878, 28.3842], [77.4125, 28.4006]],
+            coordinates: geoJsonCoords,
           });
+          const dynamicRouteId = `RT-${req.body.originDistrictId.slice(0, 3).toUpperCase()}-${req.body.destDistrictId.slice(0, 3).toUpperCase()}-${Date.now().toString().slice(-4)}`;
           route = await Route.create({
-            id: req.body.routeId || `R-${Date.now().toString(36).toUpperCase()}`,
+            id: req.body.routeId || dynamicRouteId || `R-${Date.now().toString(36).toUpperCase()}`,
             name: `${originName} → ${destName}`,
             origin_district_id: req.body.originDistrictId,
             dest_district_id: req.body.destDistrictId,
@@ -251,6 +374,13 @@ export class TransporterController {
             geom: routeGeom,
           });
         }
+      }
+      if (route && Array.isArray(req.body.geometry) && req.body.geometry.length > 2) {
+        const geoJsonCoords = req.body.geometry.map((p: any) => (Array.isArray(p) && p.length >= 2 ? [p[1], p[0]] : p));
+        await route.update({
+          geom: JSON.stringify({ type: 'LineString', coordinates: geoJsonCoords }),
+          distance_km: req.body.distanceKm || route.distance_km,
+        });
       }
       if (!route) {
         return sendError(res, 'Could not resolve corridor route for this trip', 400);
@@ -289,6 +419,10 @@ export class TransporterController {
         return sendError(res, `Vehicle or driver already has an active or planned trip (${existingTrip.id})`, 409);
       }
 
+      const shouldStartNow = req.body.startImmediately === true || req.body.status === 'in_transit';
+      const tripStatus = shouldStartNow ? 'in_transit' : 'planned';
+      const tripTravelHours = Number(req.body.estimatedHours) || Number(route.avg_travel_hours) || 4;
+
       const id = `TRIP-${Date.now().toString().slice(-6)}`;
       const trip = await Trip.create({
         id,
@@ -298,18 +432,49 @@ export class TransporterController {
         route_id: route.id,
         origin: route.name.split('→')[0]?.trim() || req.body.origin || route.origin_district_id,
         destination: route.name.split('→')[1]?.trim() || req.body.destination || route.dest_district_id,
-        status: 'planned',
+        status: tripStatus,
+        started_at: shouldStartNow ? new Date() : null,
         progress_percent: 0,
-        eta: new Date(Date.now() + Math.round(route.avg_travel_hours || 4) * 3600 * 1000),
+        eta: new Date(Date.now() + Math.round(tripTravelHours) * 3600 * 1000),
       });
 
-      // Link delivery / consignment if deliveryId or consignmentId provided
+      // Cache custom selected alternate route geometry for real-time tracking
+      if (req.body.geometry && Array.isArray(req.body.geometry) && req.body.geometry.length > 1) {
+        try {
+          await redisClient.set(`trip:route:${trip.id}`, JSON.stringify({
+            geometry: req.body.geometry,
+            distanceKm: req.body.distanceKm,
+            riskScore: req.body.riskScore,
+            routeName: req.body.routeName || route.name,
+            selectedRouteId: req.body.selectedRouteId,
+          }), { ex: 86400 });
+        } catch (_) {}
+      }
+
+      // Link delivery / consignment if deliveryId or consignmentId provided, or auto-create consignment
       const deliveryId = req.body.deliveryId || req.body.consignmentId;
       if (deliveryId) {
         const del = await Delivery.findOne({ where: { id: deliveryId, transporter_id: transporterId } });
         if (del) {
-          await del.update({ trip_id: trip.id, status: 'in_transit' });
+          await del.update({ trip_id: trip.id, status: shouldStartNow ? 'in_transit' : 'pending' });
         }
+      } else {
+        const delId = `CON-${new Date().getFullYear()}-${Date.now().toString().slice(-4)}`;
+        const validCommodities = ['medicine', 'food', 'agri', 'construction', 'fuel', 'general'];
+        const commodityType = validCommodities.includes(req.body.commodityType) ? req.body.commodityType : 'general';
+        await Delivery.create({
+          id: delId,
+          trip_id: trip.id,
+          transporter_id: transporterId,
+          origin_district_id: route.origin_district_id || 'kamrup',
+          dest_district_id: route.dest_district_id || 'sonitpur',
+          commodity_type: commodityType,
+          priority: 'high',
+          consignee_name: req.body.consigneeName || `${trip.destination} Dispatch Terminal`,
+          consignee_phone: req.body.consigneePhone || '+91 9876543210',
+          weight_kg: Number(req.body.weightKg) || 1200,
+          status: shouldStartNow ? 'in_transit' : 'pending',
+        });
       }
 
       // Link the assignment so the driver's context resolves vehicle + trip.
@@ -318,11 +483,32 @@ export class TransporterController {
         assigned_driver_id: driver.id,
         current_trip_id: trip.id,
         current_route: `${trip.origin} → ${trip.destination}`,
-        tracking_active: false,
-        live_status: 'OFFLINE',
+        tracking_active: shouldStartNow,
+        live_status: shouldStartNow ? 'LIVE' : 'OFFLINE',
       });
 
-      return sendSuccess(res, trip, 'Trip assigned — driver will start it from the Driver App', 201);
+      const io = getSocketServer();
+      if (io) {
+        io.emit('vehicle.status.updated', {
+          vehicleId: vehicle.id,
+          event: shouldStartNow ? 'trip_started' : 'trip_assigned',
+          tripId: trip.id,
+          driverId: driver.id,
+          status: shouldStartNow ? 'in_transit' : 'assigned',
+          timestamp: new Date().toISOString(),
+        });
+        io.emit('trip.status.updated', {
+          tripId: trip.id,
+          status: trip.status,
+          vehicleId: vehicle.id,
+          driverId: driver.id,
+          origin: trip.origin,
+          destination: trip.destination,
+          timestamp: new Date().toISOString(),
+        });
+      }
+
+      return sendSuccess(res, trip, shouldStartNow ? 'Trip started immediately on selected corridor' : 'Trip assigned — driver will start it from the Driver App', 201);
     } catch (err: any) {
       return sendError(res, err.message);
     }

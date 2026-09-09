@@ -55,7 +55,7 @@ export default function EditPreferencesModal({ isOpen, initialData, onClose, onS
                 <option value="Fastest Route">Fastest Route</option>
                 <option value="Shortest Distance">Shortest Distance</option>
                 <option value="Toll-Free Route">Toll-Free Route</option>
-                <option value="Fuel Efficient Route">Fuel Efficient Route</option>
+                <option value="Lowest Risk Route">Lowest Risk Route</option>
               </select>
             </div>
 

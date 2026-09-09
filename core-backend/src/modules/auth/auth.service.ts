@@ -5,6 +5,8 @@ import { env } from '../../config/env';
 import { redisClient } from '../../config/redis';
 import { Op } from 'sequelize';
 
+const REFRESH_TOKEN_TTL_SECONDS = 86400; // 1 day (24 * 60 * 60s)
+
 export class AuthService {
   static generateTokens(user: User) {
     const payload = {
@@ -58,8 +60,8 @@ export class AuthService {
     });
 
     const tokens = this.generateTokens(user);
-    // Save refresh token to Redis with 7 days TTL (604800s)
-    await redisClient.set(`refresh_token:${user.id}`, tokens.refreshToken, { ex: 604800 });
+    // Save refresh token to Redis with 1 day TTL (86400s)
+    await redisClient.set(`refresh_token:${user.id}`, tokens.refreshToken, { ex: REFRESH_TOKEN_TTL_SECONDS });
 
     return {
       user: {
@@ -97,7 +99,7 @@ export class AuthService {
     }
 
     const tokens = this.generateTokens(user);
-    await redisClient.set(`refresh_token:${user.id}`, tokens.refreshToken, { ex: 604800 });
+    await redisClient.set(`refresh_token:${user.id}`, tokens.refreshToken, { ex: REFRESH_TOKEN_TTL_SECONDS });
 
     return {
       user: {
@@ -129,7 +131,7 @@ export class AuthService {
       }
 
       const tokens = this.generateTokens(user);
-      await redisClient.set(`refresh_token:${user.id}`, tokens.refreshToken, { ex: 604800 });
+      await redisClient.set(`refresh_token:${user.id}`, tokens.refreshToken, { ex: REFRESH_TOKEN_TTL_SECONDS });
 
       return tokens;
     } catch (err: any) {

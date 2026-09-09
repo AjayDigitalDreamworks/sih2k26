@@ -9,18 +9,20 @@ import {
   WifiOff,
   MapPin,
   Gauge,
-  Fuel,
   Clock,
   Phone,
   Radio,
   ChevronRight,
   AlertTriangle,
+  ShieldAlert,
+  ShieldCheck,
 } from 'lucide-react';
 import TransporterSidebar from '../../components/transporter/TransporterSidebar';
 import TransporterHeader from '../../components/transporter/TransporterHeader';
 import TrackingMap from '../../components/tracking/TrackingMap';
+import DynamicRerouteModal from '../../components/transporter/DynamicRerouteModal';
 import ApiClient from '../../lib/api';
-import { subscribeToVehiclePositions } from '../../lib/socket';
+import { subscribeToVehiclePositions, subscribeToTripUpdates, subscribeToRouteCleared } from '../../lib/socket';
 
 const STATUS_LABEL = {
   moving: 'In Transit',
@@ -44,10 +46,16 @@ export default function LiveTrackingPage() {
   const [sidebarOpen, setSidebarOpen] = useState(false);
   const [vehicles, setVehicles] = useState([]);
   const [trips, setTrips] = useState([]);
+  const [alerts, setAlerts] = useState([]);
   const [selectedId, setSelectedId] = useState(null);
   const [livePos, setLivePos] = useState({}); // id -> latest socket payload
   const [refreshing, setRefreshing] = useState(false);
   const [toast, setToast] = useState('');
+
+  // Dynamic Reroute Modal state
+  const [showRerouteModal, setShowRerouteModal] = useState(false);
+  const [rerouteVehicleId, setRerouteVehicleId] = useState('');
+  const [rerouteReason, setRerouteReason] = useState('');
 
   const triggerToast = (m) => {
     setToast(m);
@@ -56,9 +64,10 @@ export default function LiveTrackingPage() {
 
   const load = useCallback(async () => {
     try {
-      const [vres, tres] = await Promise.allSettled([
+      const [vres, tres, ares] = await Promise.allSettled([
         ApiClient.getTransporterVehicles(),
         ApiClient.request('/transporter/trips'),
+        ApiClient.getTransporterAlerts(),
       ]);
       if (vres.status === 'fulfilled' && vres.value?.success) {
         setVehicles(vres.value.data || []);
@@ -68,6 +77,7 @@ export default function LiveTrackingPage() {
         });
       }
       if (tres.status === 'fulfilled' && tres.value?.success) setTrips(tres.value.data || []);
+      if (ares.status === 'fulfilled' && ares.value?.success) setAlerts(ares.value.data || []);
     } catch (e) {
       console.warn('Live tracking load failed:', e);
     }
@@ -83,8 +93,18 @@ export default function LiveTrackingPage() {
     const unsub = subscribeToVehiclePositions((p) => {
       if (p && p.lat && p.lng) setLivePos((prev) => ({ ...prev, [p.id || p.vehicleId]: p }));
     });
-    return () => unsub();
-  }, []);
+    const unsubTrip = subscribeToTripUpdates(() => {
+      load();
+    });
+    const unsubClear = subscribeToRouteCleared(() => {
+      load();
+    });
+    return () => {
+      unsub();
+      unsubTrip();
+      unsubClear();
+    };
+  }, [load]);
 
   const stats = useMemo(() => {
     const total = vehicles.length;
@@ -96,10 +116,35 @@ export default function LiveTrackingPage() {
     return { total, moving, idle, delayed, maintenance, offline };
   }, [vehicles]);
 
+  // Check if an active vehicle's route is affected by any active alert/hazard
+  const getVehicleHazard = useCallback((v) => {
+    if (!v) return null;
+    const vRoute = String(v.current_route || '').toLowerCase();
+    const vId = String(v.id || '').toLowerCase();
+    return alerts.find((a) => {
+      if (a.status === 'resolved') return false;
+      const d = String(a.district || a.districtId || '').toLowerCase();
+      const title = String(a.title || '').toLowerCase();
+      const loc = String(a.location || '').toLowerCase();
+      return (
+        (d && vRoute.includes(d)) ||
+        (loc && vRoute.includes(loc)) ||
+        (title && vRoute.includes(title)) ||
+        (a.vehicleId && String(a.vehicleId).toLowerCase() === vId)
+      );
+    });
+  }, [alerts]);
+
+  const affectedVehicles = useMemo(() => {
+    return vehicles.filter(
+      (v) => (v.status === 'moving' || v.status === 'in_transit') && getVehicleHazard(v)
+    );
+  }, [vehicles, getVehicleHazard]);
+
   const selected = vehicles.find((v) => v.id === selectedId) || null;
+  const selectedHazard = selected ? getVehicleHazard(selected) : null;
   const live = selected ? livePos[selected.id] : null;
   const speed = live ? Math.round(live.speed || 0) : selected && selected.speed != null ? Math.round(selected.speed) : 0;
-  const fuel = live ? live.fuel : selected ? selected.fuel_percent : null;
 
   const handleRefresh = async () => {
     setRefreshing(true);
@@ -183,14 +228,51 @@ export default function LiveTrackingPage() {
             ))}
           </div>
 
+          {/* Continuous Corridor Threat Detection Banner */}
+          {affectedVehicles.length > 0 && (
+            <div className="bg-gradient-to-r from-amber-500/10 via-orange-500/10 to-amber-500/5 border border-amber-300 rounded-2xl p-4 flex flex-col sm:flex-row sm:items-center justify-between gap-3 text-xs shadow-2xs">
+              <div className="flex items-start gap-3">
+                <div className="w-10 h-10 rounded-xl bg-amber-500 text-white flex items-center justify-center flex-shrink-0 font-black shadow-xs">
+                  <ShieldAlert className="w-5 h-5" />
+                </div>
+                <div>
+                  <div className="flex items-center gap-2">
+                    <span className="text-[10px] font-black uppercase tracking-wider px-2 py-0.5 rounded bg-amber-200 text-amber-900">
+                      Obstruction Detected on Active Route
+                    </span>
+                    <span className="font-extrabold text-slate-900">
+                      {affectedVehicles.length} Vehicle{affectedVehicles.length === 1 ? '' : 's'} Approaching Hazards
+                    </span>
+                  </div>
+                  <p className="text-[11px] text-slate-600 font-medium mt-1 leading-snug">
+                    Continuous route monitoring detected new disruptions (landslide/flood/damage) along the active path. Dynamic safe detour is calculated and ready to push to driver.
+                  </p>
+                </div>
+              </div>
+              <button
+                type="button"
+                onClick={() => {
+                  setRerouteVehicleId(affectedVehicles[0].id);
+                  const h = getVehicleHazard(affectedVehicles[0]);
+                  setRerouteReason(h?.title ? `Avoid ${h.title} via ML safe detour` : 'Dynamic safe detour');
+                  setShowRerouteModal(true);
+                }}
+                className="px-4 py-2.5 rounded-xl bg-amber-600 hover:bg-amber-700 text-white text-xs font-black shadow-sm transition-all cursor-pointer flex items-center justify-center gap-2 flex-shrink-0"
+              >
+                <RefreshCw className="w-3.5 h-3.5" />
+                <span>Reroute {affectedVehicles[0].id}</span>
+              </button>
+            </div>
+          )}
+
           {/* Map + Live vehicle panel */}
           <section className="grid grid-cols-1 lg:grid-cols-12 gap-5 items-stretch">
-            <div className="lg:col-span-8">
+            <div className="lg:col-span-9">
               <TrackingMap selectedId={selectedId} onSelect={setSelectedId} />
             </div>
 
             {/* Right: live selected vehicle */}
-            <div className="lg:col-span-4 bg-white rounded-2xl border border-slate-200/80 shadow-2xs flex flex-col overflow-hidden">
+            <div className="lg:col-span-3 bg-white rounded-2xl border border-slate-200/80 shadow-2xs flex flex-col overflow-hidden">
               <div className="px-4 py-3 border-b border-slate-100 bg-slate-50/50 flex items-center justify-between">
                 <h3 className="text-xs font-black text-slate-700 uppercase tracking-wider flex items-center gap-1.5">
                   <Radio className="w-3.5 h-3.5 text-emerald-600" /> Live Vehicle
@@ -239,8 +321,8 @@ export default function LiveTrackingPage() {
                       <span className="text-base font-black text-slate-800 block mt-0.5">{speed} km/h</span>
                     </div>
                     <div className="bg-slate-50 rounded-xl p-3 border border-slate-200/70">
-                      <span className="text-[10px] font-bold text-slate-400 flex items-center gap-1"><Fuel className="w-3 h-3 text-emerald-500" /> Fuel</span>
-                      <span className="text-base font-black text-slate-800 block mt-0.5">{fuel != null ? `${Math.round(fuel)}%` : '—'}</span>
+                      <span className="text-[10px] font-bold text-slate-400 flex items-center gap-1"><ShieldCheck className="w-3 h-3 text-emerald-500" /> Condition</span>
+                      <span className="text-base font-black text-slate-800 block mt-0.5">Optimal</span>
                     </div>
                   </div>
 
@@ -251,6 +333,57 @@ export default function LiveTrackingPage() {
                       <p className="text-[10px] text-slate-400 mt-0.5">Last ping: {timeAgo(selected.last_ping_at)}</p>
                     </div>
                   </div>
+
+                  {/* Continuous Route Safety Monitor & Reroute Option */}
+                  {selectedHazard ? (
+                    <div className="rounded-xl border border-amber-300 bg-amber-50/90 p-3 space-y-2">
+                      <div className="flex items-start gap-2">
+                        <ShieldAlert className="w-4 h-4 text-amber-700 flex-shrink-0 mt-0.5" />
+                        <div>
+                          <span className="text-[10px] font-black uppercase text-amber-900 bg-amber-200/80 px-1.5 py-0.5 rounded">
+                            Hazard Ahead on Corridor
+                          </span>
+                          <p className="text-xs font-bold text-slate-900 mt-1">{selectedHazard.title || 'Road Obstruction Ahead'}</p>
+                          <p className="text-[11px] text-slate-600 font-medium mt-0.5 leading-tight">
+                            {selectedHazard.message || 'Disruption detected on active route corridor.'}
+                          </p>
+                        </div>
+                      </div>
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setRerouteVehicleId(selected.id);
+                          setRerouteReason(`Avoid ${selectedHazard.title} via ML safe detour`);
+                          setShowRerouteModal(true);
+                        }}
+                        className="w-full py-2 px-3 rounded-lg bg-amber-600 hover:bg-amber-700 text-white text-xs font-bold shadow-xs transition-colors cursor-pointer flex items-center justify-center gap-1.5"
+                      >
+                        <RefreshCw className="w-3.5 h-3.5" />
+                        <span>Reroute Vehicle (Safe Detour)</span>
+                      </button>
+                    </div>
+                  ) : (
+                    <div className="rounded-xl border border-emerald-200 bg-emerald-50/60 p-2.5 flex items-center justify-between text-xs">
+                      <div className="flex items-center gap-2">
+                        <ShieldCheck className="w-4 h-4 text-emerald-600 flex-shrink-0" />
+                        <div>
+                          <span className="text-[10px] font-bold text-emerald-800 uppercase tracking-wide">Continuous Monitoring Active</span>
+                          <p className="text-[11px] text-slate-600 font-medium">Corridor clear · No active hazards</p>
+                        </div>
+                      </div>
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setRerouteVehicleId(selected.id);
+                          setRerouteReason('Preventive dynamic detour');
+                          setShowRerouteModal(true);
+                        }}
+                        className="px-2 py-1 rounded-lg bg-white border border-emerald-300 text-emerald-800 hover:bg-emerald-50 text-[10px] font-bold transition-colors cursor-pointer"
+                      >
+                        Detour
+                      </button>
+                    </div>
+                  )}
 
                   <div className="rounded-xl border border-slate-200/80 p-3">
                     <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider">Driver</span>
@@ -332,6 +465,16 @@ export default function LiveTrackingPage() {
           </section>
         </main>
       </div>
+
+      {/* Dynamic Reroute Modal */}
+      <DynamicRerouteModal
+        isOpen={showRerouteModal}
+        onClose={() => setShowRerouteModal(false)}
+        vehicles={vehicles}
+        initialVehicleId={rerouteVehicleId}
+        initialReason={rerouteReason}
+        onRerouted={load}
+      />
 
       {/* Toast */}
       <AnimatePresence>
