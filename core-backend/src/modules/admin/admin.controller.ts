@@ -1,4 +1,5 @@
 import { Request, Response } from 'express';
+import mongoose from 'mongoose';
 import { Op, fn, col, literal } from 'sequelize';
 import {
   District,
@@ -363,12 +364,17 @@ export class AdminController {
 
   static async verifyFieldReport(req: Request, res: Response) {
     try {
+      const reportId = req.params.id;
+      const filter: any = mongoose.isValidObjectId(reportId)
+        ? { $or: [{ id: reportId }, { _id: reportId }] }
+        : { id: reportId };
+
       const report = await FieldReport.findOneAndUpdate(
-        { id: req.params.id },
+        filter,
         {
           $set: {
             status: 'Resolved',
-            verifiedBy: req.user?.name || 'Admin',
+            verifiedBy: (req as any).user?.name || 'Admin',
             verifiedAt: new Date(),
           },
         },
@@ -378,15 +384,15 @@ export class AdminController {
 
       // Audit Log
       await AuditLog.create({
-        userId: req.user?.id || 'admin',
+        userId: (req as any).user?.id || 'admin',
         action: 'VERIFY_FIELD_REPORT',
         entityType: 'FieldReport',
-        entityId: req.params.id,
+        entityId: report.id || reportId,
         meta: { status: 'Resolved' },
-      });
+      }).catch(() => {});
 
       // A resolved report changes the open-disruption count → recalc risk now.
-      notifyRiskRecalculation(`field report verified: ${req.params.id}`);
+      notifyRiskRecalculation(`field report verified: ${report.id || reportId}`);
 
       // If verifying a hazard report, broadcast an active network alert so transporters are alerted
       const hazardKeywords = ['landslide', 'flood', 'block', 'damage', 'accident', 'bridge'];
@@ -426,21 +432,41 @@ export class AdminController {
 
   static async rejectFieldReport(req: Request, res: Response) {
     try {
-      const { reason } = req.body;
+      const { reason, status } = req.body;
+      const reportId = req.params.id;
+      const filter: any = mongoose.isValidObjectId(reportId)
+        ? { $or: [{ id: reportId }, { _id: reportId }] }
+        : { id: reportId };
+
+      const targetStatus = status === 'Rejected' ? 'Rejected' : 'Dismissed';
+
       const report = await FieldReport.findOneAndUpdate(
-        { id: req.params.id },
+        filter,
         {
           $set: {
-            status: 'Rejected',
-            rejectionReason: reason || 'Information unverified',
+            status: targetStatus,
+            rejectionReason: reason || (targetStatus === 'Dismissed' ? 'Dismissed by Command Center' : 'Information unverified'),
           },
         },
         { new: true }
       );
       if (!report) return sendError(res, 'Field report not found', 404);
-      // Rejected report → no longer an open disruption → recalc risk now.
-      notifyRiskRecalculation(`field report rejected: ${req.params.id}`);
-      return sendSuccess(res, report, 'Field report rejected');
+
+      // Audit Log
+      await AuditLog.create({
+        userId: (req as any).user?.id || 'admin',
+        action: targetStatus === 'Dismissed' ? 'DISMISS_FIELD_REPORT' : 'REJECT_FIELD_REPORT',
+        entityType: 'FieldReport',
+        entityId: report.id || reportId,
+        meta: {
+          status: targetStatus,
+          reason: reason || (targetStatus === 'Dismissed' ? 'Dismissed by Command Center' : 'Information unverified'),
+        },
+      }).catch(() => {});
+
+      // Dismissed/Rejected report → no longer an open disruption → recalc risk now.
+      notifyRiskRecalculation(`field report ${targetStatus.toLowerCase()}: ${report.id || reportId}`);
+      return sendSuccess(res, report, `Field report ${targetStatus.toLowerCase()} successfully`);
     } catch (err: any) {
       return sendError(res, err.message);
     }

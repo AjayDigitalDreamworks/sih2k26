@@ -152,7 +152,14 @@ class ApiClient {
   static rejectFieldReport(id, reason) {
     return this.request(`/admin/field-reports/${id}/reject`, {
       method: 'PATCH',
-      body: JSON.stringify({ reason }),
+      body: JSON.stringify({ reason, status: 'Rejected' }),
+    });
+  }
+
+  static dismissFieldReport(id, reason) {
+    return this.request(`/admin/field-reports/${id}/dismiss`, {
+      method: 'PATCH',
+      body: JSON.stringify({ reason: reason || 'Dismissed by Command Center', status: 'Dismissed' }),
     });
   }
 

@@ -8,7 +8,7 @@ export interface IFieldReport extends Document {
   districtId: string;
   reportedBy: string;
   priority: 'High' | 'Medium' | 'Low' | 'Informational';
-  status: 'Pending' | 'In Progress' | 'Resolved' | 'Rejected';
+  status: 'Pending' | 'In Progress' | 'Resolved' | 'Rejected' | 'Dismissed';
   reportedOn: string;
   image: string;
   photos: string[];
@@ -39,7 +39,7 @@ const FieldReportSchema: Schema = new Schema(
     },
     status: {
       type: String,
-      enum: ['Pending', 'In Progress', 'Resolved', 'Rejected'],
+      enum: ['Pending', 'In Progress', 'Resolved', 'Rejected', 'Dismissed'],
       default: 'Pending',
     },
     reportedOn: { type: String, required: true },

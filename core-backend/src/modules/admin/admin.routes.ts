@@ -41,6 +41,7 @@ router.get('/field-reports', AdminController.getFieldReports);
 router.post('/field-reports', AdminController.createFieldReport);
 router.patch('/field-reports/:id/verify', AdminController.verifyFieldReport);
 router.patch('/field-reports/:id/reject', AdminController.rejectFieldReport);
+router.patch('/field-reports/:id/dismiss', AdminController.rejectFieldReport);
 
 // 7. Supply Chain & Deliveries
 router.get('/supply-chain/gaps', AdminController.getSupplyChainGaps);

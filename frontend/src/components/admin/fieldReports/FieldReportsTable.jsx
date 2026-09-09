@@ -116,9 +116,11 @@ export const FieldReportsTable = () => {
             style={{ minWidth: '130px' }}
           >
             <option value="All">All Status</option>
+            <option value="Pending">Pending</option>
             <option value="In Progress">In Progress</option>
             <option value="Resolved">Resolved</option>
-            <option value="Pending">Pending</option>
+            <option value="Dismissed">Dismissed</option>
+            <option value="Rejected">Rejected</option>
           </select>
 
           {/* Date Range pill */}
@@ -203,6 +205,10 @@ export const FieldReportsTable = () => {
                   ? 'in-progress'
                   : rep.status === 'Resolved'
                   ? 'resolved'
+                  : rep.status === 'Dismissed'
+                  ? 'dismissed'
+                  : rep.status === 'Rejected'
+                  ? 'rejected'
                   : 'pending';
 
               return (

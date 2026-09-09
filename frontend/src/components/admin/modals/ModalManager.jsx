@@ -22,6 +22,7 @@ export const ModalManager = () => {
     addAlert,
     addFieldReport,
     verifyReport,
+    dismissReport,
     addToast,
   } = useApp();
 
@@ -470,8 +471,13 @@ export const ModalManager = () => {
               <div style={{ display: 'flex', gap: '8px' }}>
                 <button
                   className="btn btn-outline"
-                  onClick={() => {
-                    addToast('Report Archived', `Report ${selectedItem.id} dismissed / archived.`, 'info');
+                  onClick={async () => {
+                    const reportId = selectedItem.id || selectedItem._id;
+                    if (dismissReport) {
+                      await dismissReport(reportId);
+                    } else {
+                      addToast('Report Dismissed', `Report ${reportId} dismissed.`, 'info');
+                    }
                     closeModal();
                   }}
                 >
@@ -480,10 +486,11 @@ export const ModalManager = () => {
                 <button
                   className="btn btn-primary"
                   onClick={async () => {
+                    const reportId = selectedItem.id || selectedItem._id;
                     if (verifyReport) {
-                      await verifyReport(selectedItem.id);
+                      await verifyReport(reportId);
                     } else {
-                      addToast('Status Updated', `Report ${selectedItem.id} verified and marked as Resolved.`, 'success');
+                      addToast('Status Updated', `Report ${reportId} verified and marked as Resolved.`, 'success');
                     }
                     closeModal();
                   }}

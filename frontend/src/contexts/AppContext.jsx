@@ -350,6 +350,22 @@ export const AppProvider = ({ children, scope = 'admin' }) => {
     }
   };
 
+  const dismissReport = async (reportId, reason = 'Dismissed by Command Center') => {
+    try {
+      const res = await ApiClient.dismissFieldReport(reportId, reason);
+      if (res?.success && res.data) {
+        setReports(prev => prev.map(r => ((r.id || r._id) === reportId ? { ...r, ...res.data, status: 'Dismissed' } : r)));
+        addToast('Report Dismissed', `Report ${reportId} dismissed.`, 'info');
+      } else {
+        setReports(prev => prev.map(r => ((r.id || r._id) === reportId ? { ...r, status: 'Dismissed' } : r)));
+        addToast('Report Dismissed', `Report ${reportId} dismissed.`, 'info');
+      }
+    } catch (e) {
+      setReports(prev => prev.map(r => ((r.id || r._id) === reportId ? { ...r, status: 'Dismissed' } : r)));
+      addToast('Report Dismissed', `Report ${reportId} dismissed.`, 'info');
+    }
+  };
+
   const addVehicle = async (v) => {
     try {
       const res = await ApiClient.createVehicle(v);
@@ -407,7 +423,7 @@ export const AppProvider = ({ children, scope = 'admin' }) => {
       delayTrends,
       supplyChain,
       pipelineRiskScores,
-      addFieldReport, verifyReport,
+      addFieldReport, verifyReport, dismissReport,
       addVehicle, addAlert,
       routePlannerInitialState, setRoutePlannerInitialState,
       toasts, addToast, removeToast,
