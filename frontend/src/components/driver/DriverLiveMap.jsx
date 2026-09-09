@@ -1,5 +1,5 @@
 import React, { useEffect, useRef, useState } from 'react';
-import { MapContainer, Marker, Polyline, ScaleControl } from 'react-leaflet';
+import { MapContainer, Marker, Polyline, ScaleControl, Circle, Popup } from 'react-leaflet';
 import L from 'leaflet';
 import 'leaflet/dist/leaflet.css';
 import { ResilientTileLayer } from '../admin/common/ResilientTileLayer';
@@ -132,7 +132,7 @@ function AnimatedTacticalDriverMarker({ target, heading }) {
   return <Marker ref={markerRef} position={[target.lat, target.lng]} icon={icon} zIndexOffset={1000} />;
 }
 
-export default function DriverLiveMap({ marker, route, trail, height = 280 }) {
+export default function DriverLiveMap({ marker, route, trail, height = 280, hazard = null }) {
   const [map, setMap] = useState(null);
 
   const routeLatLngs = Array.isArray(route)
@@ -184,7 +184,25 @@ export default function DriverLiveMap({ marker, route, trail, height = 280 }) {
     iconAnchor: [12, 12],
   });
 
-  const hasAnything = marker || routeLatLngs.length || trailLatLngs.length;
+  const hazardCoords = Array.isArray(hazard?.hazardCoordinates) && hazard.hazardCoordinates.length >= 2
+    ? [hazard.hazardCoordinates[0], hazard.hazardCoordinates[1]]
+    : null;
+
+  const hazardIcon = L.divIcon({
+    className: '',
+    html: `
+      <div style="position:relative;width:34px;height:34px;display:flex;align-items:center;justify-content:center;">
+        <div style="position:absolute;width:100%;height:100%;border-radius:50%;background:rgba(239,68,68,0.45);animation:driverPing 1.4s infinite;"></div>
+        <div style="width:26px;height:26px;border-radius:50%;background:#DC2626;border:2px solid #fff;box-shadow:0 0 10px rgba(220,38,38,0.9);display:flex;align-items:center;justify-content:center;color:#fff;font-size:13px;font-weight:900;">
+          ⚠️
+        </div>
+      </div>
+    `,
+    iconSize: [34, 34],
+    iconAnchor: [17, 17],
+  });
+
+  const hasAnything = marker || routeLatLngs.length || trailLatLngs.length || hazardCoords;
 
   return (
     <div style={{ position: 'relative', borderRadius: 16, overflow: 'hidden', border: '1px solid #CBD5E1', height, boxShadow: '0 4px 12px rgba(0,0,0,0.06)' }}>
@@ -224,6 +242,38 @@ export default function DriverLiveMap({ marker, route, trail, height = 280 }) {
 
           {/* Destination Marker */}
           {destPoint && <Marker position={destPoint} icon={destIcon} />}
+
+          {/* Upcoming Micro-Segment Hazard Hotspot */}
+          {hazardCoords && (
+            <>
+              <Circle
+                center={hazardCoords}
+                radius={260}
+                pathOptions={{
+                  color: '#EF4444',
+                  fillColor: '#DC2626',
+                  fillOpacity: 0.45,
+                  weight: 2,
+                  dashArray: '4, 4',
+                }}
+              />
+              <Marker position={hazardCoords} icon={hazardIcon}>
+                <Popup>
+                  <div style={{ padding: '4px 6px', maxWidth: 220, fontSize: 12 }}>
+                    <div style={{ fontWeight: 800, color: '#DC2626', marginBottom: 2 }}>
+                      ⚠️ {hazard.hazardReason || 'Hazard Zone Ahead'}
+                    </div>
+                    <div style={{ color: '#334155', fontSize: 11, lineHeight: 1.3 }}>
+                      KM {hazard.startChainageKm}–{hazard.endChainageKm} • Risk: <b>{hazard.riskScore}/100</b>
+                    </div>
+                    <div style={{ color: '#059669', fontWeight: 700, marginTop: 4 }}>
+                      Advisory Speed: &lt; {hazard.speedAdvisoryKmh || 25} km/h
+                    </div>
+                  </div>
+                </Popup>
+              </Marker>
+            </>
+          )}
 
           {/* Moving Vehicle */}
           {marker && <AnimatedTacticalDriverMarker target={{ lat: marker.lat, lng: marker.lng }} heading={marker.heading} />}

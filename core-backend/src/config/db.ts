@@ -66,8 +66,10 @@ export const connectPostgres = async () => {
     }
     
     await ensureSpatialIndexes();
+    await ensureFoundationsSchema();
     await ensureTrackingSchema();
     await ensureFieldOfficerSchema();
+    await ensureMicroSegmentsSchema();
   } catch (error: any) {
     console.error('❌ PostgreSQL connection error:', error.message);
     throw error;
@@ -317,5 +319,120 @@ export const ensureFieldOfficerSchema = async () => {
     console.log('✅ Field Officer schema ensured (field_tasks, field_verifications, field_reports, field_media + PostGIS GIST indexes).');
   } catch (err: any) {
     console.warn('⚠️ Field Officer schema notice:', err.message);
+  }
+};
+
+/**
+ * Idempotent schema for 500m Road Micro-Segments.
+ */
+export const ensureMicroSegmentsSchema = async () => {
+  const ddl = `
+    DO $$ BEGIN
+      CREATE TYPE enum_route_micro_segments_risk_level AS ENUM ('low', 'medium', 'high', 'critical');
+    EXCEPTION
+      WHEN duplicate_object THEN null;
+    END $$;
+
+    CREATE TABLE IF NOT EXISTS route_micro_segments (
+      id VARCHAR(64) PRIMARY KEY,
+      route_id VARCHAR(50) NOT NULL REFERENCES routes(id) ON DELETE CASCADE,
+      segment_index INTEGER NOT NULL,
+      start_chainage_km DOUBLE PRECISION NOT NULL,
+      end_chainage_km DOUBLE PRECISION NOT NULL,
+      length_m DOUBLE PRECISION NOT NULL DEFAULT 500.0,
+      slope_pct DOUBLE PRECISION NOT NULL DEFAULT 0.0,
+      elevation_start_m DOUBLE PRECISION NOT NULL DEFAULT 300.0,
+      elevation_end_m DOUBLE PRECISION NOT NULL DEFAULT 300.0,
+      tortuosity DOUBLE PRECISION NOT NULL DEFAULT 1.0,
+      current_risk_score INTEGER NOT NULL DEFAULT 15,
+      risk_level enum_route_micro_segments_risk_level NOT NULL DEFAULT 'low',
+      hazard_reason VARCHAR(255),
+      geom TEXT NOT NULL DEFAULT '{"type":"LineString","coordinates":[[0,0],[0,0]]}',
+      "createdAt" TIMESTAMPTZ NOT NULL DEFAULT now(),
+      "updatedAt" TIMESTAMPTZ NOT NULL DEFAULT now()
+    );
+
+    CREATE UNIQUE INDEX IF NOT EXISTS idx_route_micro_segments_route_idx ON route_micro_segments (route_id, segment_index);
+    CREATE INDEX IF NOT EXISTS idx_route_micro_segments_risk ON route_micro_segments (current_risk_score);
+  `;
+  try {
+    await sequelize.query(ddl);
+    console.log('✅ Route micro-segments schema ensured.');
+  } catch (err: any) {
+    console.warn('⚠️ Route micro-segments schema notice:', err.message);
+  }
+};
+
+/**
+ * Idempotent schema for Phase 0 Foundations:
+ * - district_burn_rates: consumption burn rates per district and commodity
+ * - rate_configs: dynamic fuel prices and transportation tariffs
+ * - dead_zone_segments: surveyed mountain low-connectivity corridors with entry/exit checkposts
+ * - bridges: PostGIS geom, is_bailey_bridge, corridor_id, verified_at, and GIST index
+ * - deliveries: eway_bill_no with 12-digit regex check constraint
+ */
+export const ensureFoundationsSchema = async () => {
+  const ddl = `
+    CREATE EXTENSION IF NOT EXISTS postgis;
+
+    CREATE TABLE IF NOT EXISTS district_burn_rates (
+      id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+      district_id VARCHAR(50) NOT NULL,
+      commodity VARCHAR(20) NOT NULL,
+      rate_value DOUBLE PRECISION NOT NULL,
+      rate_unit VARCHAR(50) NOT NULL DEFAULT 'kg_per_day',
+      effective_from TIMESTAMPTZ NOT NULL DEFAULT now(),
+      "createdAt" TIMESTAMPTZ NOT NULL DEFAULT now(),
+      "updatedAt" TIMESTAMPTZ NOT NULL DEFAULT now(),
+      CONSTRAINT chk_dbr_rate CHECK (rate_value > 0)
+    );
+    CREATE INDEX IF NOT EXISTS idx_dbr_district_comm ON district_burn_rates (district_id, commodity);
+
+    CREATE TABLE IF NOT EXISTS rate_configs (
+      id VARCHAR(50) PRIMARY KEY,
+      config_key VARCHAR(50) NOT NULL UNIQUE,
+      rate_value DOUBLE PRECISION NOT NULL,
+      rate_unit VARCHAR(50) NOT NULL DEFAULT 'INR_per_km',
+      vehicle_class VARCHAR(50) NOT NULL DEFAULT 'medium_commercial',
+      effective_from TIMESTAMPTZ NOT NULL DEFAULT now(),
+      "createdAt" TIMESTAMPTZ NOT NULL DEFAULT now(),
+      "updatedAt" TIMESTAMPTZ NOT NULL DEFAULT now()
+    );
+
+    CREATE TABLE IF NOT EXISTS dead_zone_segments (
+      id VARCHAR(50) PRIMARY KEY,
+      corridor_id VARCHAR(50) NOT NULL,
+      name VARCHAR(150) NOT NULL,
+      entry_checkpost_id VARCHAR(50),
+      entry_checkpost_name VARCHAR(150),
+      exit_checkpost_id VARCHAR(50),
+      exit_checkpost_name VARCHAR(150),
+      length_km DOUBLE PRECISION DEFAULT 24.0,
+      default_speed_kmh DOUBLE PRECISION DEFAULT 30.0,
+      geom GEOMETRY(LINESTRING, 4326),
+      "createdAt" TIMESTAMPTZ NOT NULL DEFAULT now(),
+      "updatedAt" TIMESTAMPTZ NOT NULL DEFAULT now()
+    );
+    CREATE INDEX IF NOT EXISTS idx_dead_zones_geom ON dead_zone_segments USING GIST (geom);
+
+    ALTER TABLE bridges ADD COLUMN IF NOT EXISTS geom GEOMETRY(POINT, 4326);
+    ALTER TABLE bridges ADD COLUMN IF NOT EXISTS is_bailey_bridge BOOLEAN NOT NULL DEFAULT false;
+    ALTER TABLE bridges ADD COLUMN IF NOT EXISTS corridor_id VARCHAR(50);
+    ALTER TABLE bridges ADD COLUMN IF NOT EXISTS verified_at TIMESTAMPTZ NOT NULL DEFAULT now();
+    UPDATE bridges SET geom = ST_SetSRID(ST_MakePoint(lng, lat), 4326) WHERE geom IS NULL AND lat IS NOT NULL AND lng IS NOT NULL;
+    CREATE INDEX IF NOT EXISTS idx_bridges_geom ON bridges USING GIST (geom);
+
+    ALTER TABLE deliveries ADD COLUMN IF NOT EXISTS eway_bill_no VARCHAR(12);
+    DO $$ BEGIN
+      ALTER TABLE deliveries ADD CONSTRAINT chk_deliveries_eway_bill CHECK (eway_bill_no IS NULL OR eway_bill_no ~ '^\\d{12}$');
+    EXCEPTION
+      WHEN duplicate_object THEN null;
+    END $$;
+  `;
+  try {
+    await sequelize.query(ddl);
+    console.log('✅ Foundations schema ensured (district_burn_rates, rate_configs, dead_zone_segments, bridges PostGIS, eway_bill_no).');
+  } catch (err: any) {
+    console.warn('⚠️ Foundations schema notice:', err.message);
   }
 };

@@ -222,6 +222,27 @@ button {
   background: #94a3b8;
 }
 
+/* Micro-Segmentation Glowing Hotspot Polyline */
+@keyframes hotspotPulse {
+  0% {
+    stroke-opacity: 0.75;
+    filter: drop-shadow(0 0 3px rgba(239, 68, 68, 0.7));
+  }
+  50% {
+    stroke-opacity: 1.0;
+    filter: drop-shadow(0 0 12px rgba(239, 68, 68, 1.0));
+  }
+  100% {
+    stroke-opacity: 0.75;
+    filter: drop-shadow(0 0 3px rgba(239, 68, 68, 0.7));
+  }
+}
+
+.pulsing-hotspot-segment {
+  animation: hotspotPulse 1.8s infinite ease-in-out !important;
+  stroke: #EF4444 !important;
+}
+
 .container {
   width: min(100% - 3rem, 1200px);
   margin-inline: auto;

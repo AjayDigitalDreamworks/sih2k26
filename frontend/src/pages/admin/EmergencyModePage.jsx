@@ -25,6 +25,7 @@ import {
 } from 'lucide-react';
 import { useApp } from '@/contexts/AppContext';
 import ApiClient from '@/lib/api';
+import { subscribeToDosrUpdates } from '@/lib/socket';
 import { DigitalTwinSimulationModal } from '@/components/admin/modals/DigitalTwinSimulationModal';
 
 const HAZARD_LABEL = {
@@ -42,6 +43,7 @@ export const EmergencyModePage = () => {
   const [redAlertActive, setRedAlertActive] = useState(false);
   const [showSimulationModal, setShowSimulationModal] = useState(false);
   const [stockpileFilter, setStockpileFilter] = useState('all');
+  const [recomputingDosr, setRecomputingDosr] = useState(false);
 
   // Interactive Emergency Stockpile State
   const [stockpileData, setStockpileData] = useState([
@@ -150,12 +152,46 @@ export const EmergencyModePage = () => {
   const loadData = useCallback(async () => {
     try {
       setLoading(true);
-      const res = await ApiClient.getPipelineDisruptions();
-      if (res?.success && res.data?.predictions) {
-        setPredictions(res.data.predictions);
+      const [disruptRes, gapRes] = await Promise.allSettled([
+        ApiClient.getPipelineDisruptions(),
+        ApiClient.getSupplyChainGaps(),
+      ]);
+
+      if (disruptRes.status === 'fulfilled' && disruptRes.value?.success && disruptRes.value.data?.predictions) {
+        setPredictions(disruptRes.value.data.predictions);
+      }
+
+      if (gapRes.status === 'fulfilled' && gapRes.value?.success) {
+        const rawDistricts = gapRes.value.districts || (Array.isArray(gapRes.value.data) ? gapRes.value.data : []);
+        if (rawDistricts && rawDistricts.length > 0) {
+          setStockpileData((prev) =>
+            prev.map((item) => {
+              const matched = rawDistricts.find(
+                (sd) =>
+                  sd.districtId?.toLowerCase() === item.id.toLowerCase() ||
+                  sd.districtName?.toLowerCase() === item.name.toLowerCase().split(' ')[0]
+              );
+              if (matched) {
+                return {
+                  ...item,
+                  dosrDays: matched.dosrDays,
+                  enduranceState: matched.enduranceState,
+                  hospitalBedCapacity: matched.hospitalBedCapacity,
+                  dailyBurnRateKg: matched.dailyBurnRateKg,
+                  missingBurnRateConfig: matched.missingBurnRateConfig,
+                  medicalOxygen: matched.criticalSupplies?.medicalOxygen ?? item.medicalOxygen,
+                  infantFood: matched.criticalSupplies?.infantFood ?? item.infantFood,
+                  firstAidSupplies: matched.criticalSupplies?.firstAidSupplies ?? item.firstAidSupplies,
+                  essentialGrains: matched.criticalSupplies?.essentialGrains ?? item.essentialGrains,
+                };
+              }
+              return item;
+            })
+          );
+        }
       }
     } catch (e) {
-      console.warn('Could not load ML disruption predictions:', e);
+      console.warn('Could not load ML disruption or supply chain predictions:', e);
     } finally {
       setLoading(false);
     }
@@ -163,7 +199,56 @@ export const EmergencyModePage = () => {
 
   useEffect(() => {
     loadData();
+    const interval = setInterval(loadData, 30000);
+    const unsub = subscribeToDosrUpdates((data) => {
+      if (!data?.districtId) return;
+      setStockpileData((prev) =>
+        prev.map((item) => {
+          if (
+            item.id.toLowerCase() === data.districtId.toLowerCase() ||
+            item.name.toLowerCase().startsWith(data.districtName?.toLowerCase() || '___')
+          ) {
+            return {
+              ...item,
+              dosrDays: data.dosrDays,
+              enduranceState: data.enduranceState,
+              hospitalBedCapacity: data.hospitalBedCapacity,
+              dailyBurnRateKg: data.dailyBurnRateKg,
+              missingBurnRateConfig: data.missingBurnRateConfig,
+              medicalOxygen: data.criticalSupplies?.medicalOxygen ?? item.medicalOxygen,
+              infantFood: data.criticalSupplies?.infantFood ?? item.infantFood,
+              firstAidSupplies: data.criticalSupplies?.firstAidSupplies ?? item.firstAidSupplies,
+              essentialGrains: data.criticalSupplies?.essentialGrains ?? item.essentialGrains,
+            };
+          }
+          return item;
+        })
+      );
+    });
+    return () => {
+      clearInterval(interval);
+      if (unsub) unsub();
+    };
   }, [loadData]);
+
+  const handleRecomputeDosr = async () => {
+    try {
+      setRecomputingDosr(true);
+      const res = await ApiClient.recomputeSupplyChainGaps();
+      if (res?.success) {
+        addToast(
+          'DoSR Depletion Recomputed',
+          'District hospital buffer endurance recalculated from live inventory and burn rates.',
+          'success'
+        );
+        await loadData();
+      }
+    } catch (e) {
+      addToast('Recompute Failed', e.message || 'Could not recompute DoSR.', 'error');
+    } finally {
+      setRecomputingDosr(false);
+    }
+  };
 
   const districts = predictions
     ? Object.values(predictions).map((p) => ({
@@ -600,6 +685,16 @@ export const EmergencyModePage = () => {
           </div>
 
           <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+            <button
+              onClick={handleRecomputeDosr}
+              disabled={recomputingDosr}
+              className="btn btn-sm btn-outline"
+              style={{ fontSize: '11px', padding: '4px 10px', display: 'inline-flex', alignItems: 'center', gap: '4px' }}
+              title="Recalculate district depletion from live warehouse stock and burn rates"
+            >
+              <RefreshCw size={12} className={recomputingDosr ? 'animate-spin' : ''} />
+              <span>{recomputingDosr ? 'Recomputing...' : 'Recompute DoSR'}</span>
+            </button>
             {['all', 'isolated', 'partial'].map((tab) => (
               <button
                 key={tab}
@@ -618,7 +713,8 @@ export const EmergencyModePage = () => {
             <thead>
               <tr style={{ background: '#F8FAFC' }}>
                 <th>District / Access State</th>
-                <th>Corridor Route Condition</th>
+                <th>DoSR Buffer Endurance</th>
+                <th>Demand Burn Rate</th>
                 <th>Medical Oxygen</th>
                 <th>Infant Food</th>
                 <th>First Aid & Meds</th>
@@ -632,6 +728,10 @@ export const EmergencyModePage = () => {
                 const isIso = d.status === 'isolated';
                 const isCritOx = d.medicalOxygen <= 2.0;
                 const isCritMeds = d.firstAidSupplies <= 2.0;
+                const dosrVal = d.dosrDays != null ? d.dosrDays : d.medicalOxygen;
+                const isCriticalDosr = dosrVal < 2.0;
+                const isModerateDosr = dosrVal >= 2.0 && dosrVal <= 5.0;
+
                 return (
                   <tr key={d.id} style={{ background: isIso ? 'rgba(254, 242, 242, 0.4)' : 'transparent' }}>
                     <td>
@@ -652,7 +752,62 @@ export const EmergencyModePage = () => {
                       </span>
                     </td>
                     <td>
-                      <span style={{ fontSize: '11px', color: '#475569' }}>{d.route}</span>
+                      <div style={{ display: 'flex', flexDirection: 'column', gap: '3px' }}>
+                        <div style={{ display: 'flex', alignItems: 'center', gap: '5px' }}>
+                          <span
+                            style={{
+                              fontWeight: 800,
+                              fontSize: '13px',
+                              fontFamily: 'monospace',
+                              color: isCriticalDosr ? '#DC2626' : isModerateDosr ? '#D97706' : '#059669',
+                            }}
+                          >
+                            {dosrVal} Days
+                          </span>
+                          {isCriticalDosr && <span style={{ fontSize: '11px' }}>🚨</span>}
+                        </div>
+                        {d.missingBurnRateConfig ? (
+                          <span
+                            style={{
+                              fontSize: '9px',
+                              fontWeight: 700,
+                              padding: '1px 5px',
+                              borderRadius: '3px',
+                              background: '#FEF3C7',
+                              color: '#B45309',
+                              border: '1px solid #FCD34D',
+                              width: 'fit-content',
+                            }}
+                          >
+                            ⚠️ Burn Rate Missing
+                          </span>
+                        ) : d.enduranceState ? (
+                          <span
+                            style={{
+                              fontSize: '9px',
+                              fontWeight: 800,
+                              textTransform: 'uppercase',
+                              padding: '1px 5px',
+                              borderRadius: '3px',
+                              width: 'fit-content',
+                              background: d.enduranceState === 'critical' ? '#FEE2E2' : d.enduranceState === 'moderate' ? '#FEF3C7' : '#ECFDF5',
+                              color: d.enduranceState === 'critical' ? '#DC2626' : d.enduranceState === 'moderate' ? '#D97706' : '#059669',
+                            }}
+                          >
+                            {d.enduranceState}
+                          </span>
+                        ) : null}
+                      </div>
+                    </td>
+                    <td>
+                      {d.hospitalBedCapacity ? (
+                        <div style={{ fontSize: '11px', color: '#475569' }}>
+                          <div style={{ fontWeight: 600 }}>{Number(d.hospitalBedCapacity).toLocaleString()} beds</div>
+                          <div style={{ fontSize: '10px', color: '#64748B' }}>{d.dailyBurnRateKg} kg/day</div>
+                        </div>
+                      ) : (
+                        <span style={{ fontSize: '11px', color: '#94A3B8' }}>Standard Ref</span>
+                      )}
                     </td>
                     <td style={{ fontWeight: isCritOx ? 800 : 500, color: isCritOx ? '#DC2626' : 'inherit' }}>
                       {d.medicalOxygen} days {isCritOx && '🚨'}

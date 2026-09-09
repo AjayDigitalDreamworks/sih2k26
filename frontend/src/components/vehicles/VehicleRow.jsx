@@ -7,6 +7,7 @@ import {
   Star,
   ArrowRight,
   Truck,
+  Phone,
 } from 'lucide-react';
 
 const STATUS_BADGE = {
@@ -32,8 +33,13 @@ export default function VehicleRow({ item, vehicle, onViewDetails = () => {} }) 
   const capacity = rowItem.capacity;
   const modelYear = rowItem.modelYear;
 
+  const capacityKg = rowItem.capacityKg || rowItem.capacity_kg || (rowItem.raw?.capacity_kg) || 5000;
+  const loadedKg = rowItem.loadedKg ?? (rowItem.raw?.loaded_kg) ?? 0;
+  const capacityUtilizationPct = rowItem.capacityUtilizationPct ?? rowItem.capacity_utilization_pct ?? (rowItem.raw?.capacity_utilization_percent) ?? 0;
+  const availableForLoad = Boolean(rowItem.availableForLoad ?? (rowItem.raw?.available_for_load));
+
   const driverName = rowItem.driver?.name || 'Unassigned';
-  const driverPhone = rowItem.driver?.phone;
+  const driverPhone = rowItem.driver?.phone || (rowItem.raw?.driver?.phone);
   const driverRating = rowItem.driver?.rating;
   const driverInitial = driverName !== 'Unassigned' ? driverName.charAt(0).toUpperCase() : '—';
 
@@ -56,22 +62,37 @@ export default function VehicleRow({ item, vehicle, onViewDetails = () => {} }) 
           <Truck className="w-8 h-8" />
         </div>
         <div className="flex flex-col min-w-0">
-          <span className="text-xs sm:text-sm font-black text-slate-900 tracking-tight truncate">
-            {vehicleNo}
-          </span>
+          <div className="flex items-center gap-1.5 flex-wrap">
+            <span className="text-xs sm:text-sm font-black text-slate-900 tracking-tight truncate">
+              {vehicleNo}
+            </span>
+            {availableForLoad && (
+              <span className="inline-flex items-center gap-1 text-[9px] font-black px-1.5 py-0.5 rounded bg-emerald-100 text-emerald-800 border border-emerald-200">
+                <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse" /> Available
+              </span>
+            )}
+          </div>
           <span className="text-xs font-semibold text-slate-500 mt-0.5 truncate">
             {model}
           </span>
-          {capacity && (
-            <span className="text-[11px] text-slate-400 font-medium mt-0.5 truncate">
-              {capacity}
+          {/* Capacity Utilization Meter */}
+          <div className="mt-1.5 w-full max-w-[170px]">
+            <div className="flex justify-between items-center text-[10px] font-bold text-slate-600 mb-0.5">
+              <span>Utilization</span>
+              <span className="font-mono text-emerald-700">{capacityUtilizationPct}%</span>
+            </div>
+            <div className="w-full h-1.5 bg-slate-100 rounded-full overflow-hidden border border-slate-200/60">
+              <div
+                className={`h-full rounded-full transition-all ${
+                  capacityUtilizationPct > 90 ? 'bg-amber-500' : 'bg-emerald-500'
+                }`}
+                style={{ width: `${Math.min(100, capacityUtilizationPct)}%` }}
+              />
+            </div>
+            <span className="text-[9px] text-slate-400 font-medium">
+              {Number(loadedKg).toLocaleString()} / {Number(capacityKg).toLocaleString()} kg
             </span>
-          )}
-          {modelYear && (
-            <span className="text-[11px] text-slate-400 font-medium truncate">
-              {modelYear}
-            </span>
-          )}
+          </div>
         </div>
       </div>
 
@@ -88,6 +109,26 @@ export default function VehicleRow({ item, vehicle, onViewDetails = () => {} }) 
             <span className="text-[11px] text-slate-400 font-medium truncate mt-0.5">
               {driverPhone}
             </span>
+          )}
+          {/* Call Driver Button */}
+          {driverPhone ? (
+            <a
+              href={`tel:${driverPhone}`}
+              className="mt-1 inline-flex items-center gap-1 px-2 py-0.5 rounded text-[10px] font-bold bg-emerald-50 text-emerald-700 hover:bg-emerald-100 border border-emerald-200 transition-colors w-fit"
+              title={`Direct call driver: ${driverPhone}`}
+              onClick={(e) => e.stopPropagation()}
+            >
+              <Phone className="w-2.5 h-2.5" /> Call Driver
+            </a>
+          ) : (
+            <button
+              type="button"
+              disabled
+              className="mt-1 inline-flex items-center gap-1 px-2 py-0.5 rounded text-[10px] font-bold bg-slate-100 text-slate-400 border border-slate-200 cursor-not-allowed w-fit"
+              title="Driver contact number missing from profile"
+            >
+              <Phone className="w-2.5 h-2.5" /> No Phone
+            </button>
           )}
           {driverRating ? (
             <div className="flex items-center gap-1 text-[11px] font-bold text-amber-500 mt-0.5">

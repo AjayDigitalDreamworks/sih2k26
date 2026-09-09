@@ -4,9 +4,10 @@ Uses trained XGBoost model with real-time data enrichment.
 """
 from fastapi import APIRouter, Query, UploadFile, File
 from fastapi.responses import JSONResponse
-from typing import Optional
+from typing import Optional, Dict, Any
 from app.models.schemas import RouteScoreRequest, RiskScoreResponse
 from app.engine.ml_inference import predict_risk_score, predict_incident_from_image, get_model_status
+from app.engine.micro_segment_engine import score_route_microsegments
 from app.services.data_aggregator import DataAggregator
 from app.services.weather_service import WeatherService
 from app.services.flood_service import FloodService
@@ -129,3 +130,36 @@ async def detect_incident(
 async def get_risk_model_status():
     """Get status of all ML models used in risk scoring."""
     return get_model_status()
+
+
+@router.post("/micro-segments/batch")
+async def get_route_micro_segments(payload: Dict[str, Any]):
+    """
+    Score a route's geometry broken into 500m micro-segments.
+    Returns array of 500m segments with real SRTM slope, elevation,
+    rainfall, bridge health, field incident joins, and XGBoost risk scores.
+    """
+    points = payload.get("geometry") or []
+    route_id = str(payload.get("routeId") or "")
+    rainfall = float(payload.get("rainfallMm") or 12.0)
+    condition = str(payload.get("roadCondition") or "good")
+    alerts = payload.get("alerts") or []
+    bridges = payload.get("bridges") or []
+    field_tasks = payload.get("fieldTasks") or []
+
+    segments = await score_route_microsegments(
+        points=points,
+        route_id=route_id,
+        base_rainfall=rainfall,
+        base_condition=condition,
+        alerts=alerts,
+        bridges=bridges,
+        field_tasks=field_tasks,
+    )
+    return {
+        "success": True,
+        "routeId": route_id,
+        "segmentCount": len(segments),
+        "targetChunkKm": 0.5,
+        "microSegments": segments,
+    }

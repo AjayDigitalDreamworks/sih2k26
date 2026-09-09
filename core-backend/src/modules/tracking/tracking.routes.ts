@@ -147,13 +147,18 @@ router.get('/my/context', authenticateJwt, async (req: Request, res: Response) =
   }
 });
 
-/** GET /api/tracking/status — dashboard aggregate (real counts only). */
-router.get('/status', authenticateJwt, async (_req: Request, res: Response) => {
+/** GET /api/tracking/status — dashboard aggregate or single vehicle status with dead-zone telemetry. */
+router.get('/status', authenticateJwt, async (req: Request, res: Response) => {
   try {
+    const vehicleId = (req.query.vehicleId || req.query.vehicle_id) as string;
+    if (vehicleId) {
+      const result = await TrackingService.getVehicleDeadZoneStatus(vehicleId);
+      return sendSuccess(res, result, 'Vehicle tracking status');
+    }
     const result = await TrackingService.getTrackingStatusOverview();
     return sendSuccess(res, result, 'Tracking status overview');
   } catch (err: any) {
-    logger.error(`Tracking route failed (${_req.method} ${_req.originalUrl})`, err);
+    logger.error(`Tracking route failed (${req.method} ${req.originalUrl})`, err);
     return sendError(res, err.message);
   }
 });

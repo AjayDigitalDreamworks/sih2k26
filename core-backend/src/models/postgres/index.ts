@@ -4,6 +4,7 @@ import { Road } from './Road';
 import { Bridge } from './Bridge';
 import { Route } from './Route';
 import { RiskScore } from './RiskScore';
+import { RouteMicroSegment } from './RouteMicroSegment';
 import { Vehicle } from './Vehicle';
 import { Driver } from './Driver';
 import { Trip } from './Trip';
@@ -12,8 +13,14 @@ import { FieldTask } from './FieldTask';
 import { FieldVerification } from './FieldVerification';
 import { FieldReportPostgres } from './FieldReportPostgres';
 import { FieldMedia } from './FieldMedia';
+import { DistrictBurnRate } from './DistrictBurnRate';
+import { DeadZoneSegment } from './DeadZoneSegment';
+import { RateConfig } from './RateConfig';
 
 // Define Associations
+District.hasMany(DistrictBurnRate, { foreignKey: 'district_id', as: 'burn_rates' });
+DistrictBurnRate.belongsTo(District, { foreignKey: 'district_id', as: 'district' });
+
 District.hasMany(Road, { foreignKey: 'district_id', as: 'roads' });
 Road.belongsTo(District, { foreignKey: 'district_id', as: 'district' });
 
@@ -25,6 +32,9 @@ Bridge.belongsTo(District, { foreignKey: 'district_id', as: 'district' });
 
 Route.hasMany(RiskScore, { foreignKey: 'route_id', as: 'risk_scores' });
 RiskScore.belongsTo(Route, { foreignKey: 'route_id', as: 'route' });
+
+Route.hasMany(RouteMicroSegment, { foreignKey: 'route_id', as: 'micro_segments' });
+RouteMicroSegment.belongsTo(Route, { foreignKey: 'route_id', as: 'route' });
 
 Vehicle.hasOne(Driver, { foreignKey: 'vehicle_id', as: 'driver' });
 Driver.belongsTo(Vehicle, { foreignKey: 'vehicle_id', as: 'vehicle' });
@@ -70,6 +80,7 @@ export {
   Bridge,
   Route,
   RiskScore,
+  RouteMicroSegment,
   Vehicle,
   Driver,
   Trip,
@@ -78,4 +89,7 @@ export {
   FieldVerification,
   FieldReportPostgres,
   FieldMedia,
+  DistrictBurnRate,
+  DeadZoneSegment,
+  RateConfig,
 };

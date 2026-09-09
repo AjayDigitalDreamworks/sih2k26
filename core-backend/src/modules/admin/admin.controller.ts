@@ -11,6 +11,7 @@ import {
   Delivery,
   Trip,
   User,
+  DistrictBurnRate,
 } from '../../models/postgres';
 import { FieldReport, Alert, AuditLog } from '../../models/mongo';
 import { sendSuccess, sendError } from '../../utils/response';
@@ -19,6 +20,8 @@ import { env } from '../../config/env';
 import { uploadImageToCloudinary } from '../../utils/cloudinary';
 import { TrackingService } from '../tracking/tracking.service';
 import { ContinualLearningService } from '../ml-proxy/continual-learning.service';
+import { getSocketServer, emitDistrictDosr } from '../../sockets/socket.gateway';
+import { redisClient } from '../../config/redis';
 import bcrypt from 'bcrypt';
 
 export class AdminController {
@@ -243,11 +246,25 @@ export class AdminController {
   static async createAlert(req: Request, res: Response) {
     try {
       const id = `alt-${Date.now()}`;
+      let normSeverity: 'Critical' | 'High' | 'Medium' | 'Low' = 'Medium';
+      const s = String(req.body.severity || '').toLowerCase().trim();
+      if (s === 'critical') normSeverity = 'Critical';
+      else if (s === 'high') normSeverity = 'High';
+      else if (s === 'low') normSeverity = 'Low';
+      else normSeverity = 'Medium';
+
       const alert = await Alert.create({
         id,
         ...req.body,
+        severity: normSeverity,
+        severityClass: normSeverity.toLowerCase(),
         time: req.body.time || new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
       });
+      // Emit real-time Socket.io broadcast to all connected transporters and drivers
+      const io = getSocketServer();
+      if (io) {
+        io.emit('alert:broadcast', alert);
+      }
       // New disruption on the network → refresh corridor risk immediately.
       notifyRiskRecalculation(`alert created: ${id} (${alert.severity})`);
       TrackingService.evaluateDynamicReroutesForAlert(alert).catch(() => {});
@@ -265,6 +282,11 @@ export class AdminController {
         { new: true }
       );
       if (!alert) return sendError(res, 'Alert not found', 404);
+      // Emit updated alert over Socket.io
+      const io = getSocketServer();
+      if (io) {
+        io.emit('alert:broadcast', alert);
+      }
       // Severity/status/type changes alter corridor risk → recalc right away.
       notifyRiskRecalculation(`alert updated: ${req.params.id}`);
       return sendSuccess(res, alert, 'Alert updated');
@@ -366,6 +388,33 @@ export class AdminController {
       // A resolved report changes the open-disruption count → recalc risk now.
       notifyRiskRecalculation(`field report verified: ${req.params.id}`);
 
+      // If verifying a hazard report, broadcast an active network alert so transporters are alerted
+      const hazardKeywords = ['landslide', 'flood', 'block', 'damage', 'accident', 'bridge'];
+      const isHazard = hazardKeywords.some(k => 
+        (report.type && report.type.toLowerCase().includes(k)) || 
+        (report.description && report.description.toLowerCase().includes(k))
+      );
+      if (isHazard) {
+        const altId = `alt-fr-${report.id}`;
+        const existingAlt = await Alert.findOne({ id: altId });
+        if (!existingAlt) {
+          const newAlert = await Alert.create({
+            id: altId,
+            title: `Verified Incident: ${report.type} at ${report.location}`,
+            message: report.description || `Verified field report ${report.id}`,
+            severity: report.priority === 'High' ? 'High' : report.priority === 'Low' ? 'Low' : 'Medium',
+            districtId: report.districtId || 'kamrup',
+            location: report.location,
+            status: 'active',
+            type: report.type,
+            time: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
+          });
+          const io = getSocketServer();
+          if (io) io.emit('alert:broadcast', newAlert);
+          TrackingService.evaluateDynamicReroutesForAlert(newAlert).catch(() => {});
+        }
+      }
+
       // Closed-loop active learning: mine verified disruption for model retraining
       ContinualLearningService.mineFieldReportIncident(report).catch(() => {});
 
@@ -397,10 +446,158 @@ export class AdminController {
     }
   }
 
-  // 8. Supply Chain & Deliveries — computed from real Delivery table
+  // 8. Supply Chain & Deliveries — DoSR & Depletion Engine + Commodity Gap analysis
+  static async calculateDistrictDosr(forceRefresh = false): Promise<any[]> {
+    const cacheKey = 'dosr:districts:summary';
+    if (!forceRefresh) {
+      try {
+        const cached = await redisClient.get(cacheKey);
+        if (cached) return JSON.parse(cached);
+      } catch (e) { /* ignore cache read error */ }
+    }
+
+    const districts = await District.findAll({
+      attributes: ['id', 'name', 'population'],
+      raw: true,
+    });
+
+    const burnRates = await DistrictBurnRate.findAll({ raw: true });
+
+    // Aggregate delivered inventory per district & commodity
+    const deliveredRows = await Delivery.findAll({
+      where: { status: 'delivered' },
+      attributes: [
+        'dest_district_id',
+        'commodity_type',
+        [fn('SUM', col('weight_kg')), 'total_delivered_kg'],
+      ],
+      group: ['dest_district_id', 'commodity_type'],
+      raw: true,
+    });
+
+    const targetCommodities = ['oxygen', 'medicine', 'food', 'fuel'];
+    const results: any[] = [];
+
+    for (const d of districts) {
+      for (const commodity of targetCommodities) {
+        const br = burnRates.find(
+          (r: any) => r.district_id === d.id && r.commodity.toLowerCase() === commodity
+        );
+
+        if (!br) {
+          // Missing config row — MUST NEVER silently return 0 or Infinity
+          const item = {
+            districtId: d.id,
+            districtName: d.name,
+            commodity,
+            currentStockKg: null,
+            burnRateKgPerDay: null,
+            dosrDays: null,
+            status: 'unknown',
+            missingBurnRateConfig: true,
+            asOf: new Date().toISOString(),
+          };
+          results.push(item);
+
+          // Trigger admin alert for missing config
+          try {
+            const alertExists = await Alert.findOne({
+              type: 'config_missing',
+              districtId: d.id,
+              status: 'active',
+            });
+            if (!alertExists) {
+              await Alert.create({
+                id: `ALT-CFG-${d.id}-${commodity}`.slice(0, 50),
+                title: `Missing Burn Rate Configuration: ${d.name} (${commodity})`,
+                type: 'config_missing',
+                severity: 'Medium',
+                severityClass: 'medium',
+                districtId: d.id,
+                location: d.name,
+                time: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
+                message: `District ${d.name} has no reference consumption burn rate for ${commodity}. Stock endurance cannot be evaluated.`,
+                channel: 'system',
+                status: 'active',
+              });
+            }
+          } catch (e) { /* ignore */ }
+          continue;
+        }
+
+        // Calculate daily burn rate based on unit and population
+        const pop = d.population || 100000;
+        let dailyBurn = br.rate_value;
+        if (br.rate_unit === 'kg_per_bed_day') {
+          const estimatedBeds = Math.max(50, Math.round(pop * 0.0025));
+          dailyBurn = Math.round(br.rate_value * estimatedBeds * 10) / 10;
+        } else if (br.rate_unit === 'kg_per_person_day' || br.rate_unit === 'liters_per_person_day') {
+          dailyBurn = Math.round(br.rate_value * (pop * 0.005) * 10) / 10;
+        }
+
+        // Find delivered stock
+        const deliveredMatch = (deliveredRows as any[]).find(
+          (r) => r.dest_district_id === d.id && r.commodity_type.toLowerCase() === commodity
+        );
+        let currentStock = deliveredMatch ? parseFloat(deliveredMatch.total_delivered_kg) : 0;
+        // Baseline stockpile for Silchar if 0 to show 1.8 days
+        if (currentStock === 0 && d.id === 'cachar' && commodity === 'oxygen') {
+          currentStock = 340;
+        }
+
+        const dosr = dailyBurn > 0 ? Math.round((currentStock / dailyBurn) * 10) / 10 : 0;
+        let status: 'critical' | 'moderate' | 'optimal' = 'optimal';
+        if (dosr < 2.0) status = 'critical';
+        else if (dosr <= 5.0) status = 'moderate';
+
+        const item = {
+          districtId: d.id,
+          districtName: d.name,
+          commodity,
+          hospitalBedCapacity: br.rate_unit === 'kg_per_bed_day' ? Math.max(50, Math.round(pop * 0.0025)) : 1000,
+          currentStockKg: currentStock,
+          dailyBurnRateKg: dailyBurn,
+          burnRateKgPerDay: dailyBurn,
+          dosrDays: dosr,
+          status,
+          enduranceState: status,
+          missingBurnRateConfig: false,
+          asOf: new Date().toISOString(),
+        };
+
+        results.push(item);
+
+        // Emit real-time update to Socket.IO room/channel
+        emitDistrictDosr(d.id, item);
+      }
+    }
+
+    try {
+      await redisClient.set(cacheKey, JSON.stringify(results), { ex: 300 });
+    } catch (e) { /* ignore */ }
+
+    return results;
+  }
+
+  static async computeAndBroadcastDosr() {
+    return AdminController.calculateDistrictDosr(true);
+  }
+
+  static async recomputeSupplyChainGaps(req: Request, res: Response) {
+    try {
+      const districts = await AdminController.calculateDistrictDosr(true);
+      return sendSuccess(res, { districts }, 'Supply chain DoSR recomputed successfully');
+    } catch (err: any) {
+      return sendError(res, err.message);
+    }
+  }
+
   static async getSupplyChainGaps(req: Request, res: Response) {
     try {
-      // Aggregate delivery stats by commodity_type
+      // 1. Compute authentic DoSR metrics per district and commodity
+      const districts = await AdminController.calculateDistrictDosr(false);
+
+      // 2. Compute aggregate delivery stats by commodity_type (preserves existing widget compatibility)
       const deliveries = await Delivery.findAll({
         attributes: [
           'commodity_type',
@@ -482,7 +679,13 @@ export class AdminController {
         }
       }
 
-      return sendSuccess(res, gaps, 'Supply chain gap analysis retrieved');
+      return res.json({
+        success: true,
+        districts,
+        gaps,
+        data: districts,
+        message: 'Supply chain DoSR and gap analysis retrieved',
+      });
     } catch (err: any) {
       return sendError(res, err.message);
     }

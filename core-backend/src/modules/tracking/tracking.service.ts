@@ -2,9 +2,9 @@ import { Op } from 'sequelize';
 import { redisClient } from '../../config/redis';
 import { sequelize } from '../../config/db';
 import { logger } from '../../utils/logger';
-import { Vehicle, Route, Driver, Trip, Delivery, District } from '../../models/postgres';
+import { Vehicle, Route, Driver, Trip, Delivery, District, RouteMicroSegment, DeadZoneSegment } from '../../models/postgres';
 import { Alert } from '../../models/mongo';
-import { getSocketServer } from '../../sockets/socket.gateway';
+import { getSocketServer, emitVehicleTracking } from '../../sockets/socket.gateway';
 import { env } from '../../config/env';
 import { ContinualLearningService } from '../ml-proxy/continual-learning.service';
 
@@ -236,8 +236,12 @@ export class TrackingService {
     if (data.batteryLevel !== undefined) updateData.fuel_percent = data.batteryLevel;
     await vehicle.update(updateData);
 
-    // 5. Analyze vehicle status
+    // 5. Analyze vehicle status & check upcoming micro-segment hazards
     const status = await this.analyzeVehicleStatus(data.vehicleId, livePayload);
+    const upcomingHazard = await this.checkUpcomingSegmentHazards(data.vehicleId, data.lat, data.lng, data.speed, vehicle.current_route);
+    if (upcomingHazard) {
+      livePayload.upcomingHazard = upcomingHazard;
+    }
 
     // 6. Broadcast via Socket.io
     const io = getSocketServer();
@@ -249,6 +253,7 @@ export class TrackingService {
       distanceRemaining: status.distanceRemaining,
       direction: bearingToDirection(data.heading),
       currentRoute: vehicle.current_route || '',
+      upcomingHazard: upcomingHazard || null,
     };
     if (io) {
       io.to('admin:all').emit('vehicle:position', broadcastPayload);
@@ -600,6 +605,288 @@ export class TrackingService {
     } catch (err: any) {
       console.warn('[TRACKING] Error in checkHighRiskCorridor:', err?.message);
       return { inHighRiskCorridor: false };
+    }
+  }
+
+  /**
+   * Proactive Segment-Level Hazard Detection & Dynamic Safest Rerouting.
+   *
+   * 1. Evaluates micro-segments (500m chunks) along the vehicle's active route.
+   * 2. Matches live GPS position to determine current chainage along the route.
+   * 3. Scans ahead (0.2 km to 5.5 km) for any hazardous segment (risk_score >= 70 or hazard_reason).
+   * 4. Alerts the driver timely with proximity distance (e.g. "HAZARD IN 2.4 KM"), ETA, and advisory speed.
+   * 5. If segment risk is critical (>= 80) or blocked, automatically triggers dynamic rerouting around
+   *    the hazardous bend via the safest corridor.
+   */
+  static async checkUpcomingSegmentHazards(
+    vehicleId: string,
+    lat: number,
+    lng: number,
+    speedKmh: number = 40,
+    currentRouteNameOrId?: string | null
+  ) {
+    try {
+      const vehicle = await Vehicle.findByPk(vehicleId);
+      if (!vehicle) return null;
+
+      const trip = await Trip.findOne({
+        where: {
+          vehicle_id: vehicleId,
+          status: { [Op.in]: ['in_transit', 'delayed', 'planned'] },
+        },
+      });
+
+      let route: Route | null = null;
+      if (currentRouteNameOrId) {
+        route = await Route.findOne({
+          where: {
+            [Op.or]: [{ id: currentRouteNameOrId }, { name: currentRouteNameOrId }],
+          },
+        });
+      }
+      if (!route && trip?.route_id) {
+        route = await Route.findByPk(trip.route_id);
+      }
+      if (!route && vehicle.current_route) {
+        route = await Route.findOne({
+          where: {
+            [Op.or]: [{ id: vehicle.current_route }, { name: vehicle.current_route }],
+          },
+        });
+      }
+      if (!route) {
+        const allRoutes = await Route.findAll();
+        let bestDist = Infinity;
+        for (const r of allRoutes) {
+          if (r.geom) {
+            try {
+              const geoObj = typeof r.geom === 'string' ? JSON.parse(r.geom) : r.geom;
+              const coords = geoObj?.coordinates || [];
+              if (coords.length >= 2) {
+                const d = distanceToRoute(lat, lng, coords.map((c: any) => [c[1], c[0]]));
+                if (d <= 5000 && d < bestDist) {
+                  bestDist = d;
+                  route = r;
+                }
+              }
+            } catch {}
+          }
+        }
+      }
+      if (!route) return null;
+
+      let segments = await RouteMicroSegment.findAll({
+        where: { route_id: route.id },
+        order: [['segment_index', 'ASC']],
+      });
+
+      // If no micro-segments exist in DB yet for this route, trigger on-demand generation from ML service
+      if (!segments || segments.length === 0) {
+        try {
+          let routePoints: [number, number][] = [];
+          if (route.geom) {
+            const geoObj = typeof route.geom === 'string' ? JSON.parse(route.geom) : route.geom;
+            routePoints = (geoObj?.coordinates || []).map((c: any) => [c[1], c[0]]);
+          }
+          if (routePoints.length >= 2) {
+            const resp = await fetch(`${env.mlServiceUrl}/risk/micro-segments/batch`, {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({
+                routeId: route.id,
+                geometry: routePoints,
+                rainfallMm: 12.0,
+                roadCondition: route.status === 'blocked' ? 'blocked' : 'good',
+              }),
+              signal: AbortSignal.timeout(5000),
+            });
+            if (resp.ok) {
+              const data = (await resp.json()) as any;
+              const microList = data?.microSegments || [];
+              if (microList.length > 0) {
+                const toInsert = microList.map((m: any, idx: number) => ({
+                  id: m.id || `RMS_${route!.id}_${idx}`,
+                  route_id: route!.id,
+                  segment_index: m.segment_index ?? idx,
+                  start_chainage_km: m.start_chainage_km ?? idx * 0.5,
+                  end_chainage_km: m.end_chainage_km ?? (idx + 1) * 0.5,
+                  length_m: m.length_m ?? 500,
+                  slope_pct: m.slope_pct ?? 0,
+                  elevation_start_m: m.elevation_start_m ?? 300,
+                  elevation_end_m: m.elevation_end_m ?? 300,
+                  tortuosity: m.tortuosity ?? 1.0,
+                  current_risk_score: m.risk_score ?? 15,
+                  risk_level: m.risk_level ?? 'low',
+                  hazard_reason: m.hazard_reason ?? null,
+                  geom: typeof m.geom === 'object' ? JSON.stringify(m.geom) : (m.geom || '{}'),
+                }));
+                segments = await RouteMicroSegment.bulkCreate(toInsert as any, { ignoreDuplicates: true });
+              }
+            }
+          }
+        } catch (err: any) {
+          logger.warn(`[TRACKING] Could not auto-generate micro-segments for route ${route.id}: ${err.message}`);
+        }
+      }
+
+      if (!segments || segments.length === 0) return null;
+
+      // Find closest segment to the vehicle's current GPS position
+      let closestSegment = segments[0];
+      let minDistance = Infinity;
+
+      for (const seg of segments) {
+        try {
+          const geo = typeof seg.geom === 'string' ? JSON.parse(seg.geom) : seg.geom;
+          const coords = geo?.coordinates || [];
+          if (coords.length >= 2) {
+            const segPoints = coords.map((c: any) => [c[1], c[0]]);
+            const d = distanceToRoute(lat, lng, segPoints);
+            if (d < minDistance) {
+              minDistance = d;
+              closestSegment = seg;
+            }
+          }
+        } catch {}
+      }
+
+      const currentChainageKm = closestSegment.start_chainage_km;
+
+      // Look ahead 0.2 km to 5.5 km along the route
+      const lookaheadMinKm = 0.2;
+      const lookaheadMaxKm = 5.5;
+
+      const upcomingHazards = segments.filter((seg) => {
+        const deltaKm = seg.start_chainage_km - currentChainageKm;
+        const isAhead = deltaKm >= lookaheadMinKm && deltaKm <= lookaheadMaxKm;
+        const isHazardous =
+          seg.current_risk_score >= 70 ||
+          seg.risk_level === 'critical' ||
+          seg.risk_level === 'high' ||
+          (seg.hazard_reason != null && seg.hazard_reason.trim().length > 0);
+        return isAhead && isHazardous;
+      });
+
+      if (upcomingHazards.length === 0) return null;
+
+      // Pick the closest upcoming hazard
+      const targetHazard = upcomingHazards[0];
+      const distanceToHazardKm = Math.max(0.1, Math.round((targetHazard.start_chainage_km - currentChainageKm) * 10) / 10);
+      const distanceToHazardMeters = Math.round(distanceToHazardKm * 1000);
+      const effectiveSpeed = Math.max(speedKmh, 25);
+      const etaMinutes = Math.round((distanceToHazardKm / effectiveSpeed) * 60 * 10) / 10;
+      const isCritical = targetHazard.current_risk_score >= 80 || targetHazard.risk_level === 'critical';
+      const speedAdvisoryKmh = isCritical ? 25 : 35;
+      const hazardTitle = `⚠️ HAZARD AHEAD in ${distanceToHazardKm} km: ${targetHazard.hazard_reason || 'Critical Danger Zone'}`;
+      const hazardMessage = `Critical hazard at KM ${targetHazard.start_chainage_km}–${targetHazard.end_chainage_km} (Risk: ${targetHazard.current_risk_score}/100, Slope: ${targetHazard.slope_pct}%). Advisory: Reduce speed to < ${speedAdvisoryKmh} km/h immediately.`;
+
+      let hazardCoords: [number, number] | null = null;
+      try {
+        const geo = typeof targetHazard.geom === 'string' ? JSON.parse(targetHazard.geom) : targetHazard.geom;
+        const coords = geo?.coordinates || [];
+        if (coords.length > 0) {
+          hazardCoords = [coords[0][1], coords[0][0]];
+        }
+      } catch {}
+
+      const warningPayload = {
+        type: 'hazard_proximity',
+        severity: isCritical ? 'critical' : 'high',
+        vehicleId,
+        tripId: trip?.id || null,
+        driverId: trip?.driver_id || null,
+        segmentId: targetHazard.id,
+        routeId: route.id,
+        routeName: route.name,
+        startChainageKm: targetHazard.start_chainage_km,
+        endChainageKm: targetHazard.end_chainage_km,
+        distanceToHazardKm,
+        distanceToHazardMeters,
+        etaMinutes,
+        riskScore: targetHazard.current_risk_score,
+        riskLevel: targetHazard.risk_level,
+        hazardReason: targetHazard.hazard_reason || 'Steep slope and high landslide vulnerability',
+        slopePct: targetHazard.slope_pct,
+        speedAdvisoryKmh,
+        hazardCoordinates: hazardCoords,
+        title: hazardTitle,
+        message: hazardMessage,
+        timestamp: new Date().toISOString(),
+      };
+
+      // 10-minute cooldown per segment per vehicle to avoid alert flooding
+      const alertKey = `vehicle:hazard_alert:${vehicleId}:${targetHazard.id}`;
+      const alreadyAlerted = await redisClient.get(alertKey);
+
+      if (!alreadyAlerted) {
+        await redisClient.set(alertKey, '1', { ex: 600 });
+
+        try {
+          await Alert.create({
+            id: `ALT-SEG-${Date.now().toString().slice(-6)}`,
+            title: hazardTitle,
+            type: 'segment_hazard',
+            severity: 'High',
+            severityClass: isCritical ? 'critical' : 'high',
+            districtId: route.origin_district_id || null,
+            routeId: route.id,
+            location: `${route.name} (KM ${targetHazard.start_chainage_km})`,
+            time: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
+            message: hazardMessage,
+            channel: 'tracking',
+            status: 'active',
+          });
+        } catch (err: any) {
+          logger.warn(`[TRACKING] Failed to save hazard alert in Mongo: ${err.message}`);
+        }
+
+        const io = getSocketServer();
+        if (io) {
+          if (trip?.driver_id) {
+            io.to(`driver:${trip.driver_id}`).emit('driver:hazard_warning', warningPayload);
+          }
+          io.to('admin:all').emit('driver:hazard_warning', warningPayload);
+          io.to(`transporter:${vehicle.transporter_id}`).emit('driver:hazard_warning', warningPayload);
+          io.emit('driver:hazard_warning', warningPayload);
+          io.emit('vehicle:hazard_warning', warningPayload);
+          io.to('admin:all').emit('alert:broadcast', warningPayload);
+        }
+        console.log(`[SEGMENT-ALERT] ⚠️ Alerted vehicle ${vehicleId} of hazard at KM ${targetHazard.start_chainage_km} (${distanceToHazardKm} km ahead)`);
+      }
+
+      // Dynamic Safest Reroute Trigger:
+      // If the hazard is critical (risk >= 80) and within 8 km ahead,
+      // determine segment risk and reroute driver along safest bypass
+      if (isCritical && distanceToHazardKm <= 8.0) {
+        const rerouteKey = `vehicle:reroute_triggered:${vehicleId}:${targetHazard.id}`;
+        const alreadyTriggered = await redisClient.get(rerouteKey);
+        if (!alreadyTriggered) {
+          await redisClient.set(rerouteKey, '1', { ex: 3600 });
+          console.log(`[SEGMENT-REROUTE] ⚠️ Vehicle ${vehicleId} is ${distanceToHazardKm} km from critical hazard ${targetHazard.id} (Risk: ${targetHazard.current_risk_score}). Triggering dynamic safest reroute...`);
+          try {
+            const rerouteReason = `Dynamic reroute: Detoured around critical hazard at KM ${targetHazard.start_chainage_km} (${targetHazard.hazard_reason || 'Risk: ' + targetHazard.current_risk_score + '/100'}) via safe alternate corridor`;
+            await this.calculateLiveDynamicRoute(vehicleId, {
+              broadcast: true,
+              avoidCorridors: [route.name, targetHazard.id],
+              reason: rerouteReason,
+              triggeringAlert: {
+                id: targetHazard.id,
+                title: hazardTitle,
+                type: 'critical_micro_segment',
+                severity: 'critical',
+                location: `${route.name} KM ${targetHazard.start_chainage_km}`,
+              },
+            });
+          } catch (err: any) {
+            logger.error(`[SEGMENT-REROUTE] Failed to calculate dynamic reroute: ${err.message}`);
+          }
+        }
+      }
+
+      return warningPayload;
+    } catch (err: any) {
+      console.warn('[TRACKING] Error in checkUpcomingSegmentHazards:', err?.message);
+      return null;
     }
   }
 
@@ -1015,14 +1302,21 @@ export class TrackingService {
       await redisClient.set(`vehicle:history:${vehicle.id}`, JSON.stringify(existingHistory.slice(-500)), { ex: GPS_HISTORY_TTL });
     }
 
-    // 6. High-Risk Corridor Entry Detection
+    // 6. High-Risk Corridor Entry & Micro-Segment Proximity Hazard Detection
     let corridorCheck: any = null;
+    let upcomingHazard: any = null;
     if (isFresh) {
       corridorCheck = await this.checkHighRiskCorridor(vehicle.id, body.latitude, body.longitude, vehicle.current_route);
       if (corridorCheck?.inHighRiskCorridor) {
         livePayload.enteringHighRiskCorridor = true;
         livePayload.corridorRisk = corridorCheck.riskScore;
         livePayload.corridorName = corridorCheck.routeName;
+      }
+
+      // Proactive micro-segment hazard detection and dynamic safest rerouting
+      upcomingHazard = await this.checkUpcomingSegmentHazards(vehicle.id, body.latitude, body.longitude, speed, vehicle.current_route);
+      if (upcomingHazard) {
+        livePayload.upcomingHazard = upcomingHazard;
       }
     }
 
@@ -1037,6 +1331,7 @@ export class TrackingService {
       enteringHighRiskCorridor: !!livePayload.enteringHighRiskCorridor,
       corridorRisk: livePayload.corridorRisk || null,
       corridorName: livePayload.corridorName || null,
+      upcomingHazard: upcomingHazard || null,
       inDeadZone: !!inDeadZone,
       fatigueWarning: isFatigued,
       continuousDrivingMins: Math.round(continuousMins),
@@ -2107,5 +2402,146 @@ export class TrackingService {
     }
 
     return reroutedResults;
+  }
+
+  /**
+   * Evaluates Phase 2.2 Mountain Dead-Zone Predicted Exit Window
+   * Checks GPS gap against 5-min threshold, queries surveyed dead_zone_segments,
+   * computes convoy speed (observed vs default), and calculates exit ETA.
+   */
+  static async getVehicleDeadZoneStatus(vehicleId: string): Promise<any> {
+    const vehicle = await Vehicle.findByPk(vehicleId);
+    if (!vehicle) {
+      return { status: 'UNKNOWN', deadZone: null };
+    }
+
+    const lastPingTime = vehicle.last_gps_at || vehicle.last_ping_at || (vehicle as any).updatedAt;
+    const ageMs = lastPingTime ? Date.now() - new Date(lastPingTime).getTime() : Infinity;
+    const GPS_SILENCE_THRESHOLD_MS = 5 * 60 * 1000; // 5 minutes
+
+    const lat = Number(vehicle.current_lat || 25.0500);
+    const lng = Number(vehicle.current_lng || 92.7800);
+
+    // 1. If GPS ping is fresh (< 5 mins), vehicle is actively tracked
+    if (ageMs < GPS_SILENCE_THRESHOLD_MS) {
+      return {
+        status: vehicle.status === 'idle' ? 'IDLE' : 'MOVING',
+        deadZone: null,
+      };
+    }
+
+    // 2. Ping gap >= 5 mins. Check if vehicle last known position is within surveyed dead_zone_segments
+    let matchedDeadZone: any = null;
+    try {
+      const [rows]: any = await sequelize.query(`
+        SELECT id, corridor_id, name, entry_checkpost_name, exit_checkpost_name, length_km, default_speed_kmh
+        FROM dead_zone_segments
+        WHERE geom IS NOT NULL 
+          AND ST_DWithin(geom, ST_SetSRID(ST_MakePoint(:lng, :lat), 4326), 0.08)
+        LIMIT 1;
+      `, {
+        replacements: { lng, lat },
+      });
+      if (rows && rows.length > 0) {
+        matchedDeadZone = rows[0];
+      }
+    } catch (err) {
+      // Best effort PostGIS fallback
+    }
+
+    if (!matchedDeadZone) {
+      // Fallback check on known coordinates for Barail Pass / Sela Pass
+      if (lat >= 24.90 && lat <= 25.40 && lng >= 92.65 && lng <= 93.20) {
+        matchedDeadZone = {
+          id: 'dz-barail-pass',
+          name: 'Barail Pass KM 44–68',
+          corridor_id: 'NH-27',
+          exit_checkpost_name: 'Jatinga Transit Checkpost',
+          length_km: 24.0,
+          default_speed_kmh: 32.0,
+        };
+      } else if (lat >= 27.35 && lat <= 27.70 && lng >= 91.90 && lng <= 92.30) {
+        matchedDeadZone = {
+          id: 'dz-sela-pass',
+          name: 'Sela Pass Mountain Gap (KM 88-112)',
+          corridor_id: 'NH-13',
+          exit_checkpost_name: 'Baisakhi Post',
+          length_km: 26.0,
+          default_speed_kmh: 28.0,
+        };
+      }
+    }
+
+    // If outside any surveyed dead zone:
+    const minutesSilent = ageMs < Infinity ? Math.round((ageMs / 60000) * 10) / 10 : 0;
+    if (!matchedDeadZone) {
+      return {
+        status: 'SIGNAL_LOST_UNCONFIRMED',
+        minutesSilent,
+        deadZone: null,
+      };
+    }
+
+    // 3. Inside confirmed dead zone: calculate convoy speed & predicted exit window
+    let avgSpeedKmh = 30;
+    let speedSource: 'observed' | 'default' = 'default';
+
+    try {
+      // Query rolling average of last 5 GPS pings before signal loss
+      const [speedRows]: any = await sequelize.query(`
+        SELECT speed_kmh 
+        FROM vehicle_locations 
+        WHERE vehicle_id = :vehicleId 
+          AND speed_kmh > 0
+        ORDER BY gps_timestamp DESC 
+        LIMIT 5;
+      `, {
+        replacements: { vehicleId },
+      });
+
+      if (speedRows && speedRows.length >= 2) {
+        const sum = speedRows.reduce((acc: number, r: any) => acc + Number(r.speed_kmh || 0), 0);
+        avgSpeedKmh = Math.round(sum / speedRows.length);
+        speedSource = 'observed';
+      } else {
+        avgSpeedKmh = Math.round(matchedDeadZone.default_speed_kmh || 32);
+        speedSource = 'default';
+      }
+    } catch (e) {
+      avgSpeedKmh = Math.round(matchedDeadZone.default_speed_kmh || 32);
+      speedSource = 'default';
+    }
+
+    const lengthKm = matchedDeadZone.length_km || 24.0;
+    // Estimated remaining corridor distance: ~40% through segment
+    const segmentRemainingKm = Math.round(lengthKm * 0.40 * 10) / 10; // e.g. 9.6 km to exit
+    const predictedExitMinutes = Math.max(2, Math.round((segmentRemainingKm / (avgSpeedKmh || 30)) * 60));
+
+    const result = {
+      status: 'IN_DEAD_ZONE',
+      minutesSilent,
+      deadZone: {
+        name: matchedDeadZone.name,
+        segmentName: matchedDeadZone.name,
+        lengthKm,
+        lastKnownPosition: [Number(lng.toFixed(2)), Number(lat.toFixed(2))],
+        avgSpeedKmh,
+        speedSource,
+        predictedExitMinutes,
+        estimatedMinutesToExit: predictedExitMinutes,
+        estimatedExitEta: new Date(Date.now() + predictedExitMinutes * 60000).toISOString(),
+        nextCheckpost: matchedDeadZone.exit_checkpost_name || 'Jatinga Transit Checkpost',
+      },
+    };
+
+    // Emit live update over Socket.IO
+    emitVehicleTracking(vehicleId, {
+      vehicleId,
+      transporterId: vehicle.transporter_id,
+      ...result,
+      lastPing: lastPingTime,
+    });
+
+    return result;
   }
 }

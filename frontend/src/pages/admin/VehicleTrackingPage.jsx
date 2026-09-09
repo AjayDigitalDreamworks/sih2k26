@@ -64,6 +64,30 @@ export const VehicleTrackingPage = () => {
   const activeAlerts = (alerts || []).length;
   const selectedVehicle = vList.find(v => v.id === selectedVehicleId);
 
+  const [deadZoneDetail, setDeadZoneDetail] = useState(null);
+
+  useEffect(() => {
+    let alive = true;
+    if (!selectedVehicleId) {
+      setDeadZoneDetail(null);
+      return;
+    }
+    ApiClient.getVehicleTrackingStatus(selectedVehicleId)
+      .then((res) => {
+        if (alive && res?.success && res.data) {
+          setDeadZoneDetail(res.data);
+        } else if (alive) {
+          setDeadZoneDetail(null);
+        }
+      })
+      .catch(() => {
+        if (alive) setDeadZoneDetail(null);
+      });
+    return () => {
+      alive = false;
+    };
+  }, [selectedVehicleId]);
+
   return (
     <div className="vehicle-tracking-page">
       <div className="page-header-row">
@@ -163,6 +187,64 @@ export const VehicleTrackingPage = () => {
               <button className="btn btn-outline" style={{ padding: "4px 10px", fontSize: "11px" }} onClick={() => setSelectedVehicleId(null)}>Close</button>
             </div>
 
+          </div>
+        </div>
+      )}
+
+      {selectedVehicle && deadZoneDetail?.status === 'IN_DEAD_ZONE' && (
+        <div className="card" style={{ padding: "14px 18px", borderLeft: "4px solid #D97706", marginBottom: "16px", backgroundColor: "#FFFBEB" }}>
+          <div style={{ display: "flex", alignItems: "flex-start", justifyContent: "space-between", flexWrap: "wrap", gap: "12px" }}>
+            <div>
+              <div style={{ display: "flex", alignItems: "center", gap: "8px" }}>
+                <span style={{ fontSize: "16px" }}>⛰️</span>
+                <strong style={{ fontSize: "14px", color: "#92400E" }}>
+                  Vehicle In Mountain Shadow Dead-Zone: {deadZoneDetail.deadZone?.segmentName || "Surveyed Mountain Corridor"}
+                </strong>
+              </div>
+              <p style={{ margin: "4px 0 0 24px", fontSize: "12px", color: "#B45309" }}>
+                Signal silent for <b>{deadZoneDetail.minutesSilent?.toFixed(1)} mins</b>. Vehicle is within a pre-surveyed cellular shadow zone ({deadZoneDetail.deadZone?.lengthKm || 14} km segment).
+              </p>
+            </div>
+            <div style={{ display: "flex", alignItems: "center", gap: "12px", flexWrap: "wrap" }}>
+              <div style={{ background: "#FEF3C7", padding: "6px 12px", borderRadius: "8px", border: "1px solid #FDE68A" }}>
+                <div style={{ fontSize: "10px", color: "#92400E", fontWeight: 700, textTransform: "uppercase" }}>Predicted Exit Window</div>
+                <div style={{ fontSize: "14px", fontWeight: 800, color: "#78350F" }}>
+                  {deadZoneDetail.deadZone?.speedSource === 'default' ? `~${deadZoneDetail.deadZone?.estimatedMinutesToExit}m` : `${deadZoneDetail.deadZone?.estimatedMinutesToExit}m`}
+                  <span style={{ fontSize: "10px", fontWeight: 600, marginLeft: "4px", color: "#B45309" }}>
+                    ({deadZoneDetail.deadZone?.speedSource === 'default' ? "baseline speed" : "convoy rolling avg"})
+                  </span>
+                </div>
+              </div>
+              <div style={{ background: "#FEF3C7", padding: "6px 12px", borderRadius: "8px", border: "1px solid #FDE68A" }}>
+                <div style={{ fontSize: "10px", color: "#92400E", fontWeight: 700, textTransform: "uppercase" }}>Next Re-Acquisition Checkpost</div>
+                <div style={{ fontSize: "13px", fontWeight: 800, color: "#78350F" }}>
+                  {deadZoneDetail.deadZone?.nextCheckpost || "Next Checkpost"}
+                </div>
+              </div>
+              {deadZoneDetail.deadZone?.estimatedExitEta && (
+                <div style={{ background: "#FEF3C7", padding: "6px 12px", borderRadius: "8px", border: "1px solid #FDE68A" }}>
+                  <div style={{ fontSize: "10px", color: "#92400E", fontWeight: 700, textTransform: "uppercase" }}>Expected Reconnect ETA</div>
+                  <div style={{ fontSize: "13px", fontWeight: 800, color: "#78350F" }}>
+                    {new Date(deadZoneDetail.deadZone.estimatedExitEta).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })}
+                  </div>
+                </div>
+              )}
+            </div>
+          </div>
+        </div>
+      )}
+
+      {selectedVehicle && deadZoneDetail?.status === 'SIGNAL_LOST_UNCONFIRMED' && (
+        <div className="card" style={{ padding: "12px 18px", borderLeft: "4px solid #EF4444", marginBottom: "16px", backgroundColor: "#FEF2F2" }}>
+          <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", flexWrap: "wrap", gap: "10px" }}>
+            <div>
+              <strong style={{ fontSize: "13px", color: "#B91C1C" }}>
+                ⚠️ UNCONFIRMED GPS LOSS — Outside Surveyed Mountain Corridors
+              </strong>
+              <p style={{ margin: "2px 0 0 0", fontSize: "12px", color: "#DC2626" }}>
+                Vehicle {selectedVehicle.id} has been silent for {deadZoneDetail.minutesSilent?.toFixed(1)} mins at a location outside known dead-zones. Radio checkpost verification recommended.
+              </p>
+            </div>
           </div>
         </div>
       )}

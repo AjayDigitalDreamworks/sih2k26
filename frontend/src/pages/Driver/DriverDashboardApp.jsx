@@ -34,7 +34,7 @@ import DriverLiveMap from '@/components/driver/DriverLiveMap';
 import DriverReportForm from '@/components/driver/DriverReportForm';
 import DriverHistory from '@/components/driver/DriverHistory';
 import ApiClient from '@/lib/api';
-import { subscribeToDynamicReroute, subscribeToRouteCleared } from '@/lib/socket';
+import { subscribeToDynamicReroute, subscribeToRouteCleared, subscribeToHazardWarning } from '@/lib/socket';
 import { toast } from 'sonner';
 
 const TABS = [
@@ -49,6 +49,36 @@ function fmtAge(sec) {
   if (sec < 45) return 'LIVE';
   if (sec <= 300) return 'STALE';
   return 'OFFLINE';
+}
+
+function playHazardWarningChime() {
+  try {
+    const AudioCtx = window.AudioContext || window.webkitAudioContext;
+    if (!AudioCtx) return;
+    const ctx = new AudioCtx();
+    const now = ctx.currentTime;
+    const osc1 = ctx.createOscillator();
+    const gain1 = ctx.createGain();
+    osc1.type = 'sawtooth';
+    osc1.frequency.setValueAtTime(880, now);
+    gain1.gain.setValueAtTime(0.25, now);
+    gain1.gain.exponentialRampToValueAtTime(0.01, now + 0.25);
+    osc1.connect(gain1);
+    gain1.connect(ctx.destination);
+    osc1.start(now);
+    osc1.stop(now + 0.25);
+
+    const osc2 = ctx.createOscillator();
+    const gain2 = ctx.createGain();
+    osc2.type = 'triangle';
+    osc2.frequency.setValueAtTime(587.33, now + 0.28);
+    gain2.gain.setValueAtTime(0.3, now + 0.28);
+    gain2.gain.exponentialRampToValueAtTime(0.01, now + 0.6);
+    osc2.connect(gain2);
+    gain2.connect(ctx.destination);
+    osc2.start(now + 0.28);
+    osc2.stop(now + 0.6);
+  } catch {}
 }
 
 export default function DriverDashboardApp() {
@@ -70,6 +100,8 @@ export default function DriverDashboardApp() {
   const [live, setLive] = useState(null);
   const [liveError, setLiveError] = useState(null);
   const [reroutedNotice, setReroutedNotice] = useState(null);
+  const [hazardWarning, setHazardWarning] = useState(null);
+  const [hazardDismissedId, setHazardDismissedId] = useState(null);
 
   const isDriver = user?.backendRole === 'driver';
   const vehicle = t.ctx?.vehicle;
@@ -153,11 +185,14 @@ export default function DriverDashboardApp() {
       const res = await ApiClient.getVehicleTrackingStatus(vehicle.id);
       if (res?.success && res.data) {
         setLive(res.data);
+        if (res.data.upcomingHazard && (!hazardWarning || hazardWarning.segmentId !== res.data.upcomingHazard.segmentId)) {
+          setHazardWarning(res.data.upcomingHazard);
+        }
       }
     } catch {
       setLiveError('Live status unavailable');
     }
-  }, [vehicle?.id]);
+  }, [vehicle?.id, hazardWarning]);
 
   // Poll server live-state while tracking
   useEffect(() => {
@@ -212,6 +247,26 @@ export default function DriverDashboardApp() {
     });
     return () => unsub();
   }, [vehicle?.id]);
+
+  // Real-time driver hazard proximity warning listener
+  useEffect(() => {
+    const unsub = subscribeToHazardWarning((data) => {
+      if (!data) return;
+      const isMyVehicle =
+        data.vehicleId === vehicle?.id ||
+        data.driverId === user?.id ||
+        (t.ctx?.driver?.id && data.driverId === t.ctx?.driver?.id);
+      if (isMyVehicle) {
+        setHazardWarning(data);
+        playHazardWarningChime();
+        if ('vibrate' in navigator) {
+          try { navigator.vibrate([200, 100, 200, 100, 400]); } catch {}
+        }
+        toast.error(`⚠️ Proximity Alert: Hazard in ${data.distanceToHazardKm} km! Slow to < ${data.speedAdvisoryKmh || 25} km/h`, { duration: 8000 });
+      }
+    });
+    return () => unsub();
+  }, [vehicle?.id, user?.id, t.ctx?.driver?.id]);
 
   // Refresh context shortly after start/stop
   useEffect(() => {
@@ -730,6 +785,54 @@ function TrackingView({
         )}
       </div>
 
+      {/* ── Proactive Segment Hazard Proximity Card ── */}
+      {hazardWarning && hazardDismissedId !== hazardWarning.segmentId && (
+        <div className="bg-gradient-to-r from-red-600 via-rose-600 to-amber-600 rounded-2xl p-4 text-white shadow-lg shadow-red-500/25 border border-red-400/50 animate-pulse">
+          <div className="flex items-start justify-between gap-3">
+            <div className="flex items-start gap-3">
+              <div className="p-2.5 rounded-xl bg-white/20 backdrop-blur-xs shrink-0 mt-0.5">
+                <TriangleAlert className="w-6 h-6 text-white animate-bounce" />
+              </div>
+              <div>
+                <div className="flex items-center gap-2 flex-wrap">
+                  <span className="text-xs font-black tracking-wider uppercase px-2.5 py-0.5 rounded-full bg-black/40 border border-white/30">
+                    ⚠️ Hazard in {hazardWarning.distanceToHazardKm} km
+                  </span>
+                  <span className="text-xs font-bold px-2 py-0.5 rounded-full bg-white/20">
+                    ETA: ~{hazardWarning.etaMinutes} min
+                  </span>
+                  <span className="text-xs font-bold px-2 py-0.5 rounded-full bg-red-950/70 text-red-200">
+                    Risk: {hazardWarning.riskScore}/100
+                  </span>
+                </div>
+                <h3 className="font-black text-base sm:text-lg mt-1.5 leading-snug">
+                  {hazardWarning.hazardReason || 'Critical Road Section Ahead'}
+                </h3>
+                <p className="text-xs text-white/90 mt-1">
+                  At KM {hazardWarning.startChainageKm}–{hazardWarning.endChainageKm} on {hazardWarning.routeName} (Slope: {hazardWarning.slopePct}%).
+                </p>
+                <div className="mt-2.5 flex items-center gap-2 flex-wrap">
+                  <div className="px-2.5 py-1 rounded-lg bg-white text-red-700 font-black text-xs flex items-center gap-1.5 shadow-sm">
+                    <span>🛑 Speed Advisory: &lt; {hazardWarning.speedAdvisoryKmh || 25} km/h</span>
+                  </div>
+                  <span className="text-[11px] text-white/85 font-medium">
+                    Shift to low gear. Dynamic bypass evaluated automatically.
+                  </span>
+                </div>
+              </div>
+            </div>
+            <button
+              type="button"
+              onClick={() => setHazardDismissedId(hazardWarning.segmentId)}
+              className="p-1.5 rounded-lg bg-white/20 hover:bg-white/30 text-white transition-colors shrink-0"
+              title="Acknowledge alert"
+            >
+              <X className="w-4 h-4" />
+            </button>
+          </div>
+        </div>
+      )}
+
       {/* ── Interactive Live Map Card ── */}
       <div className="bg-white rounded-2xl border border-slate-200 shadow-xs overflow-hidden">
         <div className="p-3 border-b border-slate-100 flex items-center justify-between text-xs">
@@ -745,16 +848,22 @@ function TrackingView({
         </div>
 
         {reroutedNotice && (
-          <div className="px-3.5 py-2.5 bg-amber-500/10 border-b border-amber-500/20 flex items-center gap-2.5 text-xs text-amber-800 animate-pulse">
-            <TriangleAlert className="w-4 h-4 text-amber-600 shrink-0" />
+          <div className="px-3.5 py-2.5 bg-emerald-50 border-b border-emerald-200 flex items-center gap-2.5 text-xs text-emerald-900">
+            <CheckCircle2 className="w-4 h-4 text-emerald-600 shrink-0" />
             <div className="flex-1 leading-snug">
-              <span className="font-bold text-amber-900">Dynamic Reroute Active:</span> {reroutedNotice}
+              <span className="font-bold text-emerald-950">🔄 Dynamic Safest Route Active:</span> {reroutedNotice}
             </div>
           </div>
         )}
 
         <div className="relative">
-          <DriverLiveMap marker={marker} route={routeCoords} trail={trail} height={280} />
+          <DriverLiveMap
+            marker={marker}
+            route={routeCoords}
+            trail={trail}
+            height={280}
+            hazard={hazardWarning && hazardDismissedId !== hazardWarning.segmentId ? hazardWarning : null}
+          />
         </div>
 
         {/* Map Legend */}

@@ -178,6 +178,14 @@ class ApiClient {
     return this.request('/admin/supply-chain/gaps');
   }
 
+  static recomputeSupplyChainGaps() {
+    return this.request('/admin/supply-chain/gaps/recompute', { method: 'POST' });
+  }
+
+  static getVehicleTrackingStatus(vehicleId) {
+    return this.request(`/tracking/status?vehicleId=${encodeURIComponent(vehicleId)}`);
+  }
+
   static getDisruptionAnalytics() {
     return this.request('/admin/analytics/disruption-trends');
   }

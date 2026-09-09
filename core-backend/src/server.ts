@@ -48,6 +48,14 @@ async function startServer() {
       } catch (e) { /* ignore */ }
     }, 10 * 60 * 1000);
 
+    // Phase 1 Real-time DoSR recalculation and broadcast every 5 minutes
+    setInterval(async () => {
+      try {
+        const { AdminController } = require('./modules/admin/admin.controller');
+        await AdminController.computeAndBroadcastDosr();
+      } catch (e) { /* ignore */ }
+    }, 5 * 60 * 1000);
+
     server.listen(env.port, '0.0.0.0', () => {
       logger.info('Raahi Core Backend is ACTIVE', {
         port: env.port,

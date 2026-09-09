@@ -2,7 +2,8 @@ import { Router, Request, Response } from 'express';
 import { authenticateJwt } from '../../middleware/auth.middleware';
 import { sendSuccess, sendError } from '../../utils/response';
 import { sequelize } from '../../config/db';
-import { Vehicle, District, Road, Route, RiskScore, Bridge } from '../../models/postgres';
+import { Vehicle, District, Road, Route, RiskScore, Bridge, RouteMicroSegment } from '../../models/postgres';
+import { FieldReport, Alert } from '../../models/mongo';
 import { redisClient } from '../../config/redis';
 import { env } from '../../config/env';
 import { Op } from 'sequelize';
@@ -181,6 +182,133 @@ router.get('/routes', async (req: Request, res: Response) => {
     }));
 
     return sendSuccess(res, { type: 'FeatureCollection', features }, 'Routes retrieved');
+  } catch (err: any) {
+    return sendError(res, err.message);
+  }
+});
+
+/**
+ * GET /api/gis/routes/:id/micro-segments
+ * Get high-resolution 500m micro-segments for a corridor with individual risk scores
+ */
+router.get('/routes/:id/micro-segments', async (req: Request, res: Response) => {
+  try {
+    const routeId = String(req.params.id || '');
+    const forceRefresh = req.query.refresh === 'true';
+
+    const route = await Route.findByPk(routeId);
+    if (!route) {
+      return sendError(res, `Route with id '${routeId}' not found`, 404);
+    }
+
+    // 1. Check if micro-segments already exist in DB
+    let segments = await RouteMicroSegment.findAll({
+      where: { route_id: routeId },
+      order: [['segment_index', 'ASC']],
+      raw: true,
+    });
+
+    // 2. If segments not present or refresh requested, query ML service to slice & score
+    if (!segments || segments.length === 0 || forceRefresh) {
+      let parsedGeom: any;
+      try {
+        parsedGeom = typeof route.geom === 'string' ? JSON.parse(route.geom) : route.geom;
+      } catch {
+        parsedGeom = { type: 'LineString', coordinates: [] };
+      }
+
+      // GeoJSON coordinates are [lng, lat]
+      const rawCoords = parsedGeom.coordinates || [];
+      // Convert to [lat, lng] for ML service
+      const points = rawCoords.map((c: any) => [c[1], c[0]]);
+
+      // Gather live ground truth from MongoDB and Postgres
+      const activeAlerts = await Alert.find({ status: 'active' }).lean();
+      const fieldReports = await FieldReport.find({ status: { $in: ['Pending', 'In Progress'] } }).lean();
+      const bridges = await Bridge.findAll({ raw: true });
+
+      const mlPayload = {
+        routeId: route.id,
+        geometry: points,
+        roadCondition: route.status === 'blocked' ? 'blocked' : route.status === 'at_risk' ? 'damaged' : 'good',
+        rainfallMm: 14.0,
+        alerts: activeAlerts,
+        fieldTasks: fieldReports,
+        bridges: bridges,
+      };
+
+      try {
+        const mlResp = await fetch(`${env.mlServiceUrl}/risk/micro-segments/batch`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(mlPayload),
+        });
+
+        if (mlResp.ok) {
+          const mlData = (await mlResp.json()) as any;
+          const scoredSegments = mlData.microSegments || [];
+
+          if (scoredSegments.length > 0) {
+            // Upsert into RouteMicroSegment table
+            await RouteMicroSegment.destroy({ where: { route_id: routeId } });
+
+            const toInsert = scoredSegments.map((s: any) => {
+              // Convert [lat, lng] back to GeoJSON [lng, lat]
+              const geoCoords = (s.coordinates || []).map((pt: any) => [pt[1], pt[0]]);
+              return {
+                id: `RMS_${routeId}_${s.segment_index}`,
+                route_id: routeId,
+                segment_index: s.segment_index,
+                start_chainage_km: s.start_chainage_km,
+                end_chainage_km: s.end_chainage_km,
+                length_m: Math.round((s.length_km || 0.5) * 1000),
+                slope_pct: s.slope_pct || 0.0,
+                elevation_start_m: s.elevation_start_m || 300.0,
+                elevation_end_m: s.elevation_end_m || 300.0,
+                tortuosity: s.tortuosity || 1.0,
+                current_risk_score: s.risk_score,
+                risk_level: s.risk_level,
+                hazard_reason: s.hazard_reason,
+                geom: JSON.stringify({ type: 'LineString', coordinates: geoCoords }),
+              };
+            });
+
+            await RouteMicroSegment.bulkCreate(toInsert);
+            segments = toInsert as any;
+          }
+        }
+      } catch (mlErr: any) {
+        console.warn(`[GIS] ML batch microsegment scoring failed: ${mlErr.message}`);
+      }
+    }
+
+    // 3. Format as GeoJSON FeatureCollection
+    const features = (segments || []).map((s: any) => ({
+      type: 'Feature',
+      geometry: parseGeometry(s.geom),
+      properties: {
+        id: s.id,
+        route_id: s.route_id,
+        segment_index: s.segment_index,
+        start_chainage_km: s.start_chainage_km,
+        end_chainage_km: s.end_chainage_km,
+        length_m: s.length_m,
+        slope_pct: s.slope_pct,
+        elevation_start_m: s.elevation_start_m,
+        elevation_end_m: s.elevation_end_m,
+        tortuosity: s.tortuosity,
+        risk_score: s.current_risk_score,
+        risk_level: s.risk_level,
+        hazard_reason: s.hazard_reason,
+      },
+    }));
+
+    return sendSuccess(res, {
+      type: 'FeatureCollection',
+      route_id: routeId,
+      segment_count: features.length,
+      features,
+    }, 'Route micro-segments retrieved');
   } catch (err: any) {
     return sendError(res, err.message);
   }

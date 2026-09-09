@@ -68,6 +68,9 @@ export default function MyVehicles() {
       route: v.current_route || undefined,
       location: v.current_route ? { name: v.current_route } : null,
       speed: v.speed != null ? `${Number(v.speed).toFixed(0)} km/h` : undefined,
+      availableForLoad: Boolean(v.available_for_load),
+      loadedKg: v.loaded_kg ?? 0,
+      capacityUtilizationPct: v.capacity_utilization_percent ?? 0,
       lastUpdated: v.last_ping_at
         ? {
             date: new Date(v.last_ping_at).toLocaleDateString([], { day: 'numeric', month: 'short' }),
@@ -134,11 +137,15 @@ export default function MyVehicles() {
   const filteredVehicles = vehicles.filter((item) => {
     // Status Filter
     if (statusFilter !== 'all') {
-      const st = item.statusType;
-      if (statusFilter === 'in-transit' && !['moving', 'delayed'].includes(st)) return false;
-      if (statusFilter === 'idle' && !['idle', 'stopped'].includes(st)) return false;
-      if (statusFilter === 'delayed' && st !== 'delayed') return false;
-      if (statusFilter === 'maintenance' && st !== 'maintenance') return false;
+      if (statusFilter === 'available-for-load') {
+        if (!item.availableForLoad) return false;
+      } else {
+        const st = item.statusType;
+        if (statusFilter === 'in-transit' && !['moving', 'delayed'].includes(st)) return false;
+        if (statusFilter === 'idle' && !['idle', 'stopped'].includes(st)) return false;
+        if (statusFilter === 'delayed' && st !== 'delayed') return false;
+        if (statusFilter === 'maintenance' && st !== 'maintenance') return false;
+      }
     }
 
     // Search query filter
@@ -166,8 +173,9 @@ export default function MyVehicles() {
 
   const statusOptions = [
     { id: 'all', label: 'All Statuses' },
+    { id: 'available-for-load', label: '🟢 Available for Load' },
     { id: 'in-transit', label: 'In Transit / Moving' },
-    { id: 'idle', label: 'Idle / Available' },
+    { id: 'idle', label: 'Idle / Stored' },
     { id: 'delayed', label: 'Delayed' },
     { id: 'maintenance', label: 'Under Maintenance' },
   ];

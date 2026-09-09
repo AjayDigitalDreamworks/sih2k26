@@ -10,6 +10,9 @@ export class Bridge extends Model {
   public load_capacity_tons!: number;
   public lat!: number;
   public lng!: number;
+  public is_bailey_bridge!: boolean;
+  public corridor_id?: string | null;
+  public verified_at!: Date;
   public readonly createdAt!: Date;
   public readonly updatedAt!: Date;
 }
@@ -47,6 +50,18 @@ Bridge.init(
     lng: {
       type: DataTypes.DOUBLE,
       allowNull: false,
+    },
+    is_bailey_bridge: {
+      type: DataTypes.BOOLEAN,
+      defaultValue: false,
+    },
+    corridor_id: {
+      type: DataTypes.STRING(50),
+      allowNull: true,
+    },
+    verified_at: {
+      type: DataTypes.DATE,
+      defaultValue: DataTypes.NOW,
     },
   },
   {

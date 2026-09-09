@@ -68,3 +68,45 @@ export const initSocketGateway = (httpServer: HttpServer): SocketIOServer => {
 export const getSocketServer = (): SocketIOServer | null => {
   return io;
 };
+
+/**
+ * Emit district DoSR real-time updates.
+ * Channel: admin:district:{districtId}:dosr
+ */
+export const emitDistrictDosr = (districtId: string, payload: any) => {
+  if (!io) return;
+  const channel = `admin:district:${districtId}:dosr`;
+  io.to('admin:all').emit(channel, payload);
+  io.to(`district:${districtId}`).emit(channel, payload);
+  io.emit('dosr:update', payload);
+};
+
+/**
+ * Emit vehicle real-time tracking status updates (including dead-zone state transitions).
+ * Channel: admin:vehicle:{vehicleId}:tracking
+ */
+export const emitVehicleTracking = (vehicleId: string, payload: any) => {
+  if (!io) return;
+  const channel = `admin:vehicle:${vehicleId}:tracking`;
+  io.to('admin:all').emit(channel, payload);
+  if (payload.transporterId) {
+    io.to(`transporter:${payload.transporterId}`).emit(channel, payload);
+  }
+  io.to(`vehicle:${vehicleId}`).emit(channel, payload);
+  io.emit('tracking:vehicle:update', payload);
+};
+
+/**
+ * Emit vehicle capacity utilization updates.
+ * Channel: transporter:vehicle:{vehicleId}:utilization
+ */
+export const emitVehicleUtilization = (vehicleId: string, payload: any) => {
+  if (!io) return;
+  const channel = `transporter:vehicle:${vehicleId}:utilization`;
+  io.to('admin:all').emit(channel, payload);
+  if (payload.transporterId) {
+    io.to(`transporter:${payload.transporterId}`).emit(channel, payload);
+  }
+  io.to(`vehicle:${vehicleId}`).emit(channel, payload);
+  io.emit('utilization:update', payload);
+};

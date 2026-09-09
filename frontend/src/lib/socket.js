@@ -106,6 +106,32 @@ export const subscribeToRouteCleared = (callback) => {
   };
 };
 
+export const subscribeToHazardWarning = (callback) => {
+  const s = getSocket();
+  s.on('driver:hazard_warning', callback);
+  s.on('vehicle:hazard_warning', callback);
+  return () => {
+    s.off('driver:hazard_warning', callback);
+    s.off('vehicle:hazard_warning', callback);
+  };
+};
+
+export const subscribeToDosrUpdates = (callback) => {
+  const s = getSocket();
+  s.on('dosr:update', callback);
+  return () => {
+    s.off('dosr:update', callback);
+  };
+};
+
+export const subscribeToVehicleUtilization = (callback) => {
+  const s = getSocket();
+  s.on('vehicle:utilization', callback);
+  return () => {
+    s.off('vehicle:utilization', callback);
+  };
+};
+
 export const disconnectSocket = () => {
   if (socket) {
     socket.disconnect();

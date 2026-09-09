@@ -105,7 +105,13 @@ export const LiveVehiclesTable = ({ selectedVehicleId, onSelectVehicle }) => {
                 <td style={{ padding: '8px 10px' }}>{v.model}</td>
                 <td style={{ padding: '8px 10px' }}>{v.driver}</td>
                 <td style={{ padding: '8px 10px' }}>
-                  <span className={`status-badge ${v.statusClass}`}>{v.status}</span>
+                  {v.liveStatus === 'IN_DEAD_ZONE' || v.status === 'In Dead-Zone' ? (
+                    <span className="status-badge" style={{ background: '#FEF3C7', color: '#B45309', border: '1px solid #FCD34D' }}>
+                      ⛰️ Shadow Zone
+                    </span>
+                  ) : (
+                    <span className={`status-badge ${v.statusClass}`}>{v.status}</span>
+                  )}
                 </td>
                 <td style={{ padding: '8px 10px' }}>{v.speed}</td>
               </tr>

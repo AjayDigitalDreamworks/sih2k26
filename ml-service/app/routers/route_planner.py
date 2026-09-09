@@ -31,6 +31,7 @@ from app.services.landslide_service import LandslideService
 from app.services.terrain_service import TerrainService
 from app.services.traffic_service import TrafficService
 from app.services.config import APIConfig
+from app.engine.micro_segment_engine import score_route_microsegments
 
 router = APIRouter(prefix="/route", tags=["Route Planner (real roads)"])
 
@@ -430,6 +431,14 @@ async def plan_route(payload: Dict[str, Any]):
             "etaHours": round(leg_hours, 1),
         }
 
+        micro_segs = await score_route_microsegments(
+            pts,
+            route_id=f"{origin}-{dest}",
+            base_rainfall=cond.get("rainfallMm") or 10.0,
+            base_condition="good",
+        )
+        local_leg["microSegments"] = micro_segs
+
         single_route = {
             "legs": [local_leg],
             "totalDistanceKm": round(dist_km, 1),
@@ -442,6 +451,7 @@ async def plan_route(payload: Dict[str, Any]):
             "riskScore": 15,
             "riskLevel": "low",
             "geometry": pts,
+            "microSegments": micro_segs,
             "legCount": 1,
             "travelHours": round(leg_hours, 1),
         }
@@ -648,6 +658,20 @@ async def plan_route(payload: Dict[str, Any]):
         total_fuel_liters = round(base_liters + climb_penalty_liters, 1)
         estimated_fuel_cost = round(total_fuel_liters * vehicle_profile["cost_per_liter"])
 
+        micro_segs = await score_route_microsegments(
+            points=all_points,
+            route_id=f"{effective_origin}-{dest}",
+            base_rainfall=max((l.get("rainfallMm") or 12.0 for l in leg_payloads), default=12.0),
+            base_condition="damaged" if any(l.get("roadCondition") == "damaged" for l in leg_payloads) else "good",
+            alerts=corridor_alerts_raw,
+        )
+
+        max_micro_risk = max((seg.get("risk_score", 0) for seg in micro_segs), default=0)
+        critical_micro_segs = [s for s in micro_segs if s.get("risk_score", 0) >= 80 or s.get("risk_level") == "critical"]
+        
+        # Route risk integrates corridor weights, average risk, and worst-case micro-segment hazard
+        effective_route_risk = max(overall_risk, avg_risk, max_micro_risk)
+
         return {
             "legs": leg_payloads,
             "totalDistanceKm": round(total_distance, 1),
@@ -657,9 +681,12 @@ async def plan_route(payload: Dict[str, Any]):
             "climbPenaltyLiters": round(climb_penalty_liters, 1),
             "estimatedFuelLiters": total_fuel_liters,
             "estimatedFuelCost": estimated_fuel_cost,
-            "riskScore": max(overall_risk, avg_risk),
-            "riskLevel": _level(max(overall_risk, avg_risk)),
+            "riskScore": effective_route_risk,
+            "riskLevel": _level(effective_route_risk),
             "geometry": all_points,
+            "microSegments": micro_segs,
+            "peakSegmentRisk": max_micro_risk,
+            "criticalSegmentCount": len(critical_micro_segs),
             "legCount": len(leg_payloads),
             "travelHours": round(cumulative_hours, 1),
         }
@@ -702,6 +729,7 @@ async def plan_route(payload: Dict[str, Any]):
             "riskScore": safest["riskScore"],
             "riskLevel": safest["riskLevel"],
             "geometry": safest["geometry"],
+            "microSegments": safest.get("microSegments", []),
             "legs": safest["legs"],
             "isRecommended": recommended_key == "safest",
         })
@@ -727,6 +755,7 @@ async def plan_route(payload: Dict[str, Any]):
             "riskScore": shortest["riskScore"],
             "riskLevel": shortest["riskLevel"],
             "geometry": shortest["geometry"],
+            "microSegments": shortest.get("microSegments", []),
             "legs": shortest["legs"],
             "isRecommended": recommended_key == "shortest",
         })
@@ -1004,6 +1033,22 @@ async def plan_route(payload: Dict[str, Any]):
                 "title": f"Hazardous POL Cargo Advisory on {leg['roadLabel']}",
                 "message": f"Tanker transport requires speed limit < 30 km/h and continuous escort along corridor {leg['fromName']} → {leg['toName']}.",
                 "from": leg["from"], "to": leg["to"],
+            })
+
+    # Micro-segment proximity hazard alerts for recommended route
+    for seg in (recommended.get("microSegments") or []):
+        if seg.get("risk_score", 0) >= 70 or seg.get("hazard_reason"):
+            alerts.append({
+                "type": "segment_hazard",
+                "severity": seg.get("risk_level") if seg.get("risk_level") in ("critical", "high") else "high",
+                "title": f"⚠️ Hazard at KM {seg.get('start_chainage_km')}-{seg.get('end_chainage_km')}: {seg.get('hazard_reason') or 'High Slope / Road Disruption'}",
+                "message": f"Micro-segment risk {seg.get('risk_score')}/100 (slope: {seg.get('slope_pct')}%, tortuosity: {seg.get('tortuosity')}). Advisory speed: < {25 if seg.get('risk_score', 0) >= 80 else 35} km/h.",
+                "segmentId": seg.get("id"),
+                "startChainageKm": seg.get("start_chainage_km"),
+                "endChainageKm": seg.get("end_chainage_km"),
+                "riskScore": seg.get("risk_score"),
+                "hazardReason": seg.get("hazard_reason"),
+                "speedAdvisoryKmh": 25 if seg.get("risk_score", 0) >= 80 else 35,
             })
 
     return {

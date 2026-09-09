@@ -141,9 +141,18 @@ dist
 vite.config.js.timestamp-*
 vite.config.ts.timestamp-*
 .vite/
-.env
-BACKEND_ML_SERVICES_API.txt
-.env.example
-.freebuff
-docs
-.venv
+# Python caches & virtual environments
+__pycache__/
+*.py[cod]
+*$py.class
+*.pyc
+.venv/
+.venv*/
+env/
+venv/
+
+# Build artifacts
+dist/
+dist-*/
+build/
+

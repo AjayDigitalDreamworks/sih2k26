@@ -9,6 +9,7 @@ import {
   Bridge,
   Route,
   RiskScore,
+  RouteMicroSegment,
   Driver,
   Vehicle,
   Trip,
@@ -223,6 +224,65 @@ export async function runSeed() {
     { route_id: 'R-05', score: 28, risk_level: 'low', factors: { rainfall_24h_mm: 8.4, slope_risk: 25, road_condition: 'good', congestion: 'low' } },
   ]);
   console.log('✅ 5 corridor routes + risk scores seeded (with linestrings).');
+
+  // ─── 500M MICRO-SEGMENTS (with real KM 42 hotspot) ───────────────
+  const r01Segments = [];
+  // Generate sample micro-segments along R-01 (Guwahati -> Tezpur)
+  // Coordinates start near Guwahati [91.7362, 26.1445] and progress toward Tezpur [92.7926, 26.6528]
+  for (let i = 0; i < 90; i++) {
+    const startKm = Math.round(i * 0.5 * 10) / 10;
+    const endKm = Math.round((i + 1) * 0.5 * 10) / 10;
+    const frac1 = (i * 0.5) / 175.0;
+    const frac2 = ((i + 1) * 0.5) / 175.0;
+    const lng1 = 91.7362 + frac1 * (92.7926 - 91.7362);
+    const lat1 = 26.1445 + frac1 * (26.6528 - 26.1445);
+    const lng2 = 91.7362 + frac2 * (92.7926 - 91.7362);
+    const lat2 = 26.1445 + frac2 * (26.6528 - 26.1445);
+
+    let riskScore = 15;
+    let riskLevel: 'low' | 'medium' | 'high' | 'critical' = 'low';
+    let hazardReason: string | null = null;
+    let slopePct = 3.2;
+
+    // KM 42 Hotspot corresponding to FT-1001
+    if (startKm >= 41.5 && startKm <= 42.5) {
+      riskScore = 92;
+      riskLevel = 'critical';
+      slopePct = 14.8;
+      hazardReason = 'KM 42 Landslide & Slope Subsidence (Field Task FT-1001)';
+    } else if (startKm >= 40.5 && startKm < 41.5) {
+      riskScore = 48;
+      riskLevel = 'medium';
+      slopePct = 8.5;
+      hazardReason = 'Approaching KM 42 Hazard Zone';
+    } else if (startKm > 42.5 && startKm <= 43.5) {
+      riskScore = 42;
+      riskLevel = 'medium';
+      slopePct = 7.9;
+    }
+
+    r01Segments.push({
+      id: `RMS_R-01_${i}`,
+      route_id: 'R-01',
+      segment_index: i,
+      start_chainage_km: startKm,
+      end_chainage_km: endKm,
+      length_m: 500,
+      slope_pct: slopePct,
+      elevation_start_m: 120 + Math.round(i * 1.5),
+      elevation_end_m: 120 + Math.round((i + 1) * 1.5),
+      tortuosity: (startKm >= 41.5 && startKm <= 42.5) ? 2.4 : 1.05,
+      current_risk_score: riskScore,
+      risk_level: riskLevel,
+      hazard_reason: hazardReason,
+      geom: JSON.stringify({
+        type: 'LineString',
+        coordinates: [[Number(lng1.toFixed(6)), Number(lat1.toFixed(6))], [Number(lng2.toFixed(6)), Number(lat2.toFixed(6))]],
+      }),
+    });
+  }
+  await RouteMicroSegment.bulkCreate(r01Segments as any);
+  console.log('✅ 90 micro-segments seeded for NH-27 (with KM 42 hotspot).');
 
   // ─── FIELD VERIFICATION TASKS (2 real NER field tasks) ───────────
   await FieldTask.bulkCreate([

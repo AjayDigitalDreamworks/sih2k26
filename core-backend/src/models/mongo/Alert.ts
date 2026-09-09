@@ -4,7 +4,7 @@ export interface IAlert extends Document {
   id: string;
   title: string;
   type: string;
-  severity: 'High' | 'Medium' | 'Low';
+  severity: 'Critical' | 'High' | 'Medium' | 'Low';
   severityClass: string;
   districtId?: string;
   routeId?: string;
@@ -25,7 +25,7 @@ const AlertSchema: Schema = new Schema(
     type: { type: String, default: 'blocked_road' },
     severity: {
       type: String,
-      enum: ['High', 'Medium', 'Low'],
+      enum: ['Critical', 'High', 'Medium', 'Low'],
       default: 'Medium',
     },
     severityClass: { type: String, default: 'medium' },

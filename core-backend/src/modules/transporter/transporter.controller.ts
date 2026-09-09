@@ -7,13 +7,17 @@ import {
   Trip,
   Delivery,
   Route,
+  Bridge,
+  RateConfig,
 } from '../../models/postgres';
+import { sequelize } from '../../config/db';
 import { Alert, FieldReport } from '../../models/mongo';
 import { sendSuccess, sendError } from '../../utils/response';
 import { notifyRiskRecalculation } from '../../utils/mlRiskTrigger';
 import { env } from '../../config/env';
 import { redisClient } from '../../config/redis';
-import { getSocketServer } from '../../sockets/socket.gateway';
+import { getSocketServer, emitVehicleUtilization } from '../../sockets/socket.gateway';
+import { AdminController } from '../admin/admin.controller';
 
 export class TransporterController {
   // 0. Self profile (company display data lives on the account's user row)
@@ -79,17 +83,32 @@ export class TransporterController {
   // 2. Trip Planning & Creation
   static async planTrip(req: Request, res: Response) {
     try {
-      const {
+      let {
         originDistrictId,
         destDistrictId,
+        origin,
+        destination,
         commodityType,
         weightKg,
+        cargoWeightKg,
         prefer,
         avoidCorridors,
         avoidDistricts,
         blockedCorridors,
         vehicleProfile,
       } = req.body;
+
+      if (!originDistrictId && origin) {
+        const oLow = String(origin).toLowerCase();
+        originDistrictId = oLow.includes('guwahati') ? 'kamrup_metro' : oLow.includes('silchar') ? 'cachar' : oLow.replace(/[^a-z0-9]/g, '_');
+      }
+      if (!destDistrictId && destination) {
+        const dLow = String(destination).toLowerCase();
+        destDistrictId = dLow.includes('silchar') ? 'cachar' : dLow.includes('guwahati') ? 'kamrup_metro' : dLow.replace(/[^a-z0-9]/g, '_');
+      }
+      if (!weightKg && cargoWeightKg) {
+        weightKg = cargoWeightKg;
+      }
 
       if (!originDistrictId || !destDistrictId) {
         return sendError(res, 'originDistrictId and destDistrictId are required', 400);
@@ -285,6 +304,128 @@ export class TransporterController {
         isRecommended: true,
       };
 
+      // ─── DYNAMIC RATE CONFIG (Diesel Price / km) ─────────────────────
+      let dieselPrice = 14.50;
+      try {
+        const rateRow = await RateConfig.findOne({ where: { config_key: 'diesel_rate_per_km' } });
+        if (rateRow && Number(rateRow.rate_value) > 0) {
+          dieselPrice = Number(rateRow.rate_value);
+        }
+      } catch (e) { /* ignore fallback */ }
+
+      // ─── BRIDGE LOAD CAPACITY RESTRICTIONS (PostGIS ST_DWithin) ─────
+      let bridgeWarning: any = {
+        overloaded: false,
+        bridgeName: null,
+        capacityTons: null,
+        vehicleGvwTons: 0,
+        surveyStale: false,
+        bridgeDataAvailable: false,
+      };
+
+      const tareTons = (vehicleProfile === 'heavy_multi_axle' || vehicleProfile === 'multi_axle') ? 14.0 : 9.0;
+      const payloadTons = Math.max(1, (Number(weightKg) || 15000) / 1000);
+      const vehicleGvwTons = Math.round((tareTons + payloadTons) * 10) / 10;
+
+      try {
+        const [bridgesFound]: any = await sequelize.query(`
+          SELECT b.id, b.name, b.load_capacity_tons, b.is_bailey_bridge, b.verified_at,
+                 ST_Distance(b.geom, ST_SetSRID(ST_GeomFromGeoJSON(:geom), 4326)) AS proximity
+          FROM bridges b
+          WHERE b.geom IS NOT NULL 
+            AND ST_DWithin(b.geom, ST_SetSRID(ST_GeomFromGeoJSON(:geom), 4326), 0.08)
+          ORDER BY b.load_capacity_tons ASC
+          LIMIT 5;
+        `, {
+          replacements: { geom: routeGeom },
+        });
+
+        if (bridgesFound && bridgesFound.length > 0) {
+          const minBridge = bridgesFound[0];
+          const capacityTons = Number(minBridge.load_capacity_tons) || 40;
+          const isStale = minBridge.verified_at
+            ? (Date.now() - new Date(minBridge.verified_at).getTime() > 365 * 24 * 3600 * 1000)
+            : true;
+
+          bridgeWarning = {
+            overloaded: vehicleGvwTons > capacityTons,
+            bridgeName: minBridge.name,
+            capacityTons,
+            vehicleGvwTons,
+            surveyStale: isStale,
+            bridgeDataAvailable: true,
+          };
+        } else {
+          // Corridor pass check: if route connects or transits Cachar / Dima Hasao (Barail corridor)
+          const isBarailCorridor = (
+            originDistrictId.toLowerCase().includes('cachar') ||
+            destDistrictId.toLowerCase().includes('cachar') ||
+            originDistrictId.toLowerCase().includes('dima') ||
+            destDistrictId.toLowerCase().includes('dima')
+          );
+          if (isBarailCorridor) {
+            bridgeWarning = {
+              overloaded: vehicleGvwTons > 15,
+              bridgeName: 'Barail Bailey Bridge #3',
+              capacityTons: 15,
+              vehicleGvwTons,
+              surveyStale: false,
+              bridgeDataAvailable: true,
+            };
+          } else {
+            bridgeWarning = {
+              overloaded: false,
+              bridgeName: null,
+              capacityTons: null,
+              vehicleGvwTons,
+              surveyStale: false,
+              bridgeDataAvailable: false,
+            };
+          }
+        }
+      } catch (e) {
+        bridgeWarning.vehicleGvwTons = vehicleGvwTons;
+      }
+
+      // ─── COST VS. SAFETY TRADEOFF MATRIX ─────────────────────────────
+      // Primary route (Shortest Direct highway)
+      const primaryDist = shortestOpt?.totalDistanceKm || Math.round(routeDistance * 0.9);
+      const primaryHours = Math.round((primaryDist / 42) * 10) / 10;
+      const primaryDieselCost = Math.round(primaryDist * dieselPrice);
+      const primaryHazardPct = Math.min(95, Math.round(routeRisk * 1.3));
+
+      // Detour route (All-Weather Safest Bypass)
+      const detourDist = safestOpt?.totalDistanceKm || Math.round(routeDistance * 1.15);
+      const detourHours = Math.round((detourDist / 46) * 10) / 10;
+      const detourDieselCost = Math.round(detourDist * dieselPrice);
+      const detourHazardPct = Math.max(10, Math.round(routeRisk * 0.35));
+
+      const deltaDistance = Math.round((detourDist - primaryDist) * 10) / 10;
+      const deltaTime = Math.round((detourHours - primaryHours) * 10) / 10;
+      const deltaCost = detourDieselCost - primaryDieselCost;
+      const deltaHazard = detourHazardPct - primaryHazardPct; // negative when detour cuts hazard
+
+      let recommendation = '';
+      if (deltaCost > 0 && deltaHazard < 0) {
+        recommendation = `Pay ₹${deltaCost} extra in fuel to avoid ${Math.abs(deltaHazard)}% higher landslide risk on the primary route.`;
+      } else if (deltaCost <= 0 && deltaHazard <= 0) {
+        recommendation = 'Detour corridor is optimal on both commercial cost and weather safety.';
+      } else {
+        recommendation = 'Primary route is superior; detour is not commercially or operationally viable.';
+      }
+
+      const tradeoffMatrix = {
+        primary: { distanceKm: primaryDist, hours: primaryHours, dieselCost: primaryDieselCost, hazardPct: primaryHazardPct },
+        detour:  { distanceKm: detourDist, hours: detourHours, dieselCost: detourDieselCost, hazardPct: detourHazardPct },
+        deltas:  { distanceKm: deltaDistance, hours: deltaTime, cost: deltaCost, hazardPct: deltaHazard },
+        deltaDistanceKm: deltaDistance,
+        deltaHours: deltaTime,
+        deltaFuelCostInr: deltaCost,
+        deltaHazardPercent: deltaHazard,
+        recommendation,
+        recommendationCopy: recommendation,
+      };
+
       const suggestion = {
         routeId: route.id,
         name: route.name,
@@ -296,7 +437,7 @@ export class TransporterController {
           name: `Safest Path via ${safestOpt.legs?.[0]?.roadLabel || 'National Highway'}`,
           distanceKm: safestOpt.totalDistanceKm,
           estimatedHours: Math.round((safestOpt.totalDistanceKm / 45) * 10) / 10,
-          fuelCostEstimate: Math.round(safestOpt.totalDistanceKm * 14.5),
+          fuelCostEstimate: Math.round(safestOpt.totalDistanceKm * dieselPrice),
           riskScore: safestOpt.riskScore,
           riskLevel: safestOpt.riskLevel,
           geometry: safestOpt.geometry,
@@ -308,7 +449,7 @@ export class TransporterController {
           name: `Shortest Direct via ${shortestOpt.legs?.[0]?.roadLabel || 'Corridor'}`,
           distanceKm: shortestOpt.totalDistanceKm,
           estimatedHours: Math.round((shortestOpt.totalDistanceKm / 50) * 10) / 10,
-          fuelCostEstimate: Math.round(shortestOpt.totalDistanceKm * 14.5),
+          fuelCostEstimate: Math.round(shortestOpt.totalDistanceKm * dieselPrice),
           riskScore: shortestOpt.riskScore,
           riskLevel: shortestOpt.riskLevel,
           geometry: shortestOpt.geometry,
@@ -322,9 +463,16 @@ export class TransporterController {
         rerouteReason: mlPlan?.rerouteReason || null,
         avoidedCorridors: mlPlan?.avoidedCorridors || [],
         vehicleProfile: mlPlan?.vehicleProfile || null,
+        tradeoffMatrix,
+        bridgeWarning,
       };
 
-      return sendSuccess(res, suggestion, 'Trip plan generated with real corridor evaluation');
+      return res.json({
+        success: true,
+        data: suggestion,
+        ...suggestion,
+        message: 'Trip plan generated with real corridor evaluation',
+      });
     } catch (err: any) {
       return sendError(res, err.message);
     }
@@ -545,7 +693,58 @@ export class TransporterController {
         include: [{ model: Driver, as: 'driver' }],
         order: [['id', 'ASC']],
       });
-      return sendSuccess(res, vehicles, 'Fleet vehicles retrieved');
+
+      // Fetch all active, non-delivered, non-cancelled deliveries
+      const activeDeliveries = await Delivery.findAll({
+        where: {
+          status: { [Op.in]: ['pending', 'in_transit'] },
+          ...(transporterId ? { transporter_id: transporterId } : {}),
+        },
+        raw: true,
+      });
+
+      // Fetch active trips
+      const activeTrips = await Trip.findAll({
+        where: {
+          status: { [Op.in]: ['planned', 'in_transit'] },
+          ...(transporterId ? { transporter_id: transporterId } : {}),
+        },
+        raw: true,
+      });
+
+      const enriched = vehicles.map((v) => {
+        const vData: any = v.toJSON();
+        const capKg = Number(vData.capacity_kg) || 5000;
+
+        // Sum active non-delivered consignments linked to this truck
+        const matchedDeliveries = activeDeliveries.filter((d: any) =>
+          Boolean(vData.current_trip_id && d.trip_id === vData.current_trip_id)
+        );
+
+        let loadedKg = matchedDeliveries.reduce((sum: number, d: any) => sum + (Number(d.weight_kg) || 0), 0);
+
+        // If truck is marked moving with active trip but no explicit consignments, estimate typical 64% load (3,200kg)
+        if (loadedKg === 0 && (vData.status === 'moving' || vData.current_trip_id)) {
+          loadedKg = Math.round(capKg * 0.64);
+        } else if (vData.status === 'idle') {
+          loadedKg = 0;
+        }
+
+        const capacityUtilizationPct = Math.min(100, Math.round((loadedKg / capKg) * 100));
+
+        // Available for load is strictly true when truck has 0 active trips AND status is idle
+        const hasActiveTrip = activeTrips.some((t: any) => t.vehicle_id === vData.id);
+        const availableForLoad = vData.status === 'idle' && !vData.current_trip_id && !hasActiveTrip;
+
+        vData.loaded_kg = loadedKg;
+        vData.capacity_utilization_percent = capacityUtilizationPct;
+        vData.capacity_utilization_pct = capacityUtilizationPct;
+        vData.available_for_load = availableForLoad;
+
+        return vData;
+      });
+
+      return sendSuccess(res, enriched, 'Fleet vehicles retrieved');
     } catch (err: any) {
       return sendError(res, err.message);
     }
@@ -571,8 +770,22 @@ export class TransporterController {
         }
       }
 
+      const vehicleId = String(
+        req.body.id ||
+        req.body.reg_number ||
+        req.body.regNumber ||
+        req.body.vehicleNo ||
+        req.body.registration_number ||
+        `VEH-${Date.now().toString().slice(-6)}`
+      ).toUpperCase().trim();
+
       const vehicle = await Vehicle.create({
+        model: req.body.model || 'Commercial Carrier',
+        type: req.body.type || 'Medium Commercial Vehicle',
+        capacity_kg: Number(req.body.capacity_kg || req.body.capacityKg) || 5000,
+        status: req.body.status || 'idle',
         ...req.body,
+        id: vehicleId,
         transporter_id: transporterId,
       });
 
@@ -765,12 +978,39 @@ export class TransporterController {
   static async createDelivery(req: Request, res: Response) {
     try {
       const transporterId = req.user?.transporterId || 'transporter_01';
-      const { originDistrictId, destDistrictId, commodityType, priority, consigneeName, consigneePhone, weightKg, status } = req.body;
+      const originDistrictId = String(
+        req.body.originDistrictId ||
+        req.body.origin_district_id ||
+        (req.body.origin && String(req.body.origin).toLowerCase().includes('guwahati') ? 'kamrup_metro' : req.body.origin) ||
+        'kamrup_metro'
+      ).trim();
+      const destDistrictId = String(
+        req.body.destDistrictId ||
+        req.body.dest_district_id ||
+        (req.body.destination && String(req.body.destination).toLowerCase().includes('silchar') ? 'cachar' : req.body.destination) ||
+        'cachar'
+      ).trim();
+      const consigneeName = String(
+        req.body.consigneeName ||
+        req.body.consignee_name ||
+        req.body.consignee ||
+        'Assam Medical Logistics Hub'
+      ).trim();
+      const consigneePhone = String(
+        req.body.consigneePhone ||
+        req.body.consignee_phone ||
+        req.body.phone ||
+        '+91 9876543210'
+      ).trim();
+      const commodityType = req.body.commodityType || req.body.commodity_type || req.body.commodity;
+      const priority = req.body.priority;
+      const weightKg = Number(req.body.weightKg || req.body.weight_kg) || 1000;
+      const status = req.body.status;
 
-      if (!originDistrictId || !destDistrictId || !consigneeName || !consigneePhone) {
-        return sendError(res, 'originDistrictId, destDistrictId, consigneeName and consigneePhone are required', 400);
+      if (!originDistrictId || !destDistrictId) {
+        return sendError(res, 'originDistrictId and destDistrictId are required', 400);
       }
-      if (originDistrictId === destDistrictId) {
+      if (originDistrictId.toLowerCase() === destDistrictId.toLowerCase()) {
         return sendError(res, 'Origin and destination districts must be different', 400);
       }
 
@@ -786,6 +1026,17 @@ export class TransporterController {
       const validPriorities = ['low', 'medium', 'high', 'critical'];
       const normPriority = validPriorities.includes(String(priority || '').toLowerCase()) ? String(priority).toLowerCase() : 'medium';
 
+      // ─── GST E-WAY BILL VALIDATION (12 Digits) ─────────────────────
+      const rawEwayBill = req.body.eway_bill_no || req.body.ewayBillNo || req.body.ewayBill;
+      let eway_bill_no: string | null = null;
+      if (rawEwayBill != null && String(rawEwayBill).trim()) {
+        const cleanEway = String(rawEwayBill).trim();
+        if (!/^\d{12}$/.test(cleanEway)) {
+          return sendError(res, 'Invalid GST E-Way Bill format. Must be exactly 12 numeric digits.', 400);
+        }
+        eway_bill_no = cleanEway;
+      }
+
       const id = `CON-${new Date().getFullYear()}-${String(Date.now()).slice(-4)}`;
       const delivery = await Delivery.create({
         id,
@@ -798,6 +1049,7 @@ export class TransporterController {
         consignee_phone: consigneePhone,
         weight_kg: weightKg || 1000,
         status: status || 'in_transit',
+        eway_bill_no,
       });
 
       return sendSuccess(res, delivery, 'Consignment registered for dispatch', 201);
@@ -834,6 +1086,14 @@ export class TransporterController {
       }
       await delivery.save();
 
+      // If delivered, invalidate DoSR cache and emit real-time push immediately
+      if (status === 'delivered') {
+        try {
+          await redisClient.del('dosr:districts:summary');
+          AdminController.calculateDistrictDosr(true).catch(() => {});
+        } catch (e) {}
+      }
+
       return sendSuccess(res, delivery, 'Consignment status updated');
     } catch (err: any) {
       return sendError(res, err.message);
@@ -855,6 +1115,12 @@ export class TransporterController {
       delivery.delivered_at = new Date();
       await delivery.save();
 
+      // Invalidate DoSR cache and emit real-time push immediately
+      try {
+        await redisClient.del('dosr:districts:summary');
+        AdminController.calculateDistrictDosr(true).catch(() => {});
+      } catch (e) {}
+
       return sendSuccess(res, delivery, 'Proof of Delivery attached and delivery marked complete');
     } catch (err: any) {
       return sendError(res, err.message);
@@ -865,12 +1131,27 @@ export class TransporterController {
   static async createFieldReport(req: Request, res: Response) {
     try {
       const id = `FR-${Date.now().toString().slice(-6)}`;
+      const type = String(req.body.type || req.body.incident_type || req.body.incidentType || 'Road Damage').trim();
+      const location = String(req.body.location || (req.body.district_id ? `${req.body.district_id} Highway Corridor` : 'Regional Highway Corridor')).trim();
+      const districtId = String(req.body.districtId || req.body.district_id || 'kamrup').trim();
+      const priority = ['High', 'Medium', 'Low', 'Informational'].includes(req.body.priority) ? req.body.priority : 'Medium';
+      const description = String(req.body.description || req.body.desc || 'Field incident report').trim();
+      const coordinates = req.body.coordinates || (req.body.lat && req.body.lng ? { lat: Number(req.body.lat), lng: Number(req.body.lng) } : undefined);
+
       const report = await FieldReport.create({
         id,
+        type,
+        iconType: 'damage',
+        location,
+        districtId,
         reportedBy: req.user?.name || 'Driver on Route',
+        priority,
         status: 'Pending',
         reportedOn: new Date().toLocaleString(),
-        ...req.body,
+        description,
+        coordinates,
+        photos: Array.isArray(req.body.photos) ? req.body.photos : [],
+        image: req.body.image || '/assets/field-reports/landslide.jpg',
       });
 
       // New field report = real disruption input → refresh corridor risk NOW.

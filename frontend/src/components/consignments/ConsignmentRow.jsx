@@ -171,6 +171,15 @@ export default function ConsignmentRow({ item, consignment, rowNumber, onViewDet
           >
             {status}
           </span>
+          {(rowItem.eway_bill_no || rowItem.ewayBillNo || consignment?.eway_bill_no) && (
+            <span
+              className="text-[9px] font-bold px-1.5 py-0.5 rounded bg-slate-100 text-slate-700 border border-slate-200 flex items-center gap-1"
+              title="GST E-Way Bill (Format validated — not verified with GST portal)"
+            >
+              <span>📄</span>
+              <span className="font-mono font-black text-slate-900">{rowItem.eway_bill_no || rowItem.ewayBillNo || consignment?.eway_bill_no}</span>
+            </span>
+          )}
         </div>
 
         {hasRoute && (

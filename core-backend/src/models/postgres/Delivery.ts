@@ -15,6 +15,7 @@ export class Delivery extends Model {
   public status!: 'pending' | 'in_transit' | 'delivered' | 'delayed' | 'canceled';
   public pod_url?: string | null;
   public delivered_at?: Date | null;
+  public eway_bill_no?: string | null;
   public readonly createdAt!: Date;
   public readonly updatedAt!: Date;
 }
@@ -72,6 +73,10 @@ Delivery.init(
     },
     delivered_at: {
       type: DataTypes.DATE,
+      allowNull: true,
+    },
+    eway_bill_no: {
+      type: DataTypes.STRING(12),
       allowNull: true,
     },
   },

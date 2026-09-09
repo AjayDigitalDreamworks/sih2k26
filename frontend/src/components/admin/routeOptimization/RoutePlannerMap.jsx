@@ -4,10 +4,11 @@ import { MapZoomControls } from '@/components/admin/common/MapZoomControls';
 import { ResilientTileLayer } from '@/components/admin/common/ResilientTileLayer';
 import L from 'leaflet';
 import 'leaflet/dist/leaflet.css';
-import { MapPin, Sparkles, Loader2, AlertTriangle, ShieldCheck, Navigation, Gauge, RefreshCw, Route as RouteIcon, Search, Scale, AlertOctagon } from 'lucide-react';
+import { MapPin, Sparkles, Loader2, AlertTriangle, ShieldCheck, Navigation, Gauge, RefreshCw, Route as RouteIcon, Search, Scale, AlertOctagon, Layers, Activity } from 'lucide-react';
 import ApiClient from '@/lib/api';
 import { DISTRICTS, districtById, findDistrictMatch } from '@/data/geoMaster';
 import { useApp } from '@/contexts/AppContext';
+import { MicroSegmentHeatmap } from './MicroSegmentHeatmap';
 
 const RISK_COLOR = { low: '#10B981', medium: '#F59E0B', high: '#F97316', critical: '#EF4444' };
 
@@ -84,6 +85,7 @@ export const RoutePlannerMap = ({
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
   const [mapKey, setMapKey] = useState(0);
+  const [segmentationMode, setSegmentationMode] = useState('micro'); // 'micro' | 'corridor'
   const seq = useRef(0);
 
   const plan = propPlan !== undefined ? propPlan : internalPlan;
@@ -309,6 +311,14 @@ export const RoutePlannerMap = ({
   // Determine active route
   const activeRoute = (plan?.alternatives || []).find((a) => a.id === activeRouteId) || plan?.recommended || null;
   const activeLegs = activeRoute?.legs || [];
+  const activeMicroSegments = activeRoute?.microSegments || activeLegs.flatMap((l) => l.microSegments || []);
+  const totalChunks = activeMicroSegments.length;
+  const safeChunks = activeMicroSegments.filter((s) => (s.risk_score ?? s.riskScore ?? 15) <= 30).length;
+  const modChunks = activeMicroSegments.filter((s) => {
+    const sc = s.risk_score ?? s.riskScore ?? 15;
+    return sc > 30 && sc <= 60;
+  }).length;
+  const criticalChunks = activeMicroSegments.filter((s) => (s.risk_score ?? s.riskScore ?? 15) >= 80);
   const alerts = plan?.alerts || [];
   const fromD = districtById(fromId);
   const toD = districtById(toId);
@@ -606,6 +616,107 @@ export const RoutePlannerMap = ({
         </div>
       )}
 
+      {/* Micro-Segmentation Mode Switcher & Real-time Chunk Health Bar */}
+      {plan && activeRoute && (
+        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', gap: '10px', padding: '8px 14px', background: '#FFFFFF', border: '1px solid #E2E8F0', borderRadius: 10, boxShadow: '0 1px 3px rgba(0,0,0,0.03)' }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+            <span style={{ fontSize: 11, fontWeight: 800, textTransform: 'uppercase', letterSpacing: '0.05em', color: '#64748B' }}>
+              Visualization:
+            </span>
+            <div style={{ display: 'inline-flex', background: '#F1F5F9', padding: '3px', borderRadius: 8, border: '1px solid #E2E8F0' }}>
+              <button
+                type="button"
+                onClick={() => setSegmentationMode('micro')}
+                style={{
+                  display: 'inline-flex',
+                  alignItems: 'center',
+                  gap: 5,
+                  padding: '5px 12px',
+                  borderRadius: 6,
+                  fontSize: 11.5,
+                  fontWeight: 700,
+                  cursor: 'pointer',
+                  border: 'none',
+                  background: segmentationMode === 'micro' ? '#059669' : 'transparent',
+                  color: segmentationMode === 'micro' ? '#FFFFFF' : '#64748B',
+                  boxShadow: segmentationMode === 'micro' ? '0 1px 3px rgba(0,0,0,0.12)' : 'none',
+                  transition: 'all 0.15s ease',
+                }}
+              >
+                <Layers size={13} />
+                500m Micro-Segments (Gradient Heatmap)
+              </button>
+              <button
+                type="button"
+                onClick={() => setSegmentationMode('corridor')}
+                style={{
+                  display: 'inline-flex',
+                  alignItems: 'center',
+                  gap: 5,
+                  padding: '5px 12px',
+                  borderRadius: 6,
+                  fontSize: 11.5,
+                  fontWeight: 700,
+                  cursor: 'pointer',
+                  border: 'none',
+                  background: segmentationMode === 'corridor' ? '#059669' : 'transparent',
+                  color: segmentationMode === 'corridor' ? '#FFFFFF' : '#64748B',
+                  boxShadow: segmentationMode === 'corridor' ? '0 1px 3px rgba(0,0,0,0.12)' : 'none',
+                  transition: 'all 0.15s ease',
+                }}
+              >
+                Whole Corridor
+              </button>
+            </div>
+          </div>
+
+          {/* Micro-Segment Distribution Status */}
+          {totalChunks > 0 && (
+            <div style={{ display: 'flex', alignItems: 'center', gap: 10, fontSize: 11.5 }}>
+              <span style={{ color: '#059669', fontWeight: 700, display: 'inline-flex', alignItems: 'center', gap: 4 }}>
+                <span style={{ width: 7, height: 7, borderRadius: '50%', background: '#10B981', display: 'inline-block' }} />
+                {safeChunks} Safe ({Math.round((safeChunks / totalChunks) * 100)}%)
+              </span>
+              {modChunks > 0 && (
+                <span style={{ color: '#D97706', fontWeight: 700, display: 'inline-flex', alignItems: 'center', gap: 4 }}>
+                  <span style={{ width: 7, height: 7, borderRadius: '50%', background: '#F59E0B', display: 'inline-block' }} />
+                  {modChunks} Moderate
+                </span>
+              )}
+              {criticalChunks.length > 0 && (
+                <span
+                  style={{
+                    color: '#DC2626',
+                    fontWeight: 800,
+                    background: '#FEE2E2',
+                    border: '1px solid #FECACA',
+                    padding: '3px 8px',
+                    borderRadius: 6,
+                    cursor: 'pointer',
+                    display: 'inline-flex',
+                    alignItems: 'center',
+                    gap: 4,
+                  }}
+                  onClick={() => {
+                    const firstHot = criticalChunks[0];
+                    const coords = firstHot.coordinates || firstHot.geom?.coordinates || [];
+                    if (coords.length > 0) {
+                      const pt = coords[0];
+                      const lat = pt[0] > 60 ? pt[1] : pt[0];
+                      const lng = pt[0] > 60 ? pt[0] : pt[1];
+                      setFocusedPoint([lat, lng]);
+                    }
+                  }}
+                  title="Click to zoom to critical danger spot"
+                >
+                  <span style={{ width: 7, height: 7, borderRadius: '50%', background: '#EF4444', display: 'inline-block' }} />
+                  🔴 {criticalChunks.length} Hotspot ({criticalChunks[0].hazard_reason || `KM ${criticalChunks[0].start_chainage_km ?? criticalChunks[0].startChainageKm}`})
+                </span>
+              )}
+            </div>
+          )}
+        </div>
+      )}
 
       {/* Risk / hazard alerts */}
       {alerts.length > 0 && (
@@ -698,57 +809,72 @@ export const RoutePlannerMap = ({
               </Polyline>
             ))}
 
-          {/* Active Route Legs (thick, solid line with live condition details) */}
-          {activeLegs.map((leg, i) => {
-            const pts = leg.geometry || [];
-            if (pts.length < 2) return null;
-            const color = legColor(leg);
-            return (
-              <Polyline
-                key={'active-leg-' + i}
-                positions={pts}
-                pathOptions={{ color, weight: 5, opacity: 0.95, lineCap: 'round', lineJoin: 'round' }}
-              >
-                <Tooltip sticky>
-                  <strong>{leg.label}</strong><br />
-                  {pts.length.toLocaleString()} road points | {leg.geometrySource === 'osrm' ? 'OSRM' : leg.geometrySource || 'road network'}
-                </Tooltip>
-                <Popup>
-                  <div style={{ minWidth: 210, fontSize: 12 }}>
-                    <strong>{leg.label}</strong>
-                    <div style={{ fontSize: 11, color: '#6B7280', marginTop: 2 }}>{leg.fromName} to {leg.toName}</div>
-                    <div style={{ fontSize: 12, marginTop: 6, lineHeight: 1.7 }}>
-                      Distance: <strong>{leg.distanceKm} km</strong>
-                      {leg.osrmDistanceKm != null && <span style={{ color: '#6B7280' }}> (road {leg.osrmDistanceKm} km{leg.osrmDurationText ? ' | ' + leg.osrmDurationText : ''})</span>}
-                      <br />
-                      Risk: <strong style={{ color }}>{leg.riskScore}/100 | {leg.riskLevel}</strong>
-                      <br />
-                      Road condition: <strong>{(leg.roadCondition || 'good').replace(/_/g, ' ')}</strong>
-                      <br />
-                      Rainfall: <strong>{leg.rainfallMm != null ? leg.rainfallMm + ' mm/24h' : 'n/a'}</strong>
-                      <br />
-                      Landslide: <strong>{leg.landslideRisk || 'n/a'}{leg.landslideProbability != null ? ' (' + Math.round(leg.landslideProbability) + '%)' : ''}</strong>
-                      {leg.climbGainM != null && (
-                        <>
-                          <br />
-                          Incline Climb: <strong>+{Math.round(leg.climbGainM)} m</strong> (Peak: {Math.round(leg.maxElevationM || 0)} m)
-                        </>
-                      )}
-                      {leg.forecastAtArrival && (
-                        <>
-                          <br />
-                          Weather @ ETA: <strong>{leg.forecastAtArrival.forecast_risk_level} ({leg.forecastAtArrival.forecast_precip_mm} mm/h rain)</strong>
-                        </>
-                      )}
-                      <br />
+          {/* Active Route Rendering — Gradient Micro-Segment Heatmap or Whole Corridor */}
+          {segmentationMode === 'micro' && activeMicroSegments.length > 0 ? (
+            <MicroSegmentHeatmap
+              segments={activeMicroSegments}
+              onSegmentClick={(seg) => {
+                const coords = seg.coordinates || seg.geom?.coordinates || [];
+                if (coords.length > 0) {
+                  const pt = coords[0];
+                  const lat = pt[0] > 60 ? pt[1] : pt[0];
+                  const lng = pt[0] > 60 ? pt[0] : pt[1];
+                  setFocusedPoint([lat, lng]);
+                }
+              }}
+            />
+          ) : (
+            activeLegs.map((leg, i) => {
+              const pts = leg.geometry || [];
+              if (pts.length < 2) return null;
+              const color = legColor(leg);
+              return (
+                <Polyline
+                  key={'active-leg-' + i}
+                  positions={pts}
+                  pathOptions={{ color, weight: 5, opacity: 0.95, lineCap: 'round', lineJoin: 'round' }}
+                >
+                  <Tooltip sticky>
+                    <strong>{leg.label}</strong><br />
+                    {pts.length.toLocaleString()} road points | {leg.geometrySource === 'osrm' ? 'OSRM' : leg.geometrySource || 'road network'}
+                  </Tooltip>
+                  <Popup>
+                    <div style={{ minWidth: 210, fontSize: 12 }}>
+                      <strong>{leg.label}</strong>
+                      <div style={{ fontSize: 11, color: '#6B7280', marginTop: 2 }}>{leg.fromName} to {leg.toName}</div>
+                      <div style={{ fontSize: 12, marginTop: 6, lineHeight: 1.7 }}>
+                        Distance: <strong>{leg.distanceKm} km</strong>
+                        {leg.osrmDistanceKm != null && <span style={{ color: '#6B7280' }}> (road {leg.osrmDistanceKm} km{leg.osrmDurationText ? ' | ' + leg.osrmDurationText : ''})</span>}
+                        <br />
+                        Risk: <strong style={{ color }}>{leg.riskScore}/100 | {leg.riskLevel}</strong>
+                        <br />
+                        Road condition: <strong>{(leg.roadCondition || 'good').replace(/_/g, ' ')}</strong>
+                        <br />
+                        Rainfall: <strong>{leg.rainfallMm != null ? leg.rainfallMm + ' mm/24h' : 'n/a'}</strong>
+                        <br />
+                        Landslide: <strong>{leg.landslideRisk || 'n/a'}{leg.landslideProbability != null ? ' (' + Math.round(leg.landslideProbability) + '%)' : ''}</strong>
+                        {leg.climbGainM != null && (
+                          <>
+                            <br />
+                            Incline Climb: <strong>+{Math.round(leg.climbGainM)} m</strong> (Peak: {Math.round(leg.maxElevationM || 0)} m)
+                          </>
+                        )}
+                        {leg.forecastAtArrival && (
+                          <>
+                            <br />
+                            Weather @ ETA: <strong>{leg.forecastAtArrival.forecast_risk_level} ({leg.forecastAtArrival.forecast_precip_mm} mm/h rain)</strong>
+                          </>
+                        )}
+                        <br />
 
-                      Traffic: <strong>{leg.congestionLevel || 'n/a'}</strong>
+                        Traffic: <strong>{leg.congestionLevel || 'n/a'}</strong>
+                      </div>
                     </div>
-                  </div>
-                </Popup>
-              </Polyline>
-            );
-          })}
+                  </Popup>
+                </Polyline>
+              );
+            })
+          )}
 
           {/* Origin and Destination Pin Markers */}
           {fromD && (

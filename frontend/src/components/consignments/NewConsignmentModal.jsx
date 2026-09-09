@@ -35,6 +35,7 @@ export default function NewConsignmentModal({ isOpen, onClose, onConsignmentAdde
     consigneeName: '',
     consigneePhone: '',
     weightKg: '',
+    ewayBillNo: '',
   });
 
   if (!isOpen) return null;
@@ -53,6 +54,10 @@ export default function NewConsignmentModal({ isOpen, onClose, onConsignmentAdde
       toast.error('Please enter the consignee contact number.');
       return;
     }
+    if (formData.ewayBillNo.trim() && !/^\d{12}$/.test(formData.ewayBillNo.trim())) {
+      toast.error('Invalid GST E-Way Bill format. Must be exactly 12 numeric digits.');
+      return;
+    }
 
     setLoading(true);
     try {
@@ -64,6 +69,7 @@ export default function NewConsignmentModal({ isOpen, onClose, onConsignmentAdde
         consigneeName: formData.consigneeName.trim(),
         consigneePhone: formData.consigneePhone.trim(),
         weightKg: parseInt(String(formData.weightKg).replace(/[^\d]/g, ''), 10) || 1000,
+        eway_bill_no: formData.ewayBillNo.trim() || undefined,
         status: 'pending',
       });
       if (!res?.success) {
@@ -192,6 +198,27 @@ export default function NewConsignmentModal({ isOpen, onClose, onConsignmentAdde
                   className={inputCls}
                 />
               </div>
+            </div>
+
+            {/* GST E-Way Bill Number (12 Digits) */}
+            <div className="bg-slate-50/80 p-3 rounded-xl border border-slate-200/80">
+              <div className="flex items-center justify-between mb-1">
+                <label className="block text-xs font-black text-slate-800">GST E-Way Bill Number</label>
+                <span className="text-[10px] font-bold text-emerald-700 bg-emerald-50 px-2 py-0.5 rounded border border-emerald-200">
+                  12-Digit Indian Standard
+                </span>
+              </div>
+              <input
+                type="text"
+                maxLength={12}
+                placeholder="e.g. 241088924110"
+                value={formData.ewayBillNo}
+                onChange={(e) => setFormData({ ...formData, ewayBillNo: e.target.value.replace(/\D/g, '').slice(0, 12) })}
+                className={inputCls}
+              />
+              <p className="text-[10px] text-slate-500 font-semibold mt-1 flex items-center gap-1">
+                <span className="text-slate-400">ℹ️</span> Format validated — not verified with GST portal
+              </p>
             </div>
 
             {/* Consignee */}
