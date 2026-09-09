@@ -12,6 +12,10 @@ on:
         default: false
         type: boolean
 
+# Acknowledge Node.js 24 runtime to suppress deprecation advisory on GitHub-hosted runners
+env:
+  ACTIONS_RUNNER_FORCE_ACTIONS_NODE_VERSION: 'node24'
+
 jobs:
   retrain-xgboost-models:
     runs-on: ubuntu-latest
