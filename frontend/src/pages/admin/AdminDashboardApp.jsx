@@ -1,4 +1,8 @@
 import React from 'react';
+import { useNavigate } from 'react-router-dom';
+import { useAuth } from '@/contexts/AuthContext';
+import ApiClient from '@/lib/api';
+import { getTokenRole } from '@/lib/jwt';
 import { Sidebar } from '@/components/admin/common/Sidebar';
 import { TopHeader } from '@/components/admin/common/TopHeader';
 import { ToastContainer } from '@/components/admin/common/Toast';
@@ -87,6 +91,45 @@ function AdminContent() {
 }
 
 export default function AdminDashboardApp() {
+  const { user, isAuthenticated, isLoading } = useAuth();
+  const navigate = useNavigate();
+
+  // Defense-in-depth: check cryptographic token and user role
+  const token = ApiClient.getAccessToken();
+  const tokenRole = getTokenRole(token);
+  const effectiveRole = tokenRole || user?.backendRole;
+  const isAdmin = effectiveRole === 'admin' || effectiveRole === 'district_officer';
+
+  React.useEffect(() => {
+    if (!isLoading) {
+      if (!isAuthenticated || !user) {
+        navigate('/login', { replace: true });
+      } else if (!isAdmin) {
+        console.warn(`[Security Ejection] Non-admin user (${user?.emailOrPhone || user?.name}, role: ${effectiveRole}) attempted to access Admin Dashboard directly. Ejecting.`);
+        if (effectiveRole === 'transporter') {
+          navigate('/transporter/dashboard', { replace: true });
+        } else if (effectiveRole === 'driver') {
+          navigate('/driver', { replace: true });
+        } else if (effectiveRole === 'field_officer' || effectiveRole === 'field_officier' || effectiveRole === 'field_agent') {
+          navigate('/field-officer', { replace: true });
+        } else {
+          navigate('/', { replace: true });
+        }
+      }
+    }
+  }, [isLoading, isAuthenticated, user, isAdmin, effectiveRole, navigate]);
+
+  if (isLoading || !isAuthenticated || !isAdmin) {
+    return (
+      <div className="min-h-screen w-full flex items-center justify-center bg-[#F8FAFC]">
+        <div className="flex flex-col items-center gap-3">
+          <div className="w-10 h-10 border-4 border-emerald-600 border-t-transparent rounded-full animate-spin"></div>
+          <p className="text-sm font-semibold text-slate-600">Verifying security authorization...</p>
+        </div>
+      </div>
+    );
+  }
+
   return (
     <AppProvider>
       <AdminContent />

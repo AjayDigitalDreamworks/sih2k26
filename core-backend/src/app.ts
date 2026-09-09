@@ -31,12 +31,32 @@ app.use(
   helmet({
     contentSecurityPolicy: false,
     crossOriginEmbedderPolicy: false,
+    frameguard: { action: 'deny' }, // Anti-Clickjacking: X-Frame-Options: DENY
+    noSniff: true,                 // Anti-MIME sniffing: X-Content-Type-Options: nosniff
+    xssFilter: true,               // Cross-site scripting (XSS) filter
+    referrerPolicy: { policy: 'strict-origin-when-cross-origin' },
+    hidePoweredBy: true,           // Hides Express signature
   })
 );
 
+const allowedOrigins = [
+  process.env.FRONTEND_URL || 'http://localhost:3000',
+  'http://localhost:3000',
+  'http://127.0.0.1:3000',
+  'http://localhost:5173',
+  'http://127.0.0.1:5173',
+];
+
 app.use(
   cors({
-    origin: process.env.FRONTEND_URL || 'http://localhost:3000',
+    origin: (origin, callback) => {
+      // Allow requests with no origin (curl, internal scripts) or matching allowed origins
+      if (!origin || allowedOrigins.includes(origin) || env.nodeEnv === 'development') {
+        callback(null, true);
+      } else {
+        callback(new Error('Blocked by CORS policy'));
+      }
+    },
     credentials: true,
   })
 );
@@ -44,6 +64,21 @@ app.use(
 app.use(express.json({ limit: '10mb' }));
 app.use(express.urlencoded({ extended: true }));
 app.use(cookieParser());
+
+// Anti-Sniffing & Cache Control for sensitive admin and auth endpoints
+app.use('/api/admin', (req, res, next) => {
+  res.setHeader('Cache-Control', 'no-store, no-cache, must-revalidate, proxy-revalidate');
+  res.setHeader('Pragma', 'no-cache');
+  res.setHeader('Expires', '0');
+  next();
+});
+
+app.use('/api/auth/me', (req, res, next) => {
+  res.setHeader('Cache-Control', 'no-store, no-cache, must-revalidate, proxy-revalidate');
+  res.setHeader('Pragma', 'no-cache');
+  res.setHeader('Expires', '0');
+  next();
+});
 
 // No global rate limiter — dashboards poll several endpoints every few seconds
 // and a shared/NAT IP would trip an aggregate limit and 429 real usage.

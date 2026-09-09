@@ -16,6 +16,12 @@ export default function FleetHealthPulseBar({
 
   const isAllGood = delayedCount === 0;
 
+  const latestVehicle = [...vehicles].sort((a, b) => {
+    const tA = new Date(a.createdAt || a.created_at || a.last_ping_at || 0).getTime();
+    const tB = new Date(b.createdAt || b.created_at || b.last_ping_at || 0).getTime();
+    return tB - tA;
+  })[0];
+
   return (
     <div className="bg-white/95 backdrop-blur-md rounded-2xl p-4 sm:p-4.5 border border-slate-200/90 shadow-xs hover:shadow-sm transition-all duration-200">
       <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-4">
@@ -37,11 +43,17 @@ export default function FleetHealthPulseBar({
             )}
           </div>
           <div>
-            <div className="flex items-center gap-2">
+            <div className="flex items-center gap-2 flex-wrap">
               <h2 className="text-sm sm:text-base font-black text-[#0B1E36] tracking-tight">Fleet Health Pulse</h2>
               <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-slate-100 text-slate-600 border border-slate-200/80 uppercase tracking-wide">
                 Telematics
               </span>
+              {latestVehicle && (
+                <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-emerald-50 text-emerald-700 border border-emerald-200/80 flex items-center gap-1">
+                  <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse" />
+                  Recent: {latestVehicle.id}
+                </span>
+              )}
             </div>
             <p className="text-xs text-slate-500 font-medium mt-0.5">
               {isAllGood

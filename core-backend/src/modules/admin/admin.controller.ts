@@ -198,6 +198,11 @@ export class AdminController {
     try {
       const vehicles = await Vehicle.findAll({
         include: [{ model: Driver, as: 'driver' }],
+        order: [
+          ['createdAt', 'DESC'],
+          ['updatedAt', 'DESC'],
+          ['id', 'DESC'],
+        ],
       });
       return sendSuccess(res, vehicles, 'Fleet vehicles retrieved');
     } catch (err: any) {

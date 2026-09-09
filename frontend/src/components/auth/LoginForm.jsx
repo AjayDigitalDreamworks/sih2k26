@@ -40,7 +40,7 @@ export default function LoginForm() {
         if (backendRole === 'driver' || userRole === 'driver') {
           return '/driver';
         }
-        if (backendRole === 'admin' || backendRole === 'district_officer' || userRole === 'official' || userRole === 'admin') {
+        if (backendRole === 'admin' || backendRole === 'district_officer') {
           return '/admin';
         }
         if (backendRole === 'transporter' || userRole === 'operator' || userRole === 'transporter') {
@@ -52,7 +52,7 @@ export default function LoginForm() {
       const isAuthorizedForPath = (path) => {
         if (!path || path === '/' || path === '/login') return false;
         if (path.startsWith('/admin')) {
-          return ['admin', 'district_officer', 'official'].includes(backendRole) || ['official', 'admin'].includes(userRole);
+          return backendRole === 'admin' || backendRole === 'district_officer';
         }
         if (path.startsWith('/transporter')) {
           return ['transporter', 'operator'].includes(backendRole) || ['operator', 'transporter'].includes(userRole);

@@ -14,7 +14,7 @@ export default function LoginPage() {
 
   if (isAuthenticated && user) {
     const role = user.backendRole || user.role;
-    if (role === 'admin' || role === 'district_officer' || role === 'official') {
+    if (user.backendRole === 'admin' || user.backendRole === 'district_officer') {
       return <Navigate to="/admin" replace />;
     }
     if (role === 'driver') {

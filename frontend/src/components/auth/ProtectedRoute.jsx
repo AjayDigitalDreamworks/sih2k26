@@ -1,6 +1,9 @@
 import React from 'react';
 import { Navigate, useLocation } from 'react-router-dom';
 import { useAuth } from '@/contexts/AuthContext';
+import { getTokenRole } from '@/lib/jwt';
+import ApiClient from '@/lib/api';
+import { toast } from 'sonner';
 
 export const ProtectedRoute = ({ children, allowedRoles = [] }) => {
   const { user, isAuthenticated, isLoading } = useAuth();
@@ -22,30 +25,54 @@ export const ProtectedRoute = ({ children, allowedRoles = [] }) => {
     return <Navigate to="/login" state={{ from: location }} replace />;
   }
 
-  // If specific roles are required, verify user's role
-  if (allowedRoles.length > 0) {
-    const userRole = user.role;
-    const backendRole = user.backendRole;
+  // Verify cryptographic token role as the definitive authority
+  const token = ApiClient.getAccessToken();
+  const tokenRole = getTokenRole(token);
+  const effectiveRole = tokenRole || user.backendRole;
 
-    const hasAccess =
-      allowedRoles.includes(userRole) ||
-      (backendRole && allowedRoles.includes(backendRole));
-
-    if (!hasAccess) {
-      // Smart redirect based on actual user role
-      if (backendRole === 'field_officer' || backendRole === 'field_officier' || backendRole === 'field_agent' || userRole === 'field_officer' || userRole === 'field_agent') {
-        return <Navigate to="/field-officer" replace />;
-      }
-      if (backendRole === 'driver' || userRole === 'driver') {
-        return <Navigate to="/driver" replace />;
-      }
-      if (userRole === 'official' || userRole === 'admin' || backendRole === 'admin' || backendRole === 'district_officer') {
-        return <Navigate to="/admin" replace />;
-      }
-      if (userRole === 'operator' || userRole === 'transporter' || backendRole === 'transporter') {
+  // Strict check for /admin routes
+  if (location.pathname.startsWith('/admin')) {
+    const isAdminAuthorized = effectiveRole === 'admin' || effectiveRole === 'district_officer';
+    if (!isAdminAuthorized) {
+      console.warn(`[Security Guard] Blocked non-admin user (${user.emailOrPhone || user.name}, role: ${effectiveRole}) from accessing ${location.pathname}`);
+      toast.error('Access Denied: You do not have administrative privileges to access this area.');
+      
+      if (effectiveRole === 'transporter') {
         return <Navigate to="/transporter/dashboard" replace />;
       }
-      return <Navigate to="/home" replace />;
+      if (effectiveRole === 'driver') {
+        return <Navigate to="/driver" replace />;
+      }
+      if (effectiveRole === 'field_officer' || effectiveRole === 'field_officier' || effectiveRole === 'field_agent') {
+        return <Navigate to="/field-officer" replace />;
+      }
+      return <Navigate to="/" replace />;
+    }
+  }
+
+  // Verify any other route-specific allowedRoles
+  if (allowedRoles.length > 0) {
+    const hasAccess =
+      (effectiveRole && allowedRoles.includes(effectiveRole)) ||
+      (user.role && allowedRoles.includes(user.role));
+
+    if (!hasAccess) {
+      console.warn(`[Security Guard] Blocked user with role ${effectiveRole} from ${location.pathname}. Allowed: ${allowedRoles.join(', ')}`);
+      toast.error('Access Denied: You do not have the required permissions.');
+
+      if (effectiveRole === 'field_officer' || effectiveRole === 'field_officier' || effectiveRole === 'field_agent') {
+        return <Navigate to="/field-officer" replace />;
+      }
+      if (effectiveRole === 'driver') {
+        return <Navigate to="/driver" replace />;
+      }
+      if (effectiveRole === 'admin' || effectiveRole === 'district_officer') {
+        return <Navigate to="/admin" replace />;
+      }
+      if (effectiveRole === 'transporter') {
+        return <Navigate to="/transporter/dashboard" replace />;
+      }
+      return <Navigate to="/" replace />;
     }
   }
 

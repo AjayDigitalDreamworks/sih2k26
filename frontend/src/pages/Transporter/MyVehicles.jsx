@@ -86,6 +86,13 @@ export default function MyVehicles() {
       const res = await ApiClient.getTransporterVehicles();
       if (res?.success && Array.isArray(res.data)) {
         const mapped = res.data.map(mapVehicle);
+        // Ensure recently added vehicles are visible first
+        mapped.sort((a, b) => {
+          const tA = new Date(a.raw?.createdAt || a.raw?.created_at || a.raw?.updatedAt || 0).getTime();
+          const tB = new Date(b.raw?.createdAt || b.raw?.created_at || b.raw?.updatedAt || 0).getTime();
+          if (tB !== tA) return tB - tA;
+          return String(b.id || '').localeCompare(String(a.id || ''));
+        });
         setVehicles(mapped);
         // keep the selected vehicle fresh if it still exists
         setSelectedVehicle((prev) => {

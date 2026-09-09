@@ -149,14 +149,15 @@ export const TopHeader = () => {
 
         {/* Global Search Bar with Autocomplete Dropdown */}
         <div
-          className={`header-search-container ${isSearchFocused ? 'focused' : ''}`}
+          className={`header-search-container search-bar-container ${isSearchFocused ? 'focused' : ''}`}
           ref={searchContainerRef}
+          style={{ position: 'relative' }}
         >
-          <Search size={16} className="search-icon" />
+          <Search size={16} className="search-icon" aria-hidden="true" />
           <input
             ref={searchInputRef}
             type="text"
-            className="header-search-input"
+            className="header-search-input search-input"
             placeholder={t('header.searchPlaceholder')}
             value={searchQuery}
             onChange={(e) => setSearchQuery(e.target.value)}

@@ -40,9 +40,28 @@ class ApiClient {
 
     try {
       const response = await fetch(url, {
+        credentials: 'include',
         ...options,
         headers,
       });
+
+      // Handle 403 Forbidden - privilege violation / unauthorized role access
+      if (response.status === 403) {
+        const errorData = await response.clone().json().catch(() => null);
+        const forbiddenMsg = errorData?.message || 'Access denied: You do not have permission for this resource.';
+        console.warn(`[Security Alert] 403 Forbidden on ${endpoint}: ${forbiddenMsg}`);
+
+        if (typeof window !== 'undefined') {
+          window.dispatchEvent(
+            new CustomEvent('raahi:forbidden', {
+              detail: {
+                endpoint,
+                message: forbiddenMsg,
+              },
+            })
+          );
+        }
+      }
 
       // Handle 401 & attempt token refresh once
       if (response.status === 401 && !options._retry) {
@@ -51,6 +70,7 @@ class ApiClient {
           try {
             const refreshRes = await fetch(`${API_BASE}/auth/refresh`, {
               method: 'POST',
+              credentials: 'include',
               headers: { 'Content-Type': 'application/json' },
               body: JSON.stringify({ refreshToken }),
             });

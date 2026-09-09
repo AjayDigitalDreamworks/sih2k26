@@ -20,7 +20,7 @@ function RoleDashboardRedirect() {
     return <Navigate to="/login" replace />;
   }
   const role = user.backendRole || user.role;
-  if (role === 'admin' || role === 'district_officer' || role === 'official') {
+  if (user.backendRole === 'admin' || user.backendRole === 'district_officer') {
     return <Navigate to="/admin" replace />;
   }
   if (role === 'driver') {
@@ -49,11 +49,11 @@ export default function App() {
               {/* Public Login Page */}
               <Route path="/login" element={<Login />} />
 
-              {/* JWT Protected Admin Dashboard Routes — strictly official/admin/district_officer */}
+              {/* JWT Protected Admin Dashboard Routes — strictly admin/district_officer */}
               <Route
                 path="/admin/*"
                 element={
-                  <ProtectedRoute allowedRoles={['official', 'admin', 'district_officer']}>
+                  <ProtectedRoute allowedRoles={['admin', 'district_officer']}>
                     <AdminDashboardApp />
                   </ProtectedRoute>
                 }

@@ -691,7 +691,11 @@ export class TransporterController {
       const vehicles = await Vehicle.findAll({
         where,
         include: [{ model: Driver, as: 'driver' }],
-        order: [['id', 'ASC']],
+        order: [
+          ['createdAt', 'DESC'],
+          ['updatedAt', 'DESC'],
+          ['id', 'DESC'],
+        ],
       });
 
       // Fetch all active, non-delivered, non-cancelled deliveries

@@ -61,8 +61,8 @@ export function SiteNav({ onOpenLogin }) {
                 <span className="text-[10px] text-emerald-400/90 font-medium capitalize">{user.role} • {user.roleTitle}</span>
               </div>
               {(() => {
-                const bRole = user.backendRole || user.role;
-                if (bRole === 'admin' || bRole === 'district_officer' || user.role === 'official') {
+                const bRole = user.backendRole;
+                if (bRole === 'admin' || bRole === 'district_officer') {
                   return (
                     <button
                       type="button"
@@ -162,10 +162,10 @@ export function SiteNav({ onOpenLogin }) {
             </a>
           ))}
           {isAuthenticated && user && (() => {
-            const bRole = user.backendRole || user.role;
+            const bRole = user.backendRole;
             let targetPath = null;
             let label = null;
-            if (bRole === 'admin' || bRole === 'district_officer' || user.role === 'official') {
+            if (bRole === 'admin' || bRole === 'district_officer') {
               targetPath = '/admin';
               label = 'Admin Dashboard';
             } else if (bRole === 'driver' || user.role === 'driver') {

@@ -2,11 +2,27 @@ import { Request, Response } from 'express';
 import { AuthService } from './auth.service';
 import { User } from '../../models/postgres';
 import { sendSuccess, sendError } from '../../utils/response';
+import { env } from '../../config/env';
+
+const isProduction = env.nodeEnv === 'production';
+
+const getCookieOptions = (maxAgeMs: number) => ({
+  httpOnly: true,
+  secure: isProduction,
+  sameSite: (isProduction ? 'strict' : 'lax') as 'strict' | 'lax',
+  path: '/',
+  maxAge: maxAgeMs,
+});
 
 export class AuthController {
   static async register(req: Request, res: Response) {
     try {
       const result = await AuthService.register(req.body);
+
+      // Set secure HttpOnly cookies
+      res.cookie('ner_access_token', result.accessToken, getCookieOptions(3600 * 1000));
+      res.cookie('ner_refresh_token', result.refreshToken, getCookieOptions(86400 * 1000));
+
       return sendSuccess(res, result, 'User registered successfully', 201);
     } catch (err: any) {
       return sendError(res, err.message, 400);
@@ -17,6 +33,11 @@ export class AuthController {
     try {
       const { email, password } = req.body;
       const result = await AuthService.login(email, password);
+
+      // Set secure HttpOnly cookies to protect against XSS token theft
+      res.cookie('ner_access_token', result.accessToken, getCookieOptions(3600 * 1000));
+      res.cookie('ner_refresh_token', result.refreshToken, getCookieOptions(86400 * 1000));
+
       return sendSuccess(res, result, 'Login successful');
     } catch (err: any) {
       return sendError(res, err.message, 401);
@@ -25,8 +46,16 @@ export class AuthController {
 
   static async refresh(req: Request, res: Response) {
     try {
-      const { refreshToken } = req.body;
+      const refreshToken = req.body?.refreshToken || req.cookies?.ner_refresh_token;
+      if (!refreshToken) {
+        return sendError(res, 'Refresh token missing', 401);
+      }
       const tokens = await AuthService.refresh(refreshToken);
+
+      // Update secure HttpOnly cookies
+      res.cookie('ner_access_token', tokens.accessToken, getCookieOptions(3600 * 1000));
+      res.cookie('ner_refresh_token', tokens.refreshToken, getCookieOptions(86400 * 1000));
+
       return sendSuccess(res, tokens, 'Token refreshed successfully');
     } catch (err: any) {
       return sendError(res, err.message, 401);
@@ -38,6 +67,17 @@ export class AuthController {
       if (req.user?.id) {
         await AuthService.logout(req.user.id);
       }
+
+      // Clear cookies
+      const clearOptions = {
+        path: '/',
+        httpOnly: true,
+        secure: isProduction,
+        sameSite: (isProduction ? 'strict' : 'lax') as 'strict' | 'lax',
+      };
+      res.clearCookie('ner_access_token', clearOptions);
+      res.clearCookie('ner_refresh_token', clearOptions);
+
       return sendSuccess(res, null, 'Logged out successfully');
     } catch (err: any) {
       return sendError(res, err.message, 500);

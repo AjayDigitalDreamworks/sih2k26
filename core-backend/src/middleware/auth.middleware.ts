@@ -21,13 +21,18 @@ declare global {
 }
 
 export const authenticateJwt = (req: Request, res: Response, next: NextFunction) => {
-  const authHeader = req.headers.authorization;
+  let token: string | undefined;
 
-  if (!authHeader || !authHeader.startsWith('Bearer ')) {
-    return sendError(res, 'Authentication token missing or invalid', 401);
+  const authHeader = req.headers.authorization;
+  if (authHeader && authHeader.startsWith('Bearer ')) {
+    token = authHeader.split(' ')[1];
+  } else if (req.cookies && req.cookies.ner_access_token) {
+    token = req.cookies.ner_access_token;
   }
 
-  const token = authHeader.split(' ')[1];
+  if (!token) {
+    return sendError(res, 'Authentication token missing or invalid', 401);
+  }
 
   try {
     const decoded = jwt.verify(token, env.jwtAccessSecret) as AuthenticatedUser;

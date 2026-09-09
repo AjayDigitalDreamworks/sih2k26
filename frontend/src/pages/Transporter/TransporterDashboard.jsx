@@ -9,8 +9,10 @@ import ConsignmentStatusChart from '../../components/transporter/ConsignmentStat
 import OnTimeDeliveryChart from '../../components/transporter/OnTimeDeliveryChart';
 import TopRoutesList from '../../components/transporter/TopRoutesList';
 import RecentConsignmentsTable from '../../components/transporter/RecentConsignmentsTable';
+import RecentlyAddedVehiclesSection from '../../components/transporter/RecentlyAddedVehiclesSection';
 import TransporterFooter from '../../components/transporter/TransporterFooter';
 import NewConsignmentModal from '../../components/consignments/NewConsignmentModal';
+import AddVehicleModal from '../../components/vehicles/AddVehicleModal';
 import FleetHealthPulseBar from '../../components/transporter/FleetHealthPulseBar';
 import ActionableHazardBanner from '../../components/transporter/ActionableHazardBanner';
 import DynamicRerouteModal from '../../components/transporter/DynamicRerouteModal';
@@ -20,6 +22,7 @@ import { subscribeToTripUpdates, subscribeToRouteCleared } from '../../lib/socke
 export default function TransporterDashboard() {
   const [sidebarOpen, setSidebarOpen] = useState(false);
   const [showNewModal, setShowNewModal] = useState(false);
+  const [showAddVehicleModal, setShowAddVehicleModal] = useState(false);
   const [showRerouteModal, setShowRerouteModal] = useState(false);
   const [vehicles, setVehicles] = useState([]);
   const [alerts, setAlerts] = useState([]);
@@ -137,6 +140,14 @@ export default function TransporterDashboard() {
             </div>
           </section>
 
+          {/* Recently Added Vehicles Section */}
+          <section>
+            <RecentlyAddedVehiclesSection
+              vehicles={vehicles}
+              onAddVehicle={() => setShowAddVehicleModal(true)}
+            />
+          </section>
+
           {/* Recent Consignments Table */}
           <section>
             <RecentConsignmentsTable />
@@ -166,6 +177,15 @@ export default function TransporterDashboard() {
         isOpen={showNewModal}
         onClose={() => setShowNewModal(false)}
         onConsignmentAdded={() => {
+          loadVehicles();
+        }}
+      />
+
+      {/* Add Vehicle Modal */}
+      <AddVehicleModal
+        isOpen={showAddVehicleModal}
+        onClose={() => setShowAddVehicleModal(false)}
+        onVehicleAdded={() => {
           loadVehicles();
         }}
       />
