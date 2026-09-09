@@ -67,7 +67,7 @@ export const AuthProvider = ({ children }) => {
             ? "operator"
             : apiUser.role === "driver"
             ? "driver"
-            : apiUser.role === "field_officer" || apiUser.role === "field_agent"
+            : apiUser.role === "field_officer" || apiUser.role === "field_officier" || apiUser.role === "field_agent"
             ? "field_officer"
             : "user";
 

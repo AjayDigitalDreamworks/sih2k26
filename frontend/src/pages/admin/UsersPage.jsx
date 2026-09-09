@@ -20,13 +20,25 @@ import { useAuth } from '@/contexts/AuthContext';
 import { DISTRICTS } from '@/data/geoMaster';
 
 const ROLE_META = {
-  admin: { label: 'Admin', color: '#059669' },
-  district_officer: { label: 'District Officer', color: '#2563eb' },
-  field_agent: { label: 'Field Agent', color: '#7c3aed' },
   transporter: { label: 'Transporter', color: '#ea580c' },
+  field_officer: { label: 'Field Officer', color: '#2563eb' },
+  field_officier: { label: 'Field Officer', color: '#2563eb' },
   driver: { label: 'Driver', color: '#0ea5e9' },
-  viewer: { label: 'Viewer', color: '#64748b' },
+  user: { label: 'User', color: '#64748b' },
+  admin: { label: 'Admin', color: '#059669' },
+  // Backward compatibility aliases for existing DB records
+  district_officer: { label: 'Field Officer', color: '#2563eb' },
+  field_agent: { label: 'Field Officer', color: '#2563eb' },
+  viewer: { label: 'User', color: '#64748b' },
 };
+
+export const ROLE_OPTIONS = [
+  { value: 'transporter', label: 'Transporter' },
+  { value: 'field_officer', label: 'Field Officer' },
+  { value: 'driver', label: 'Driver' },
+  { value: 'user', label: 'User' },
+  { value: 'admin', label: 'Admin' },
+];
 
 const inputStyle = {
   width: '100%',
@@ -44,7 +56,7 @@ const EMPTY_FORM = {
   name: '',
   email: '',
   password: '',
-  role: 'viewer',
+  role: 'user',
   agency: '',
   phone: '',
   district_id: '',
@@ -106,7 +118,7 @@ export const UsersPage = () => {
   const total = users.length;
   const transporters = users.filter((u) => u.role === 'transporter').length;
   const drivers = users.filter((u) => u.role === 'driver').length;
-  const officers = users.filter((u) => ['district_officer', 'field_agent'].includes(u.role)).length;
+  const officers = users.filter((u) => ['field_officer', 'field_officier', 'district_officer', 'field_agent'].includes(u.role)).length;
 
   const openCreate = () => {
     setEditing(null);
@@ -117,11 +129,16 @@ export const UsersPage = () => {
 
   const openEdit = (u) => {
     setEditing(u);
+    let normalizedRole = u.role || 'user';
+    if (normalizedRole === 'viewer') normalizedRole = 'user';
+    if (['district_officer', 'field_agent', 'field_officier'].includes(normalizedRole)) {
+      normalizedRole = 'field_officer';
+    }
     setForm({
       name: u.name || '',
       email: u.email || '',
       password: '',
-      role: u.role || 'viewer',
+      role: normalizedRole,
       agency: u.agency || '',
       phone: u.phone || '',
       district_id: u.district_id || '',
@@ -252,7 +269,7 @@ export const UsersPage = () => {
         <StatCard title="Total Users" value={total} period="All accounts" icon={Users} iconBg="#ECFDF5" iconColor="#059669" />
         <StatCard title="Transporters" value={transporters} period="Logistics partners" icon={Building2} iconBg="#FFF7ED" iconColor="#ea580c" />
         <StatCard title="Drivers" value={drivers} period="Fleet operators" icon={Shield} iconBg="#F0F9FF" iconColor="#0ea5e9" />
-        <StatCard title="Officers / Agents" value={officers} period="Field & district" icon={Mail} iconBg="#EFF6FF" iconColor="#2563eb" />
+        <StatCard title="Field Officers" value={officers} period="Field & district" icon={Mail} iconBg="#EFF6FF" iconColor="#2563eb" />
       </div>
 
       {/* Users Table */}
@@ -373,7 +390,7 @@ export const UsersPage = () => {
                 <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 14 }}>
                   {field('role', 'Role', {
                     type: 'select',
-                    options: Object.entries(ROLE_META).map(([value, m]) => ({ value, label: m.label })),
+                    options: ROLE_OPTIONS,
                   })}
                   {field('password', editing ? 'New Password (leave blank to keep)' : 'Password *', {
                     type: 'password',

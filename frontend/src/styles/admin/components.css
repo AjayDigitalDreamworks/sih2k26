@@ -379,7 +379,7 @@
   justify-content: space-between;
   padding: 0 24px;
   position: relative;
-  z-index: 30;
+  z-index: 1005;
   gap: 16px;
   box-shadow: 0 1px 3px 0 rgba(0, 0, 0, 0.03);
 }
@@ -789,7 +789,7 @@
   border: 1px solid var(--border-light);
   border-radius: var(--radius-md);
   box-shadow: var(--shadow-xl);
-  z-index: 50;
+  z-index: 2000;
   overflow: hidden;
   animation: dropdownFadeIn 0.15s ease;
 }

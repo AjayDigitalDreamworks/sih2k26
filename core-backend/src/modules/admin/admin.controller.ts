@@ -851,7 +851,9 @@ export class AdminController {
   static async createUser(req: Request, res: Response) {
     try {
       const { name, email, password, role, district_id, transporter_id, agency, phone } = req.body;
-      const finalRole = role || 'viewer';
+      let finalRole = role || 'viewer';
+      if (finalRole === 'field_officier') finalRole = 'field_officer';
+      if (finalRole === 'user') finalRole = 'viewer';
 
       // Duplicate-email guard before insert so the UI gets a clean message
       const existing = await User.findOne({ where: { email: String(email).trim().toLowerCase() } });
@@ -909,7 +911,9 @@ export class AdminController {
       if (!user) return sendError(res, 'User not found', 404);
 
       const { name, email, role, district_id, transporter_id, agency, phone, password } = req.body;
-      const finalRole = role !== undefined ? role : user.role;
+      let finalRole = role !== undefined ? role : user.role;
+      if (finalRole === 'field_officier') finalRole = 'field_officer';
+      if (finalRole === 'user') finalRole = 'viewer';
 
       // A driver account must end up attached to a transporter.
       if (finalRole === 'driver') {
@@ -930,7 +934,7 @@ export class AdminController {
         if (existing) return sendError(res, 'That email is already in use by another account', 409);
         user.email = normalizedEmail;
       }
-      if (role !== undefined) user.role = role;
+      if (role !== undefined) user.role = finalRole;
       if (district_id !== undefined) user.district_id = district_id;
       if (transporter_id !== undefined) user.transporter_id = transporter_id;
       if (agency !== undefined) user.agency = agency;

@@ -26,10 +26,13 @@ function RoleDashboardRedirect() {
   if (role === 'driver') {
     return <Navigate to="/driver" replace />;
   }
-  if (role === 'field_officer' || role === 'field_agent') {
+  if (role === 'field_officer' || role === 'field_officier' || role === 'field_agent') {
     return <Navigate to="/field-officer" replace />;
   }
-  return <Navigate to="/transporter/dashboard" replace />;
+  if (role === 'transporter' || role === 'operator') {
+    return <Navigate to="/transporter/dashboard" replace />;
+  }
+  return <Navigate to="/" replace />;
 }
 
 export default function App() {
@@ -80,7 +83,7 @@ export default function App() {
               <Route
                 path="/field-officer/*"
                 element={
-                  <ProtectedRoute allowedRoles={['field_officer', 'field_agent']}>
+                  <ProtectedRoute allowedRoles={['field_officer', 'field_officier', 'field_agent']}>
                     <FieldOfficerApp />
                   </ProtectedRoute>
                 }

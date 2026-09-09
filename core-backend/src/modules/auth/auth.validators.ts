@@ -5,7 +5,7 @@ export const registerSchema = z.object({
     name: z.string().min(2, 'Name must be at least 2 characters'),
     email: z.string().email('Invalid email address'),
     password: z.string().min(6, 'Password must be at least 6 characters'),
-    role: z.enum(['admin', 'district_officer', 'field_agent', 'transporter', 'driver', 'viewer']),
+    role: z.enum(['admin', 'district_officer', 'field_officer', 'field_officier', 'field_agent', 'transporter', 'driver', 'viewer', 'user']),
     district_id: z.string().optional(),
     transporter_id: z.string().optional(),
     agency: z.string().optional(),

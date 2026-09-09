@@ -8,9 +8,16 @@ export const requireRole = (allowedRoles: string[]) => {
     }
 
     const userRole = req.user.role;
-    const effectiveRoles = [userRole];
-    if (userRole === 'field_officer') effectiveRoles.push('field_agent');
-    if (userRole === 'field_agent') effectiveRoles.push('field_officer');
+    const effectiveRoles: string[] = [userRole];
+    if (userRole === 'field_officer' || userRole === ('field_officier' as any)) {
+      effectiveRoles.push('field_officer', 'field_officier', 'field_agent');
+    }
+    if (userRole === 'field_agent') {
+      effectiveRoles.push('field_officer', 'field_officier');
+    }
+    if (userRole === 'viewer' || userRole === ('user' as any)) {
+      effectiveRoles.push('viewer', 'user');
+    }
 
     const hasRole = allowedRoles.some((r) => effectiveRoles.includes(r as any));
 

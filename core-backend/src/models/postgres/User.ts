@@ -6,7 +6,7 @@ export class User extends Model {
   public name!: string;
   public email!: string;
   public password_hash!: string;
-  public role!: 'admin' | 'district_officer' | 'field_officer' | 'field_agent' | 'transporter' | 'driver' | 'viewer';
+  public role!: 'admin' | 'district_officer' | 'field_officer' | 'field_officier' | 'field_agent' | 'transporter' | 'driver' | 'viewer' | 'user';
   public district_id?: string | null;
   public transporter_id?: string | null;
   public agency?: string | null;

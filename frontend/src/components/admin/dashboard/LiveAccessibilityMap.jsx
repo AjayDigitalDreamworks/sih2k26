@@ -20,18 +20,30 @@ L.Icon.Default.mergeOptions({
 });
 
 const DISTRICT_COORDS = {
-  kamrup: { lat: 26.1445, lng: 91.7362, name: 'Guwahati' },
-  sonitpur: { lat: 26.6528, lng: 92.7926, name: 'Tezpur' },
-  cachar: { lat: 24.817, lng: 92.7985, name: 'Silchar' },
-  dima_hasao: { lat: 25.1764, lng: 93.0232, name: 'Haflong' },
-  east_khasi: { lat: 25.5788, lng: 91.8933, name: 'Shillong' },
-  west_khasi: { lat: 25.5244, lng: 91.2662, name: 'Nongstoin' },
-  dimapur: { lat: 25.906, lng: 93.727, name: 'Dimapur' },
-  kohima: { lat: 25.6751, lng: 94.1086, name: 'Kohima' },
-  imphal_west: { lat: 24.817, lng: 93.9368, name: 'Imphal' },
-  aizawl: { lat: 23.7271, lng: 92.7176, name: 'Aizawl' },
-  papum_pare: { lat: 27.0844, lng: 93.6053, name: 'Itanagar' },
-  west_tripura: { lat: 23.8315, lng: 91.2868, name: 'Agartala' },
+  kamrup: { lat: 26.1445, lng: 91.7362, name: 'Guwahati', state: 'Assam' },
+  sonitpur: { lat: 26.6528, lng: 92.7926, name: 'Tezpur', state: 'Assam' },
+  cachar: { lat: 24.817, lng: 92.7985, name: 'Silchar', state: 'Assam' },
+  dima_hasao: { lat: 25.1764, lng: 93.0232, name: 'Haflong', state: 'Assam' },
+  east_khasi: { lat: 25.5788, lng: 91.8933, name: 'Shillong', state: 'Meghalaya' },
+  west_khasi: { lat: 25.5244, lng: 91.2662, name: 'Nongstoin', state: 'Meghalaya' },
+  dimapur: { lat: 25.906, lng: 93.727, name: 'Dimapur', state: 'Nagaland' },
+  kohima: { lat: 25.6751, lng: 94.1086, name: 'Kohima', state: 'Nagaland' },
+  imphal_west: { lat: 24.817, lng: 93.9368, name: 'Imphal', state: 'Manipur' },
+  aizawl: { lat: 23.7271, lng: 92.7176, name: 'Aizawl', state: 'Mizoram' },
+  papum_pare: { lat: 27.0844, lng: 93.6053, name: 'Itanagar', state: 'Arunachal Pradesh' },
+  west_tripura: { lat: 23.8315, lng: 91.2868, name: 'Agartala', state: 'Tripura' },
+};
+
+const STATE_VIEWPORTS = {
+  All: { center: [25.8, 93.2], zoom: 6.8 },
+  Assam: { center: [26.25, 92.85], zoom: 7.5 },
+  Meghalaya: { center: [25.48, 91.45], zoom: 8.5 },
+  Nagaland: { center: [25.92, 94.18], zoom: 8.8 },
+  Manipur: { center: [24.82, 93.94], zoom: 8.6 },
+  Mizoram: { center: [23.36, 92.85], zoom: 8.5 },
+  Tripura: { center: [23.84, 91.50], zoom: 8.8 },
+  'Arunachal Pradesh': { center: [27.80, 94.40], zoom: 7.2 },
+  Sikkim: { center: [27.53, 88.51], zoom: 9.0 },
 };
 
 const TILE_LAYERS = {
@@ -374,7 +386,7 @@ function MapEvents({ onMoveEnd }) {
   return null;
 }
 
-function MapCtrl({ center }) {
+function MapCtrl({ center, zoom }) {
   const map = useMap();
   const timedRef = useRef(0);
   useEffect(() => {
@@ -383,11 +395,16 @@ function MapCtrl({ center }) {
       // Defer the fly so it does not race a synchronous post-render update path.
       queueMicrotask(() => {
         if (t !== timedRef.current) return;
-        try { if (map && center) map.flyTo(center, Math.max(map.getZoom(), 8), { duration: 0.8 }); }
+        try {
+          if (map && center) {
+            const targetZoom = zoom || Math.max(map.getZoom(), 8);
+            map.flyTo(center, targetZoom, { duration: 1.0 });
+          }
+        }
         catch { /* ignore leaflet update-path conflicts gracefully */ }
       });
     }
-  }, [center, map]);
+  }, [center, zoom, map]);
   return null;
 }
 
@@ -523,7 +540,7 @@ function MapMinimap({ mapRef, tile }) {
 /* Shared popup markup helpers */
 const popupFont = { fontFamily: "'Roboto', sans-serif" };
 
-export const LiveAccessibilityMap = ({ isFullScreen = false, activeLayers }) => {
+export const LiveAccessibilityMap = ({ isFullScreen = false, activeLayers, activeState = 'All' }) => {
   const { vehicles } = useApp();
   const [districts, setDistricts] = useState([]);
   const [routes, setRoutes] = useState([]);
@@ -538,6 +555,7 @@ export const LiveAccessibilityMap = ({ isFullScreen = false, activeLayers }) => 
   const [trafficState, setTrafficState] = useState('off'); // off | loading | live | unavailable
   const [mapCenter] = useState([25.5, 93.0]);
   const [flyTarget, setFlyTarget] = useState(null);
+  const [flyZoom, setFlyZoom] = useState(null);
   const [lastRefresh, setLastRefresh] = useState(new Date());
   const [activeLayer, setActiveLayer] = useState('streets');
   const [corridorGeo, setCorridorGeo] = useState({});   // key -> { coords, source } real road geometry
@@ -656,8 +674,20 @@ export const LiveAccessibilityMap = ({ isFullScreen = false, activeLayers }) => 
   const handleSearchSelect = (district) => {
     setSelectedDistrict(district);
     const coord = DISTRICT_COORDS[district.id];
-    if (coord) setFlyTarget([coord.lat, coord.lng]);
+    if (coord) {
+      setFlyTarget([coord.lat, coord.lng]);
+      setFlyZoom(11);
+    }
   };
+
+  // When activeState selector changes, automatically navigate map to that state's center + zoom
+  useEffect(() => {
+    if (activeState && STATE_VIEWPORTS[activeState]) {
+      const { center, zoom } = STATE_VIEWPORTS[activeState];
+      setFlyTarget(center);
+      setFlyZoom(zoom);
+    }
+  }, [activeState]);
 
   const tile = (activeLayer === 'streets' && themeDark) ? TILE_LAYERS.dark : TILE_LAYERS[activeLayer];
   const tileKey = `${activeLayer}${activeLayer === 'streets' && themeDark ? '-dark' : ''}`;
@@ -686,46 +716,16 @@ export const LiveAccessibilityMap = ({ isFullScreen = false, activeLayers }) => 
     return n;
   }, [disruptions, weatherMap, showRainLayer]);
 
-  const statusChips = () => (
-    <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
-      {Object.keys(weatherMap).length > 0 && (
-        <span style={{ fontSize: 10, background: '#ECFDF5', color: '#059669', border: '1px solid #A7F3D0', padding: '2px 8px', borderRadius: 10, fontWeight: 600, fontFamily: "'Roboto', sans-serif" }}>
-          Weather: LIVE ({Object.keys(weatherMap).length} districts · open-meteo)
-        </span>
-      )}
-      {trafficOn && trafficState === 'live' && (
-        <span style={{ fontSize: 10, background: '#FFF7ED', color: '#EA580C', border: '1px solid #FED7AA', padding: '2px 8px', borderRadius: 10, fontWeight: 600, fontFamily: "'Roboto', sans-serif" }}>
-          Traffic: LIVE (TomTom)
-        </span>
-      )}
-      {trafficOn && trafficState === 'unavailable' && (
-        <span style={{ fontSize: 10, background: '#F3F4F6', color: '#6B7280', border: '1px solid #E5E7EB', padding: '2px 8px', borderRadius: 10, fontWeight: 600, fontFamily: "'Roboto', sans-serif" }}>
-          Traffic: estimating from ML risk
-        </span>
-      )}
-      {trafficOn && trafficState === 'loading' && (
-        <span style={{ fontSize: 10, background: '#EFF6FF', color: '#2563EB', border: '1px solid #BFDBFE', padding: '2px 8px', borderRadius: 10, fontWeight: 600, fontFamily: "'Roboto', sans-serif" }}>
-          Traffic: loading…
-        </span>
-      )}
-      {showRainLayer && radarState !== 'off' && (
-        <span style={{
-          fontSize: 10,
-          background: radarState === 'live' ? '#EFF6FF' : radarState === 'loading' ? '#FEFCE8' : '#F3F4F6',
-          color: radarState === 'live' ? '#1D4ED8' : radarState === 'loading' ? '#A16207' : '#6B7280',
-          border: `1px solid ${radarState === 'live' ? '#BFDBFE' : radarState === 'loading' ? '#FDE68A' : '#E5E7EB'}`,
-          padding: '2px 8px', borderRadius: 10, fontWeight: 600, fontFamily: "'Roboto', sans-serif",
-        }}>
-          {radarStateLabel(radarState, radarMeta)}
-        </span>
-      )}
-      {triggerZones > 0 && (
+  const statusChips = () => {
+    if (triggerZones <= 0) return null;
+    return (
+      <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
         <span style={{ fontSize: 10, background: '#FEF2F2', color: '#B91C1C', border: '1px solid #FECACA', padding: '2px 8px', borderRadius: 10, fontWeight: 800, fontFamily: "'Roboto', sans-serif" }}>
           ⚠ {triggerZones} rain-trigger zone{triggerZones > 1 ? 's' : ''}
         </span>
-      )}
-    </div>
-  );
+      </div>
+    );
+  };
 
   // Route lookup for risk-color overrides from the ML pipeline.
   // Stable per-call closure so route Polylines never re-render because of the
@@ -804,7 +804,7 @@ export const LiveAccessibilityMap = ({ isFullScreen = false, activeLayers }) => 
           )}
           <ScaleControl position="bottomright" imperial={false} />
           <MapZoomControls position="top-right" compact />
-          <MapCtrl center={flyTarget} />
+          <MapCtrl center={flyTarget} zoom={flyZoom} />
           <MouseCoords onMove={setCursorLatLng} />
           <MapEvents onMoveEnd={() => {}} />
 
@@ -946,18 +946,23 @@ export const LiveAccessibilityMap = ({ isFullScreen = false, activeLayers }) => 
           {showDistricts && districts.map(d => {
             const coord = DISTRICT_COORDS[d.id];
             if (!coord) return null;
+            const inActiveState = activeState === 'All' ||
+              (d.state && d.state.toLowerCase() === activeState.toLowerCase()) ||
+              (coord.state && coord.state.toLowerCase() === activeState.toLowerCase());
             const color = getStatusColor(d.connectivity_status);
-            const isSelected = selectedDistrict?.id === d.id;
+            const isSelected = selectedDistrict?.id === d.id || (activeState !== 'All' && inActiveState);
+            const markerRadius = isSelected ? (activeState !== 'All' ? 14 : 12) : 10;
+            const markerOpacity = (activeState === 'All' || inActiveState) ? 0.9 : 0.45;
             return (
               <React.Fragment key={d.id}>
                 <CircleMarker
                   center={[coord.lat, coord.lng]}
-                  radius={isSelected ? 14 : 10}
+                  radius={markerRadius}
                   fillColor={color}
-                  fillOpacity={0.85}
-                  color="white"
+                  fillOpacity={markerOpacity}
+                  color={isSelected ? '#0F172A' : 'white'}
                   weight={isSelected ? 3 : 2}
-                  eventHandlers={{ click: () => { setSelectedDistrict(d); setFlyTarget([coord.lat, coord.lng]); } }}
+                  eventHandlers={{ click: () => { setSelectedDistrict(d); setFlyTarget([coord.lat, coord.lng]); setFlyZoom(11); } }}
                 >
                   <Tooltip direction="top" offset={[0, -10]} permanent={isSelected}>
                     <div style={{ background: 'white', padding: '6px 10px', borderRadius: 4, boxShadow: '0 1px 4px rgba(0,0,0,0.2)', fontFamily: "'Roboto', sans-serif", border: '1px solid #DADCE0', fontSize: 12, whiteSpace: 'nowrap' }}>

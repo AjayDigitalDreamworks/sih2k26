@@ -34,7 +34,7 @@ export default function LoginForm() {
       const userRole = result.user?.role;
 
       const getRoleHome = () => {
-        if (backendRole === 'field_officer' || backendRole === 'field_agent' || userRole === 'field_officer') {
+        if (backendRole === 'field_officer' || backendRole === 'field_officier' || backendRole === 'field_agent' || userRole === 'field_officer') {
           return '/field-officer';
         }
         if (backendRole === 'driver' || userRole === 'driver') {
@@ -61,7 +61,7 @@ export default function LoginForm() {
           return backendRole === 'driver' || userRole === 'driver';
         }
         if (path.startsWith('/field-officer')) {
-          return ['field_officer', 'field_agent'].includes(backendRole) || userRole === 'field_officer';
+          return ['field_officer', 'field_officier', 'field_agent'].includes(backendRole) || userRole === 'field_officer';
         }
         return false;
       };

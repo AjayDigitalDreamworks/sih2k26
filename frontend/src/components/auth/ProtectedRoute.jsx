@@ -33,7 +33,7 @@ export const ProtectedRoute = ({ children, allowedRoles = [] }) => {
 
     if (!hasAccess) {
       // Smart redirect based on actual user role
-      if (backendRole === 'field_officer' || backendRole === 'field_agent' || userRole === 'field_officer' || userRole === 'field_agent') {
+      if (backendRole === 'field_officer' || backendRole === 'field_officier' || backendRole === 'field_agent' || userRole === 'field_officer' || userRole === 'field_agent') {
         return <Navigate to="/field-officer" replace />;
       }
       if (backendRole === 'driver' || userRole === 'driver') {

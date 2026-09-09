@@ -46,6 +46,7 @@ export const LiveMapPage = () => {
       <div className="card" style={{
         padding: '10px 16px', display: 'flex', alignItems: 'center',
         justifyContent: 'space-between', flexWrap: 'wrap', gap: '10px',
+        position: 'relative', zIndex: 10,
       }}>
         <div style={{ display: 'flex', alignItems: 'center', gap: '14px', flexWrap: 'wrap' }}>
           <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
@@ -59,7 +60,20 @@ export const LiveMapPage = () => {
           <select
             value={activeState}
             onChange={(e) => setActiveState(e.target.value)}
-            style={{ fontSize: '11px', padding: '5px 10px', borderRadius: 6, border: '1px solid #D1D5DB', fontWeight: 600 }}
+            title="Focus Map on State"
+            aria-label="Filter Map by State"
+            style={{
+              fontSize: '11px',
+              padding: '6px 12px',
+              borderRadius: 6,
+              border: '1.5px solid #CBD5E1',
+              backgroundColor: '#FFFFFF',
+              color: '#0F172A',
+              fontWeight: 700,
+              cursor: 'pointer',
+              outline: 'none',
+              boxShadow: '0 1px 2px rgba(0,0,0,0.05)',
+            }}
           >
             <option value="All">All 8 NER States</option>
             <option value="Assam">Assam</option>
@@ -168,7 +182,7 @@ export const LiveMapPage = () => {
 
         {/* Map */}
         <div style={{ flex: 1, minHeight: 500 }}>
-          <LiveAccessibilityMap isFullScreen={true} activeLayers={activeLayers} />
+          <LiveAccessibilityMap isFullScreen={true} activeLayers={activeLayers} activeState={activeState} />
         </div>
       </div>
     </div>

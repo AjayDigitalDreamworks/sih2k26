@@ -1,5 +1,5 @@
 import React from 'react';
-import { Radio } from 'lucide-react';
+import { Radio, Route, MapPin, Truck, AlertTriangle, PackageCheck } from 'lucide-react';
 import { Counter } from './Counter';
 
 export function CommandCenterSection() {
@@ -62,11 +62,56 @@ export function CommandCenterSection() {
 
 export function ImpactStatsSection() {
   const stats = [
-    [12500, '+', 'KM OF ROADS MONITORED'],
-    [122, '+', 'DISTRICTS COVERED'],
-    [8450, '+', 'ACTIVE VEHICLES'],
-    [2300, '+', 'ALERTS GENERATED'],
-    [1.2, 'M+', 'DELIVERIES TRACKED'],
+    {
+      value: 12500,
+      suffix: '+',
+      decimals: 0,
+      label: 'Km of Roads Monitored',
+      icon: Route,
+      color: '#059669',
+      bg: '#ECFDF5',
+      border: '#A7F3D0',
+    },
+    {
+      value: 122,
+      suffix: '+',
+      decimals: 0,
+      label: 'Districts Covered',
+      icon: MapPin,
+      color: '#0284C7',
+      bg: '#F0F9FF',
+      border: '#BAE6FD',
+    },
+    {
+      value: 8450,
+      suffix: '+',
+      decimals: 0,
+      label: 'Active Vehicles',
+      icon: Truck,
+      color: '#4F46E5',
+      bg: '#EEF2FF',
+      border: '#C7D2FE',
+    },
+    {
+      value: 2300,
+      suffix: '+',
+      decimals: 0,
+      label: 'Alerts Generated',
+      icon: AlertTriangle,
+      color: '#D97706',
+      bg: '#FFFBEB',
+      border: '#FDE68A',
+    },
+    {
+      value: 1.2,
+      suffix: 'M+',
+      decimals: 1,
+      label: 'Deliveries Tracked',
+      icon: PackageCheck,
+      color: '#0D9488',
+      bg: '#F0FDFA',
+      border: '#99F6E4',
+    },
   ];
 
   return (
@@ -74,18 +119,35 @@ export function ImpactStatsSection() {
       <div className="container">
         <div className="impact-head reveal">
           <div>
-            <div className="eyebrow">The network in numbers</div>
-            <h2 className="impact-heading">Movement,<br /><span style={{ color: "#087f4d" }}>made visible.</span></h2>
+            <div className="impact-eyebrow">
+              <span className="impact-eyebrow-dot" />
+              The Network In Numbers
+            </div>
+            <h2 className="impact-heading">
+              Movement,<br />
+              <span className="impact-heading-accent">made visible.</span>
+            </h2>
           </div>
-          <p>Built to make the distance between a warning and a decision shorter.</p>
+          <p className="impact-subtitle">Built to make the distance between a warning and a decision shorter.</p>
         </div>
         <div className="impact-grid">
-          {stats.map(([value, suffix, label]) => (
-            <div className="impact-stat reveal" key={label}>
-              <strong><Counter value={value} suffix={suffix} /></strong>
-              <span>{label}</span>
-            </div>
-          ))}
+          {stats.map((item) => {
+            const Icon = item.icon;
+            return (
+              <div className="impact-stat reveal" key={item.label}>
+                <div
+                  className="impact-stat-icon"
+                  style={{ color: item.color, backgroundColor: item.bg, borderColor: item.border }}
+                >
+                  <Icon size={20} strokeWidth={2.2} />
+                </div>
+                <strong className="impact-stat-num">
+                  <Counter value={item.value} suffix={item.suffix} decimals={item.decimals} />
+                </strong>
+                <span className="impact-stat-label">{item.label}</span>
+              </div>
+            );
+          })}
         </div>
       </div>
     </section>

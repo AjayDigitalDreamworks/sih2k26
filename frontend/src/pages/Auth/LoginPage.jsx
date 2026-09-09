@@ -20,10 +20,13 @@ export default function LoginPage() {
     if (role === 'driver') {
       return <Navigate to="/driver" replace />;
     }
-    if (role === 'field_officer' || role === 'field_agent') {
+    if (role === 'field_officer' || role === 'field_officier' || role === 'field_agent') {
       return <Navigate to="/field-officer" replace />;
     }
-    return <Navigate to="/transporter/dashboard" replace />;
+    if (role === 'transporter' || role === 'operator') {
+      return <Navigate to="/transporter/dashboard" replace />;
+    }
+    return <Navigate to="/" replace />;
   }
 
   return (

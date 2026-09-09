@@ -50,12 +50,6 @@ export function SiteNav({ onOpenLogin }) {
               {t(transKey) || label}
             </a>
           ))}
-          <Link to="/admin" className="nav-link-item font-semibold text-emerald-600">
-            {t('nav.adminPortal')}
-          </Link>
-          <Link to="/transporter" className="nav-link-item font-semibold text-[#087f4d]">
-            {t('nav.transporterHub')}
-          </Link>
         </nav>
 
         <div className="nav-actions">
@@ -90,7 +84,7 @@ export function SiteNav({ onOpenLogin }) {
                     </button>
                   );
                 }
-                if (bRole === 'field_officer' || bRole === 'field_agent' || user.role === 'field_officer') {
+                if (bRole === 'field_officer' || bRole === 'field_officier' || bRole === 'field_agent' || user.role === 'field_officer') {
                   return (
                     <button
                       type="button"
@@ -101,15 +95,18 @@ export function SiteNav({ onOpenLogin }) {
                     </button>
                   );
                 }
-                return (
-                  <button
-                    type="button"
-                    onClick={() => navigate('/transporter')}
-                    className="px-2.5 py-1 bg-emerald-600 hover:bg-emerald-500 rounded-full text-[10px] font-semibold text-white transition-colors cursor-pointer"
-                  >
-                    Transporter Dash
-                  </button>
-                );
+                if (bRole === 'transporter' || user.role === 'operator' || user.role === 'transporter') {
+                  return (
+                    <button
+                      type="button"
+                      onClick={() => navigate('/transporter')}
+                      className="px-2.5 py-1 bg-emerald-600 hover:bg-emerald-500 rounded-full text-[10px] font-semibold text-white transition-colors cursor-pointer"
+                    >
+                      Transporter Hub
+                    </button>
+                  );
+                }
+                return null;
               })()}
               <button
                 type="button"
@@ -164,14 +161,36 @@ export function SiteNav({ onOpenLogin }) {
               {t(transKey) || label}
             </a>
           ))}
-          <div className="flex flex-col gap-2 my-2 pt-2 border-t border-slate-200">
-            <Link to="/admin" onClick={close} className="px-4 py-2 bg-emerald-900 text-emerald-200 rounded-lg text-sm font-semibold text-center">
-              {t('nav.adminPortal')}
-            </Link>
-            <Link to="/transporter" onClick={close} className="px-4 py-2 bg-emerald-800 text-white rounded-lg text-sm font-semibold text-center">
-              {t('nav.transporterHub')}
-            </Link>
-          </div>
+          {isAuthenticated && user && (() => {
+            const bRole = user.backendRole || user.role;
+            let targetPath = null;
+            let label = null;
+            if (bRole === 'admin' || bRole === 'district_officer' || user.role === 'official') {
+              targetPath = '/admin';
+              label = 'Admin Dashboard';
+            } else if (bRole === 'driver' || user.role === 'driver') {
+              targetPath = '/driver';
+              label = 'Driver App';
+            } else if (['field_officer', 'field_officier', 'field_agent'].includes(bRole) || user.role === 'field_officer') {
+              targetPath = '/field-officer';
+              label = 'Field Officer Portal';
+            } else if (['transporter', 'operator'].includes(bRole) || user.role === 'operator') {
+              targetPath = '/transporter';
+              label = 'Transporter Hub';
+            }
+            if (!targetPath) return null;
+            return (
+              <div className="my-2 pt-2 border-t border-slate-200">
+                <Link
+                  to={targetPath}
+                  onClick={close}
+                  className="block px-4 py-2.5 bg-emerald-700 text-white rounded-xl font-bold text-sm text-center"
+                >
+                  {label}
+                </Link>
+              </div>
+            );
+          })()}
           {isAuthenticated && user ? (
             <div className="flex flex-col gap-2 mt-2">
               <button

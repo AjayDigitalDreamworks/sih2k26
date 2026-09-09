@@ -4,7 +4,7 @@ import { MapZoomControls } from '@/components/admin/common/MapZoomControls';
 import { ResilientTileLayer } from '@/components/admin/common/ResilientTileLayer';
 import L from 'leaflet';
 import 'leaflet/dist/leaflet.css';
-import { MapPin, Sparkles, Loader2, AlertTriangle, ShieldCheck, Navigation, Gauge, RefreshCw, Route as RouteIcon, Search, Scale, AlertOctagon, Layers, Activity } from 'lucide-react';
+import { MapPin, Sparkles, Loader2, AlertTriangle, ShieldCheck, Navigation, Gauge, RefreshCw, Route as RouteIcon, Search, Scale, AlertOctagon, Layers, Activity, ArrowLeftRight } from 'lucide-react';
 import ApiClient from '@/lib/api';
 import { DISTRICTS, districtById, findDistrictMatch } from '@/data/geoMaster';
 import { useApp } from '@/contexts/AppContext';
@@ -385,147 +385,152 @@ export const RoutePlannerMap = ({
       )}
 
       {/* Query bar - real districts or custom geocoding */}
-      <div className="route-query-bar" style={{ flexWrap: 'wrap', gap: '12px' }}>
-        {searchMode === 'custom' ? (
-          <>
-            <div className="query-field-group" style={{ flex: 1, minWidth: '170px' }}>
-              <label className="query-field-label">From (Village / Address / GPS)</label>
-              <div className="query-input-wrap">
-                <MapPin size={16} color="#059669" />
-                <input
-                  type="text"
-                  placeholder="e.g. Guwahati Airport or 26.14, 91.73"
-                  value={customOrigin}
-                  onChange={(e) => setCustomOrigin(e.target.value)}
-                  style={{ border: 'none', background: 'transparent', outline: 'none', fontSize: 13, fontWeight: 600, color: 'var(--text-primary)', width: '100%' }}
-                />
+      <div className="route-query-card">
+        {/* Row 1: Endpoints (From, Swap, To) */}
+        <div className="route-endpoints-row">
+          {searchMode === 'custom' ? (
+            <>
+              <div className="query-field-group">
+                <label className="query-field-label">From (Village / Address / GPS)</label>
+                <div className="query-input-wrap">
+                  <MapPin size={16} color="#059669" />
+                  <input
+                    type="text"
+                    placeholder="e.g. Guwahati Airport or 26.14, 91.73"
+                    value={customOrigin}
+                    onChange={(e) => setCustomOrigin(e.target.value)}
+                  />
+                </div>
               </div>
-            </div>
 
+              <button
+                type="button"
+                onClick={handleSwap}
+                title="Swap origin and destination"
+                className="route-swap-btn"
+              >
+                <ArrowLeftRight size={14} />
+                <span>Swap</span>
+              </button>
+
+              <div className="query-field-group">
+                <label className="query-field-label">To (Village / Address / GPS)</label>
+                <div className="query-input-wrap">
+                  <MapPin size={16} color="#DC2626" />
+                  <input
+                    type="text"
+                    placeholder="e.g. Shillong Police Bazar or 25.57, 91.88"
+                    value={customDest}
+                    onChange={(e) => setCustomDest(e.target.value)}
+                  />
+                </div>
+              </div>
+            </>
+          ) : (
+            <>
+              <div className="query-field-group">
+                <label className="query-field-label">From (Origin)</label>
+                <div className="query-input-wrap">
+                  <MapPin size={16} color="#059669" />
+                  <select
+                    value={fromId}
+                    onChange={(e) => handleFromChange(e.target.value)}
+                  >
+                    {DISTRICTS.map((d) => <option key={d.id} value={d.id}>{d.label}</option>)}
+                  </select>
+                </div>
+              </div>
+
+              <button
+                type="button"
+                onClick={handleSwap}
+                title="Swap origin and destination"
+                className="route-swap-btn"
+              >
+                <ArrowLeftRight size={14} />
+                <span>Swap</span>
+              </button>
+
+              <div className="query-field-group">
+                <label className="query-field-label">To (Destination)</label>
+                <div className="query-input-wrap">
+                  <MapPin size={16} color="#DC2626" />
+                  <select
+                    value={toId}
+                    onChange={(e) => handleToChange(e.target.value)}
+                  >
+                    {DISTRICTS.map((d) => <option key={d.id} value={d.id}>{d.label}</option>)}
+                  </select>
+                </div>
+              </div>
+            </>
+          )}
+        </div>
+
+        {/* Row 2: Optimization Parameters & Action */}
+        <div className="route-params-row">
+          <div className="query-field-group">
+            <label className="query-field-label">Preference</label>
+            <div className="query-input-wrap">
+              <ShieldCheck size={16} color="#3B82F6" />
+              <select
+                value={prefer}
+                onChange={(e) => {
+                  setPrefer(e.target.value);
+                  if (searchMode === 'hub') planRoute(fromId, toId, e.target.value, vehicleType);
+                }}
+              >
+                <option value="safest">Safest route (lowest risk)</option>
+                <option value="shortest">Shortest route (least km)</option>
+                <option value="balanced">Balanced</option>
+              </select>
+            </div>
+          </div>
+
+          <div className="query-field-group">
+            <label className="query-field-label">Vehicle Profile</label>
+            <div className="query-input-wrap">
+              <Gauge size={16} color="#10B981" />
+              <select
+                value={vehicleType}
+                onChange={(e) => {
+                  setVehicleType(e.target.value);
+                  if (searchMode === 'hub') planRoute(fromId, toId, prefer, e.target.value);
+                }}
+              >
+                <option value="heavy_multi_axle">Heavy Multi-Axle (16T-28T BharatBenz)</option>
+                <option value="medium_commercial">Medium Truck (Tata 407 / Eicher)</option>
+                <option value="light_commercial">Light Commercial (Tata Ace / Pickup)</option>
+                <option value="hazardous_tanker">Hazardous Tanker (POL / Gas)</option>
+              </select>
+            </div>
+          </div>
+
+          <div className="query-field-group query-field-cargo">
+            <label className="query-field-label">Cargo (kg)</label>
+            <div className="query-input-wrap">
+              <Scale size={15} color="#6366F1" />
+              <input
+                type="number"
+                min="0"
+                max="50000"
+                step="500"
+                value={cargoWeightKg}
+                onChange={(e) => setCargoWeightKg(Number(e.target.value))}
+              />
+            </div>
+          </div>
+
+          <div className="query-action-group">
             <button
-              type="button"
-              onClick={handleSwap}
-              title="Swap origin and destination"
-              style={{ alignSelf: 'flex-end', background: '#F3F4F6', border: '1px solid #E5E7EB', borderRadius: 8, padding: '4px 10px', cursor: 'pointer', fontSize: 12, fontWeight: 700, color: '#374151' }}
+              className="route-plan-btn"
+              onClick={handlePlan}
+              disabled={loading}
             >
-              Swap
+              {loading ? <Loader2 size={16} className="spin" /> : <Sparkles size={16} />}
+              <span>{loading ? 'Planning on roads...' : 'Plan Route'}</span>
             </button>
-
-            <div className="query-field-group" style={{ flex: 1, minWidth: '170px' }}>
-              <label className="query-field-label">To (Village / Address / GPS)</label>
-              <div className="query-input-wrap">
-                <MapPin size={16} color="#DC2626" />
-                <input
-                  type="text"
-                  placeholder="e.g. Shillong Police Bazar or 25.57, 91.88"
-                  value={customDest}
-                  onChange={(e) => setCustomDest(e.target.value)}
-                  style={{ border: 'none', background: 'transparent', outline: 'none', fontSize: 13, fontWeight: 600, color: 'var(--text-primary)', width: '100%' }}
-                />
-              </div>
-            </div>
-          </>
-        ) : (
-          <>
-            <div className="query-field-group">
-              <label className="query-field-label">From (origin)</label>
-              <div className="query-input-wrap">
-                <MapPin size={16} color="#059669" />
-                <select
-                  value={fromId}
-                  onChange={(e) => handleFromChange(e.target.value)}
-                  style={{ border: 'none', background: 'transparent', outline: 'none', fontSize: 13, fontWeight: 600, color: 'var(--text-primary)', cursor: 'pointer', width: '100%' }}
-                >
-                  {DISTRICTS.map((d) => <option key={d.id} value={d.id}>{d.label}</option>)}
-                </select>
-              </div>
-            </div>
-
-            <button
-              type="button"
-              onClick={handleSwap}
-              title="Swap origin and destination"
-              style={{ alignSelf: 'flex-end', background: '#F3F4F6', border: '1px solid #E5E7EB', borderRadius: 8, padding: '4px 10px', cursor: 'pointer', fontSize: 12, fontWeight: 700, color: '#374151' }}
-            >
-              Swap
-            </button>
-
-            <div className="query-field-group">
-              <label className="query-field-label">To (destination)</label>
-              <div className="query-input-wrap">
-                <MapPin size={16} color="#DC2626" />
-                <select
-                  value={toId}
-                  onChange={(e) => handleToChange(e.target.value)}
-                  style={{ border: 'none', background: 'transparent', outline: 'none', fontSize: 13, fontWeight: 600, color: 'var(--text-primary)', cursor: 'pointer', width: '100%' }}
-                >
-                  {DISTRICTS.map((d) => <option key={d.id} value={d.id}>{d.label}</option>)}
-                </select>
-              </div>
-            </div>
-          </>
-        )}
-
-        <div className="query-field-group">
-          <label className="query-field-label">Preference</label>
-          <div className="query-input-wrap">
-            <ShieldCheck size={16} color="#3B82F6" />
-            <select
-              value={prefer}
-              onChange={(e) => {
-                setPrefer(e.target.value);
-                if (searchMode === 'hub') planRoute(fromId, toId, e.target.value, vehicleType);
-              }}
-              style={{ border: 'none', background: 'transparent', outline: 'none', fontSize: 13, fontWeight: 600, color: 'var(--text-primary)', cursor: 'pointer' }}
-            >
-              <option value="safest">Safest route (lowest risk)</option>
-              <option value="shortest">Shortest route (least km)</option>
-              <option value="balanced">Balanced</option>
-            </select>
           </div>
-        </div>
-
-        <div className="query-field-group">
-          <label className="query-field-label">Vehicle Profile</label>
-          <div className="query-input-wrap">
-            <Gauge size={16} color="#10B981" />
-            <select
-              value={vehicleType}
-              onChange={(e) => {
-                setVehicleType(e.target.value);
-                if (searchMode === 'hub') planRoute(fromId, toId, prefer, e.target.value);
-              }}
-              style={{ border: 'none', background: 'transparent', outline: 'none', fontSize: 13, fontWeight: 600, color: 'var(--text-primary)', cursor: 'pointer' }}
-            >
-              <option value="heavy_multi_axle">Heavy Multi-Axle (16T-28T BharatBenz)</option>
-              <option value="medium_commercial">Medium Truck (Tata 407 / Eicher)</option>
-              <option value="light_commercial">Light Commercial (Tata Ace / Pickup)</option>
-              <option value="hazardous_tanker">Hazardous Tanker (POL / Gas)</option>
-            </select>
-          </div>
-        </div>
-
-        <div className="query-field-group" style={{ width: '105px' }}>
-          <label className="query-field-label">Cargo (kg)</label>
-          <div className="query-input-wrap">
-            <Scale size={15} color="#6366F1" />
-            <input
-              type="number"
-              min="0"
-              max="50000"
-              step="500"
-              value={cargoWeightKg}
-              onChange={(e) => setCargoWeightKg(Number(e.target.value))}
-              style={{ border: 'none', background: 'transparent', outline: 'none', fontSize: 13, fontWeight: 600, color: 'var(--text-primary)', width: '100%' }}
-            />
-          </div>
-        </div>
-
-        <div style={{ display: 'flex', gap: '8px', alignSelf: 'flex-end' }}>
-          <button className="btn btn-primary" onClick={handlePlan} disabled={loading} style={{ display: 'inline-flex', alignItems: 'center', gap: 6 }}>
-            {loading ? <Loader2 size={14} className="spin" /> : <Sparkles size={14} />}
-            <span>{loading ? 'Planning on roads...' : 'Plan Route'}</span>
-          </button>
         </div>
       </div>
 

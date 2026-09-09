@@ -66,7 +66,7 @@ export const SettingsPage = () => {
 
   // User Management state (real CRUD against /admin/users)
   const [userModal, setUserModal] = useState(null); // 'create' | user object being edited | null
-  const [userForm, setUserForm] = useState({ name: '', email: '', password: '', role: 'viewer', agency: '', phone: '' });
+  const [userForm, setUserForm] = useState({ name: '', email: '', password: '', role: 'user', agency: '', phone: '' });
   const [userSaving, setUserSaving] = useState(false);
   const [userFormError, setUserFormError] = useState('');
   const [confirmDeleteUser, setConfirmDeleteUser] = useState(null);
@@ -81,17 +81,22 @@ export const SettingsPage = () => {
   };
 
   const openCreateUser = () => {
-    setUserForm({ name: '', email: '', password: '', role: 'viewer', agency: '', phone: '' });
+    setUserForm({ name: '', email: '', password: '', role: 'user', agency: '', phone: '' });
     setUserFormError('');
     setUserModal('create');
   };
 
   const openEditUser = (u) => {
+    let normalizedRole = u.role || 'user';
+    if (normalizedRole === 'viewer') normalizedRole = 'user';
+    if (['district_officer', 'field_agent', 'field_officier'].includes(normalizedRole)) {
+      normalizedRole = 'field_officer';
+    }
     setUserForm({
       name: u.name || '',
       email: u.email || '',
       password: '',
-      role: u.role || 'viewer',
+      role: normalizedRole,
       agency: u.agency || '',
       phone: u.phone || '',
     });
@@ -424,7 +429,11 @@ export const SettingsPage = () => {
                   <tr key={u.id}>
                     <td style={{ fontWeight: 600 }}>{u.name}</td>
                     <td>{u.email}</td>
-                    <td><span className="badge badge-medium">{(u.role || 'viewer').replace(/_/g, ' ')}</span></td>
+                    <td>
+                      <span className="badge badge-medium">
+                        {(u.role === 'viewer' ? 'user' : ['district_officer', 'field_agent', 'field_officier'].includes(u.role) ? 'field officer' : u.role || 'user').replace(/_/g, ' ')}
+                      </span>
+                    </td>
                     <td><span className="badge badge-resolved">Active</span></td>
                     <td>
                       <div style={{ display: 'flex', gap: 8, justifyContent: 'flex-end' }}>
@@ -484,8 +493,14 @@ export const SettingsPage = () => {
                   <div>
                     <label className="query-field-label">Role</label>
                     <select value={userForm.role} onChange={(e) => setUserForm({ ...userForm, role: e.target.value })} style={{ width: '100%', marginTop: 4 }}>
-                      {['admin', 'district_officer', 'field_agent', 'transporter', 'driver', 'viewer'].map((r) => (
-                        <option key={r} value={r}>{r.replace(/_/g, ' ')}</option>
+                      {[
+                        { value: 'transporter', label: 'Transporter' },
+                        { value: 'field_officer', label: 'Field Officer' },
+                        { value: 'driver', label: 'Driver' },
+                        { value: 'user', label: 'User' },
+                        { value: 'admin', label: 'Admin' },
+                      ].map((r) => (
+                        <option key={r.value} value={r.value}>{r.label}</option>
                       ))}
                     </select>
                   </div>

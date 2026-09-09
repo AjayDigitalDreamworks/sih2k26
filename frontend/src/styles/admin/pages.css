@@ -1,15 +1,106 @@
 /* Route Optimization Page */
+.route-query-card,
 .route-query-bar {
   background-color: var(--bg-card);
   border: 1px solid var(--border-light);
   border-radius: var(--radius-md);
   padding: 16px 20px;
-  display: grid;
-  grid-template-columns: 1.5fr 1.5fr 1fr auto auto;
-  gap: 16px;
-  align-items: center;
-  margin-bottom: 24px;
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+  margin-bottom: 20px;
   box-shadow: var(--shadow-xs);
+}
+
+.route-endpoints-row {
+  display: flex;
+  align-items: flex-end;
+  gap: 12px;
+  width: 100%;
+}
+
+.route-endpoints-row .query-field-group {
+  flex: 1;
+  min-width: 0;
+}
+
+.route-swap-btn {
+  height: 38px;
+  padding: 0 14px;
+  border-radius: var(--radius-sm);
+  border: 1px solid var(--border-light);
+  background-color: var(--bg-card-alt);
+  color: var(--text-secondary);
+  cursor: pointer;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-weight: 700;
+  font-size: 12px;
+  white-space: nowrap;
+  transition: all var(--transition-fast);
+  flex-shrink: 0;
+  box-sizing: border-box;
+}
+
+.route-swap-btn:hover {
+  background-color: var(--bg-hover);
+  color: var(--primary-600);
+  border-color: var(--primary-300);
+}
+
+.route-params-row {
+  display: flex;
+  align-items: flex-end;
+  gap: 14px;
+  width: 100%;
+  flex-wrap: wrap;
+}
+
+.route-params-row .query-field-group {
+  flex: 1;
+  min-width: 170px;
+}
+
+.route-params-row .query-field-cargo {
+  flex: 0 0 130px;
+  min-width: 120px;
+}
+
+.route-params-row .query-action-group {
+  display: flex;
+  align-items: flex-end;
+  margin-left: auto;
+}
+
+.route-plan-btn {
+  height: 38px;
+  padding: 0 20px;
+  font-weight: 700;
+  font-size: 13px;
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  white-space: nowrap;
+  border-radius: var(--radius-sm);
+  background-color: #059669;
+  color: white;
+  border: none;
+  cursor: pointer;
+  box-shadow: 0 1px 3px rgba(5, 150, 105, 0.3);
+  transition: all var(--transition-fast);
+  box-sizing: border-box;
+}
+
+.route-plan-btn:hover:not(:disabled) {
+  background-color: #047857;
+  transform: translateY(-1px);
+  box-shadow: 0 3px 6px rgba(5, 150, 105, 0.4);
+}
+
+.route-plan-btn:disabled {
+  opacity: 0.7;
+  cursor: not-allowed;
 }
 
 .query-field-group {
@@ -20,9 +111,10 @@
 
 .query-field-label {
   font-size: 11px;
-  font-weight: 600;
+  font-weight: 700;
   color: var(--text-muted);
   text-transform: uppercase;
+  letter-spacing: 0.04em;
 }
 
 .query-input-wrap {
@@ -32,15 +124,55 @@
   background-color: var(--bg-card-alt);
   border: 1px solid var(--border-light);
   border-radius: var(--radius-sm);
-  padding: 8px 12px;
+  padding: 0 12px;
+  height: 38px;
+  box-sizing: border-box;
+  transition: border-color var(--transition-fast);
 }
 
-.query-input-wrap input, .query-input-wrap select {
+.query-input-wrap:focus-within {
+  border-color: var(--primary-500);
+  box-shadow: 0 0 0 1px var(--primary-500);
+}
+
+.query-input-wrap input,
+.query-input-wrap select {
   border: none;
   background: transparent;
   padding: 0;
   width: 100%;
   box-shadow: none;
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--text-primary);
+  outline: none;
+  cursor: pointer;
+}
+
+@media (max-width: 900px) {
+  .route-endpoints-row {
+    flex-direction: column;
+    align-items: stretch;
+  }
+  .route-swap-btn {
+    align-self: center;
+  }
+  .route-params-row {
+    flex-direction: column;
+    align-items: stretch;
+  }
+  .route-params-row .query-field-cargo {
+    flex: 1;
+    width: 100%;
+  }
+  .route-params-row .query-action-group {
+    margin-left: 0;
+    width: 100%;
+  }
+  .route-plan-btn {
+    width: 100%;
+    justify-content: center;
+  }
 }
 
 /* Route Timeline Sequence */

@@ -3299,82 +3299,142 @@ button {
 
 .impact {
   background: var(--mineral);
-  padding: clamp(3rem, 5vw, 5rem) 0;
+  padding: clamp(3.5rem, 6vw, 5.5rem) 0;
   position: relative;
+  font-family: -apple-system, BlinkMacSystemFont, 'Inter', 'Plus Jakarta Sans', 'Segoe UI', Roboto, sans-serif;
 }
 
 .impact-head {
   display: flex;
-  align-items: end;
+  align-items: flex-end;
   justify-content: space-between;
   gap: 2rem;
   margin-bottom: 0.5rem;
 }
 
-.impact-heading {
-  margin: 0.75rem 0 0;
-  max-width: 600px;
-  font-size: clamp(1.6rem, 2.4vw, 2.25rem);
-  line-height: 1.15;
-  letter-spacing: -.04em;
-  font-weight: 850;
+.impact-eyebrow {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  padding: 5px 14px;
+  background: rgba(5, 150, 105, 0.08);
+  border: 1px solid rgba(5, 150, 105, 0.22);
+  border-radius: 9999px;
+  color: #047857;
+  font-family: -apple-system, BlinkMacSystemFont, 'Inter', 'Plus Jakarta Sans', 'Segoe UI', Roboto, sans-serif !important;
+  font-size: 0.72rem;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  line-height: 1.2;
 }
 
-.impact-head p {
-  max-width: 250px;
-  margin-bottom: .2rem;
-  color: #557069;
-  font-size: .82rem;
-  line-height: 1.55;
+.impact-eyebrow-dot {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background-color: #059669;
+  box-shadow: 0 0 6px rgba(5, 150, 105, 0.6);
+  flex-shrink: 0;
+}
+
+.impact-heading {
+  margin: 0.85rem 0 0;
+  max-width: 600px;
+  font-family: -apple-system, BlinkMacSystemFont, 'Inter', 'Plus Jakarta Sans', 'Segoe UI', Roboto, sans-serif !important;
+  font-size: clamp(2rem, 3.4vw, 3rem);
+  line-height: 1.1;
+  letter-spacing: -0.035em;
+  font-weight: 850;
+  color: #0f172a;
+}
+
+.impact-heading-accent {
+  background: linear-gradient(135deg, #059669 0%, #10b981 100%);
+  -webkit-background-clip: text;
+  -webkit-text-fill-color: transparent;
+}
+
+.impact-head p,
+.impact-subtitle {
+  max-width: 320px;
+  margin-bottom: 0.4rem;
+  color: #475569;
+  font-family: -apple-system, BlinkMacSystemFont, 'Inter', 'Plus Jakarta Sans', 'Segoe UI', Roboto, sans-serif !important;
+  font-size: 0.95rem;
+  line-height: 1.6;
+  font-weight: 450;
 }
 
 .impact-grid {
   display: grid;
   grid-template-columns: repeat(5, 1fr);
-  gap: 1rem;
-  margin-top: 2.5rem;
+  gap: 1.25rem;
+  margin-top: 2.75rem;
 }
 
 .impact-stat {
-  padding: 1.25rem 1rem;
-  background: rgba(255, 255, 255, 0.65);
-  border: 1px solid rgba(8, 127, 77, 0.1);
-  border-top: 3px solid #087f4d;
-  border-radius: 1rem;
-  backdrop-filter: blur(6px);
+  padding: 1.75rem 1.2rem 1.5rem;
+  background: #ffffff;
+  border: 1px solid rgba(226, 232, 240, 0.9);
+  border-top: 3.5px solid #059669;
+  border-radius: 16px;
+  box-shadow: 0 4px 16px -2px rgba(15, 23, 42, 0.05), 0 2px 6px -1px rgba(0, 0, 0, 0.02);
   text-align: center;
-  transition: transform 0.3s ease, box-shadow 0.3s ease;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  transition: all 0.3s cubic-bezier(0.16, 1, 0.3, 1);
+  position: relative;
+  overflow: hidden;
 }
 
 .impact-stat:hover {
-  transform: translateY(-3px);
-  box-shadow: 0 8px 24px rgba(4, 30, 22, 0.06);
+  transform: translateY(-6px);
+  box-shadow: 0 20px 32px -8px rgba(5, 150, 105, 0.16), 0 6px 12px -2px rgba(0, 0, 0, 0.04);
+  border-color: rgba(5, 150, 105, 0.35);
+  border-top-color: #047857;
 }
 
-.impact-stat:not(:first-child) {
-  padding-left: 1rem;
+.impact-stat-icon {
+  width: 44px;
+  height: 44px;
+  border-radius: 12px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  margin-bottom: 0.85rem;
+  border: 1px solid transparent;
+  transition: transform 0.25s ease;
 }
 
-.impact-stat:last-child {
-  border-right: 1px solid rgba(8, 127, 77, 0.1);
+.impact-stat:hover .impact-stat-icon {
+  transform: scale(1.1);
 }
 
-.impact-stat strong {
+.impact-stat strong,
+.impact-stat-num {
   display: block;
-  color: var(--forest);
-  font-size: clamp(1.5rem, 2.2vw, 2rem);
-  line-height: 1.05;
-  letter-spacing: -.04em;
+  color: #0f172a !important;
+  font-family: -apple-system, BlinkMacSystemFont, 'Inter', 'Plus Jakarta Sans', 'Segoe UI', Roboto, sans-serif !important;
+  font-size: clamp(1.85rem, 2.3vw, 2.35rem) !important;
+  font-weight: 850 !important;
+  line-height: 1.1;
+  letter-spacing: -0.035em;
 }
 
-.impact-stat span {
+.impact-stat span,
+.impact-stat-label {
   display: block;
-  max-width: 140px;
-  margin: .45rem auto 0;
-  color: #557069;
-  font: .56rem "DM Mono", monospace;
-  line-height: 1.35;
-  letter-spacing: .08em;
+  max-width: 150px;
+  margin: 0.5rem auto 0;
+  color: #64748b !important;
+  font-family: -apple-system, BlinkMacSystemFont, 'Inter', 'Plus Jakarta Sans', 'Segoe UI', Roboto, sans-serif !important;
+  font-size: 0.72rem !important;
+  font-weight: 700 !important;
+  line-height: 1.4;
+  letter-spacing: 0.06em;
   text-transform: uppercase;
 }
 
@@ -4340,36 +4400,37 @@ button {
   }
 
   /* Impact in Numbers */
+  .impact-head {
+    flex-direction: column;
+    align-items: flex-start;
+    gap: 1rem;
+  }
+
   .impact-grid {
     grid-template-columns: repeat(2, 1fr);
-    margin-top: 2.5rem;
+    gap: 1rem;
+    margin-top: 2rem;
   }
 
-  .impact-stat,
-  .impact-stat:not(:first-child) {
-    padding: .85rem .6rem .95rem 0;
-  }
-
-  .impact-stat strong {
-    font-size: clamp(1.5rem, 6vw, 2.2rem);
-  }
-
-  .impact-stat span {
-    font-size: .52rem;
-  }
-
-  .impact-stat:nth-child(3) {
-    border-right: 1px solid rgba(8, 127, 77, .22);
-    border-top: 0;
-  }
-
-  .impact-stat:nth-child(4) {
-    border-right: 0;
+  .impact-stat {
+    padding: 1.4rem 1rem;
+    border-radius: 14px;
+    border: 1px solid rgba(226, 232, 240, 0.9);
+    border-top: 3.5px solid #059669;
   }
 
   .impact-stat:nth-child(5) {
-    border-top: 1px solid rgba(8, 127, 77, .22);
     grid-column: 1 / -1;
+  }
+
+  .impact-stat strong,
+  .impact-stat-num {
+    font-size: clamp(1.6rem, 5vw, 2.2rem) !important;
+  }
+
+  .impact-stat span,
+  .impact-stat-label {
+    font-size: 0.68rem !important;
   }
 
   /* Solutions Track Carousel */

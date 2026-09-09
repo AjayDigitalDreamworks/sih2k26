@@ -879,9 +879,6 @@ export default function LiveTrackingMap({ embedded = false, selectedId, onSelect
 
         {/* Chips row (top center) */}
         <div className="absolute top-3 left-1/2 -translate-x-1/2 z-[900] flex items-center gap-1.5 flex-wrap justify-center max-w-[92%]">
-          {weatherCount > 0 && chip('bg-emerald-50 text-emerald-700 border border-emerald-200', `Weather: LIVE (${weatherCount} districts · ${weatherSource})`)}
-          {radarOn && (radarState === 'live' ? chip('bg-blue-50 text-blue-700 border border-blue-200', radarLabel) : radarState === 'loading' ? chip('bg-yellow-50 text-yellow-700 border border-yellow-200', radarLabel) : chip('bg-slate-100 text-slate-500 border border-slate-200', radarLabel))}
-          {Object.keys(liveRoutes).length > 0 && (anyLiveTraffic ? chip('bg-orange-50 text-orange-600 border border-orange-200', 'Traffic: LIVE (TomTom)') : chip('bg-slate-100 text-slate-500 border border-slate-200', 'Traffic: estimating from ML risk'))}
           {markers.length > 0 && (
             <span className="px-2.5 py-1 rounded-full text-[10px] font-bold shadow-xs bg-slate-800/85 text-white border border-slate-700">
               {liveCount} LIVE · {staleCount} STALE · {offlineCount} OFFLINE
