@@ -16,7 +16,6 @@ import {
 } from 'lucide-react';
 import {
   MapContainer,
-  TileLayer,
   Polyline,
   Marker,
   Popup,
@@ -24,7 +23,8 @@ import {
 } from 'react-leaflet';
 import 'leaflet/dist/leaflet.css';
 import L from 'leaflet';
-import { motion } from 'framer-motion';
+import { motion, AnimatePresence } from 'framer-motion';
+import { ResilientTileLayer } from '../admin/common/ResilientTileLayer';
 
 // Custom Pin Markers for Leaflet
 const createPinIcon = (colorBg, labelText) => {
@@ -98,6 +98,13 @@ function MapControlsHandler({ triggerZoomIn, triggerZoomOut, triggerCenter, cent
   const map = useMap();
 
   React.useEffect(() => {
+    const timer = setTimeout(() => {
+      map.invalidateSize();
+    }, 250);
+    return () => clearTimeout(timer);
+  }, [map]);
+
+  React.useEffect(() => {
     if (triggerZoomIn > 0) map.zoomIn();
   }, [triggerZoomIn, map]);
 
@@ -106,7 +113,9 @@ function MapControlsHandler({ triggerZoomIn, triggerZoomOut, triggerCenter, cent
   }, [triggerZoomOut, map]);
 
   React.useEffect(() => {
-    if (triggerCenter > 0 && centerCoords) map.setView(centerCoords, 8);
+    if (triggerCenter > 0 && centerCoords) {
+      map.setView(centerCoords, 9);
+    }
   }, [triggerCenter, centerCoords, map]);
 
   return null;
@@ -123,28 +132,105 @@ export default function AlertDetailsPanel({
   const [zoomInCount, setZoomInCount] = useState(0);
   const [zoomOutCount, setZoomOutCount] = useState(0);
   const [centerCount, setCenterCount] = useState(0);
+  const [showDetourModal, setShowDetourModal] = useState(false);
 
   if (!alert) return null;
 
   const centerCoords = alert.locationCoords || [26.50, 92.50];
 
+  const handleShare = () => {
+    const text = `🚨 [RAAHI ADVISORY] ${alert.title}\nCorridor: ${alert.origin} ➔ ${alert.destination}\nSeverity: ${alert.severity}\nHighway: ${alert.affectedHighway || 'NH Corridor'}\nDetour: ${alert.alternateRoute?.path || 'Check Raahi App'}\nReported: ${alert.timestamp}`;
+    if (navigator.clipboard) {
+      navigator.clipboard.writeText(text);
+    }
+    if (onShareAlert) onShareAlert();
+  };
+
+  const handleDownload = () => {
+    const text = `=====================================================
+GOVERNMENT OF INDIA - MINISTRY OF DONER
+RAAHI MULTI-MODAL LOGISTICS NETWORK
+OFFICIAL CORRIDOR DISRUPTION ADVISORY
+=====================================================
+Alert Reference ID : ${alert.id}
+Incident Title     : ${alert.title}
+Corridor Section   : ${alert.origin} ➔ ${alert.destination}
+Affected Highway   : ${alert.affectedHighway || 'National Highway Corridor'}
+Severity Rating    : ${alert.severity} (${alert.severityType?.toUpperCase()})
+Operational Status : ${alert.status}
+Telemetry Source   : ${alert.reportedBy || 'NER Automated Telemetry Grid'}
+Timestamp          : ${alert.timestamp}
+
+-----------------------------------------------------
+INCIDENT DESCRIPTION & FIELD CONDITIONS:
+${alert.description || alert.subtitle}
+
+-----------------------------------------------------
+RECOMMENDED DETOUR & ALTERNATE ROUTE:
+Path               : ${alert.alternateRoute?.path || 'State Highway Bypass Detour'}
+Extra Distance     : ${alert.alternateRoute?.extraDistance || '+18.4 km'}
+ETA Increase       : ${alert.alternateRoute?.etaIncrease || '+30 mins'}
+Pavement Condition : ${alert.alternateRoute?.roadCondition || 'All-Weather Paved'}
+
+-----------------------------------------------------
+FLEET ADVISORY FOR DRIVERS & TRANSPORTERS:
+- Reduce transit speed within 5 km of incident zone.
+- Heavy multi-axle freight carriers should adhere to signposted bridge weight limits.
+- Real-time GPS pings are monitored by Raahi Unified Command Center.
+=====================================================`;
+
+    const blob = new Blob([text], { type: 'text/plain;charset=utf-8' });
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement('a');
+    link.href = url;
+    link.download = `RAAHI-CORRIDOR-ALERT-${alert.id}.txt`;
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+    URL.revokeObjectURL(url);
+
+    if (onDownloadReport) onDownloadReport();
+  };
+
   return (
-    <div className="bg-white rounded-2xl border border-slate-200/80 shadow-2xs p-4 sm:p-5 flex flex-col justify-between h-full space-y-4">
+    <div className="bg-white rounded-2xl border border-slate-200/80 shadow-2xs p-4 sm:p-5 flex flex-col justify-between h-full space-y-4 relative">
       <div>
         {/* 1. Header: Alert Details + Severity Badge + Close */}
         <div className="flex items-center justify-between border-b border-slate-100 pb-3">
-          <h3 className="text-base font-black text-[#0B1E36] tracking-tight">
-            Alert Details
-          </h3>
+          <div className="flex items-center gap-2">
+            <h3 className="text-base font-black text-[#0B1E36] tracking-tight">
+              Alert Details
+            </h3>
+            <span
+              className={`text-[10px] font-bold px-2 py-0.5 rounded-md ${
+                alert.status === 'Resolved'
+                  ? 'bg-emerald-100 text-emerald-800'
+                  : alert.isRead
+                    ? 'bg-slate-100 text-slate-700'
+                    : 'bg-amber-100 text-amber-800'
+              }`}
+            >
+              {alert.status}
+            </span>
+          </div>
 
           <div className="flex items-center gap-2">
-            <span className="text-[11px] font-extrabold px-2.5 py-0.5 rounded-md bg-rose-50 text-rose-600 border border-rose-200">
+            <span
+              className={`text-[11px] font-extrabold px-2.5 py-0.5 rounded-md ${
+                alert.severityType === 'high'
+                  ? 'bg-rose-50 text-rose-600 border border-rose-200'
+                  : alert.severityType === 'medium'
+                    ? 'bg-amber-50 text-amber-700 border border-amber-200'
+                    : 'bg-emerald-50 text-emerald-700 border border-emerald-200'
+              }`}
+            >
               {alert.severity} Severity
             </span>
             <button
               type="button"
               onClick={onClose}
-              className="p-1 rounded-lg text-slate-400 hover:text-slate-600 hover:bg-slate-100 transition-colors cursor-pointer"
+              className="p-1.5 rounded-lg text-slate-400 hover:text-slate-600 hover:bg-slate-100 transition-colors cursor-pointer"
+              title="Close details"
             >
               <X className="w-4 h-4" />
             </button>
@@ -166,11 +252,11 @@ export default function AlertDetailsPanel({
           <div className="flex items-center gap-2 text-[11px] text-slate-400 font-semibold mt-1">
             <span>{alert.timestamp}</span>
             <span>•</span>
-            <span>Reported by: {alert.reportedBy}</span>
+            <span>Reported by: {alert.reportedBy || 'NER Automated Telemetry Grid'}</span>
           </div>
         </div>
 
-        {/* 3. Photo Banner with Hazard Badge (falls back to a severity panel when no photo is attached) */}
+        {/* 3. Photo Banner with Hazard Badge */}
         <div className="relative w-full h-40 sm:h-48 rounded-2xl overflow-hidden mt-3.5 border border-slate-200/70 bg-slate-100">
           {alert.image ? (
             <img
@@ -184,8 +270,12 @@ export default function AlertDetailsPanel({
                 <AlertTriangle className="w-6 h-6" />
               </div>
               <div>
-                <p className="text-xs font-black text-rose-700 uppercase tracking-wide">{alert.severity} Severity Alert</p>
-                <p className="text-[11px] font-semibold text-slate-500 max-w-55">{alert.locationName || alert.origin}</p>
+                <p className="text-xs font-black text-rose-700 uppercase tracking-wide">
+                  {alert.severity} Severity Corridor Alert
+                </p>
+                <p className="text-[11px] font-semibold text-slate-500 max-w-55">
+                  {alert.locationName || alert.origin}
+                </p>
               </div>
             </div>
           )}
@@ -195,20 +285,18 @@ export default function AlertDetailsPanel({
         </div>
 
         {/* 4. Description */}
-        {alert.description && (
-          <p className="text-xs text-slate-600 font-medium leading-relaxed mt-3.5">
-            {alert.description}
-          </p>
-        )}
+        <p className="text-xs text-slate-600 font-medium leading-relaxed mt-3.5">
+          {alert.description || alert.subtitle}
+        </p>
 
-        {/* 5. Affected Route & Map Section */}
+        {/* 5. Affected Route & Interactive Leaflet Map Section */}
         <div className="mt-4 pt-4 border-t border-slate-100">
           <div className="flex items-center justify-between mb-2">
             <h5 className="text-xs font-black text-slate-900 uppercase tracking-wider">
-              Affected Route
+              Affected Corridor Map
             </h5>
             <span className="text-[10px] font-bold text-slate-500 bg-slate-100 px-2 py-0.5 rounded border border-slate-200">
-              {alert.affectedHighway}
+              {alert.affectedHighway || 'East-West Freight Corridor'}
             </span>
           </div>
 
@@ -216,11 +304,11 @@ export default function AlertDetailsPanel({
           <div className="flex items-center gap-4 text-[10px] font-bold text-slate-500 mb-2.5">
             <div className="flex items-center gap-1.5">
               <span className="w-3 h-1 rounded-full bg-red-500" />
-              <span>Blocked Route</span>
+              <span>Blocked Segment</span>
             </div>
             <div className="flex items-center gap-1.5">
               <span className="w-3 h-1 rounded-full border-b-2 border-emerald-500 border-dashed" />
-              <span>Alternate Route</span>
+              <span>Recommended Detour</span>
             </div>
           </div>
 
@@ -233,10 +321,7 @@ export default function AlertDetailsPanel({
               scrollWheelZoom={false}
               className="w-full h-full z-0"
             >
-              <TileLayer
-                attribution='&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a>'
-                url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png"
-              />
+              <ResilientTileLayer />
 
               {/* Red Blocked Route Polyline */}
               {alert.routeCoordinates?.blocked && (
@@ -244,7 +329,7 @@ export default function AlertDetailsPanel({
                   positions={alert.routeCoordinates.blocked}
                   pathOptions={{
                     color: '#EF4444',
-                    weight: 4,
+                    weight: 4.5,
                     opacity: 0.9,
                   }}
                 />
@@ -257,7 +342,7 @@ export default function AlertDetailsPanel({
                   pathOptions={{
                     color: '#0D7A48',
                     weight: 3.5,
-                    opacity: 0.9,
+                    opacity: 0.95,
                     dashArray: '6, 6',
                   }}
                 />
@@ -266,7 +351,7 @@ export default function AlertDetailsPanel({
               {/* Origin Marker */}
               <Marker
                 position={alert.routeCoordinates?.blocked?.[0] || [26.1445, 91.7362]}
-                icon={createPinIcon('#0D7A48', alert.origin.split(',')[0])}
+                icon={createPinIcon('#0D7A48', (alert.origin || 'Origin').split('(')[0].trim().slice(0, 14))}
               />
 
               {/* Destination Marker */}
@@ -276,13 +361,13 @@ export default function AlertDetailsPanel({
                     alert.routeCoordinates.alternate.length - 1
                   ] || [26.6338, 92.7926]
                 }
-                icon={createPinIcon('#0D7A48', alert.destination.split(',')[0])}
+                icon={createPinIcon('#0D7A48', (alert.destination || 'Destination').split('(')[0].trim().slice(0, 14))}
               />
 
               {/* Hazard Incident Marker */}
               <Marker
                 position={alert.locationCoords || [26.45, 92.6]}
-                icon={createHazardIcon((alert.origin || 'Hazard').split(',')[0].slice(0, 16))}
+                icon={createHazardIcon((alert.origin || 'Hazard').split('(')[0].slice(0, 14))}
               />
 
               <MapControlsHandler
@@ -299,6 +384,7 @@ export default function AlertDetailsPanel({
                 type="button"
                 onClick={() => setZoomInCount((c) => c + 1)}
                 className="p-1 rounded text-slate-600 hover:bg-slate-100 cursor-pointer"
+                title="Zoom In"
               >
                 <Plus className="w-3.5 h-3.5" />
               </button>
@@ -306,6 +392,7 @@ export default function AlertDetailsPanel({
                 type="button"
                 onClick={() => setZoomOutCount((c) => c + 1)}
                 className="p-1 rounded text-slate-600 hover:bg-slate-100 cursor-pointer"
+                title="Zoom Out"
               >
                 <Minus className="w-3.5 h-3.5" />
               </button>
@@ -313,6 +400,7 @@ export default function AlertDetailsPanel({
                 type="button"
                 onClick={() => setCenterCount((c) => c + 1)}
                 className="p-1 rounded text-slate-600 hover:bg-slate-100 cursor-pointer"
+                title="Center Corridor"
               >
                 <Target className="w-3.5 h-3.5" />
               </button>
@@ -328,7 +416,7 @@ export default function AlertDetailsPanel({
                 Suggested Alternate Route
               </span>
               <span className="text-[10px] font-extrabold px-2 py-0.5 rounded-md bg-emerald-50 text-emerald-700 border border-emerald-200">
-                Recommended
+                AI Detour Recommended
               </span>
             </div>
 
@@ -369,13 +457,16 @@ export default function AlertDetailsPanel({
             {/* View Full Alternate Route Button */}
             <motion.button
               type="button"
-              onClick={onViewAlternateRoute}
+              onClick={() => {
+                setShowDetourModal(true);
+                if (onViewAlternateRoute) onViewAlternateRoute();
+              }}
               whileHover={{ scale: 1.01 }}
               whileTap={{ scale: 0.99 }}
               className="w-full py-2.5 rounded-xl bg-[#0D7A48] hover:bg-[#0A633A] text-white text-xs font-bold shadow-sm transition-all flex items-center justify-center gap-2 cursor-pointer"
             >
               <Navigation className="w-3.5 h-3.5" />
-              <span>View Full Alternate Route</span>
+              <span>View Full Alternate Route Detour</span>
             </motion.button>
           </div>
         )}
@@ -385,11 +476,12 @@ export default function AlertDetailsPanel({
       <div className="pt-4 border-t border-slate-100 flex flex-col sm:flex-row sm:items-center justify-between gap-3 text-xs">
         <span className="font-bold text-slate-700">What you can do?</span>
 
-        <div className="flex items-center gap-2">
+        <div className="flex items-center gap-2 flex-wrap">
           <button
             type="button"
-            onClick={onShareAlert}
+            onClick={handleShare}
             className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-white border border-slate-200/90 text-slate-600 font-bold hover:bg-slate-50 transition-colors cursor-pointer"
+            title="Copy alert link to clipboard"
           >
             <Share2 className="w-3.5 h-3.5 text-slate-500" />
             <span>Share Alert</span>
@@ -397,8 +489,9 @@ export default function AlertDetailsPanel({
 
           <button
             type="button"
-            onClick={onDownloadReport}
+            onClick={handleDownload}
             className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-white border border-slate-200/90 text-slate-600 font-bold hover:bg-slate-50 transition-colors cursor-pointer"
+            title="Download Incident Report"
           >
             <Download className="w-3.5 h-3.5 text-slate-500" />
             <span>Download Report</span>
@@ -407,13 +500,124 @@ export default function AlertDetailsPanel({
           <button
             type="button"
             onClick={onMarkAsRead}
-            className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-white border border-slate-200/90 text-slate-600 font-bold hover:bg-slate-50 transition-colors cursor-pointer"
+            disabled={alert.isRead}
+            className={`inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl border font-bold transition-colors cursor-pointer ${
+              alert.isRead
+                ? 'bg-slate-100 text-slate-400 border-slate-200 cursor-default'
+                : 'bg-white border-slate-200/90 text-slate-600 hover:bg-slate-50'
+            }`}
           >
-            <CheckCircle2 className="w-3.5 h-3.5 text-slate-500" />
-            <span>Mark as Read</span>
+            <CheckCircle2 className={`w-3.5 h-3.5 ${alert.isRead ? 'text-emerald-500' : 'text-slate-500'}`} />
+            <span>{alert.isRead ? 'Acknowledged' : 'Mark as Read'}</span>
           </button>
         </div>
       </div>
+
+      {/* 8. Full Alternate Route Detour Modal */}
+      <AnimatePresence>
+        {showDetourModal && (
+          <div className="fixed inset-0 z-[9999] flex items-center justify-center p-4 bg-black/50 backdrop-blur-xs">
+            <motion.div
+              initial={{ opacity: 0, scale: 0.95 }}
+              animate={{ opacity: 1, scale: 1 }}
+              exit={{ opacity: 0, scale: 0.95 }}
+              className="bg-white rounded-3xl max-w-lg w-full p-6 shadow-2xl border border-slate-200 space-y-5"
+            >
+              <div className="flex items-center justify-between border-b border-slate-100 pb-3">
+                <div className="flex items-center gap-2">
+                  <Navigation className="w-5 h-5 text-emerald-600" />
+                  <h3 className="text-base font-black text-slate-900">
+                    Recommended Detour Corridor
+                  </h3>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => setShowDetourModal(false)}
+                  className="p-1 rounded-lg text-slate-400 hover:text-slate-600 hover:bg-slate-100 cursor-pointer"
+                >
+                  <X className="w-4 h-4" />
+                </button>
+              </div>
+
+              <div>
+                <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider block mb-1">
+                  Active Bypass Route
+                </span>
+                <p className="text-sm font-black text-slate-800">
+                  {alert.alternateRoute?.path || 'State Highway Elevated Bypass'}
+                </p>
+                <p className="text-xs text-slate-500 mt-1">
+                  Safe corridor bypass around {alert.origin} avoiding active blockage at {alert.affectedHighway || 'the main corridor'}.
+                </p>
+              </div>
+
+              {/* Detour KPIs */}
+              <div className="grid grid-cols-3 gap-3">
+                <div className="p-3 rounded-2xl bg-slate-50 border border-slate-200/80 text-center">
+                  <span className="text-[10px] font-bold text-slate-400 block">Extra Distance</span>
+                  <span className="text-sm font-black text-slate-900 mt-0.5 block">
+                    {alert.alternateRoute?.extraDistance || '+18.4 km'}
+                  </span>
+                </div>
+                <div className="p-3 rounded-2xl bg-slate-50 border border-slate-200/80 text-center">
+                  <span className="text-[10px] font-bold text-slate-400 block">ETA Delay</span>
+                  <span className="text-sm font-black text-amber-600 mt-0.5 block">
+                    {alert.alternateRoute?.etaIncrease || '+30 mins'}
+                  </span>
+                </div>
+                <div className="p-3 rounded-2xl bg-slate-50 border border-slate-200/80 text-center">
+                  <span className="text-[10px] font-bold text-slate-400 block">Road Rating</span>
+                  <span className="text-sm font-black text-emerald-600 mt-0.5 block">
+                    Passable
+                  </span>
+                </div>
+              </div>
+
+              {/* Waypoint Steps */}
+              <div className="space-y-2">
+                <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider block">
+                  Detour Checkpoints
+                </span>
+                <div className="space-y-2 text-xs font-semibold text-slate-600">
+                  <div className="flex items-center gap-2">
+                    <span className="w-5 h-5 rounded-full bg-emerald-100 text-emerald-700 flex items-center justify-center font-black text-[10px]">1</span>
+                    <span>Diverge from {alert.affectedHighway || 'Main Highway'} at Mile Marker 42</span>
+                  </div>
+                  <div className="flex items-center gap-2">
+                    <span className="w-5 h-5 rounded-full bg-emerald-100 text-emerald-700 flex items-center justify-center font-black text-[10px]">2</span>
+                    <span>Follow Signposted Bypass Corridor (Speed limit 40 km/h)</span>
+                  </div>
+                  <div className="flex items-center gap-2">
+                    <span className="w-5 h-5 rounded-full bg-emerald-100 text-emerald-700 flex items-center justify-center font-black text-[10px]">3</span>
+                    <span>Cross Elevated Brahmaputra Bridge Link with verified clearance</span>
+                  </div>
+                  <div className="flex items-center gap-2">
+                    <span className="w-5 h-5 rounded-full bg-emerald-100 text-emerald-700 flex items-center justify-center font-black text-[10px]">4</span>
+                    <span>Rejoin National Highway towards {alert.destination}</span>
+                  </div>
+                </div>
+              </div>
+
+              <div className="pt-3 border-t border-slate-100 flex items-center justify-end gap-2.5">
+                <button
+                  type="button"
+                  onClick={() => setShowDetourModal(false)}
+                  className="px-4 py-2 rounded-xl border border-slate-200 text-slate-600 font-bold text-xs hover:bg-slate-50 cursor-pointer"
+                >
+                  Close
+                </button>
+                <a
+                  href={`/transporter/route-planning?from=${encodeURIComponent(alert.origin)}&to=${encodeURIComponent(alert.destination)}`}
+                  className="px-4 py-2 rounded-xl bg-[#0D7A48] hover:bg-[#0A633A] text-white font-bold text-xs transition-colors cursor-pointer flex items-center gap-1.5"
+                >
+                  <span>Open in Route Planner</span>
+                  <ArrowRight className="w-3.5 h-3.5" />
+                </a>
+              </div>
+            </motion.div>
+          </div>
+        )}
+      </AnimatePresence>
     </div>
   );
 }

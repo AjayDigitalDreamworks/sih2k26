@@ -25,7 +25,7 @@ export default function TransporterKPIs() {
           const totalFleet = live.totalFleet ?? 0;
           const inTransit = live.deliveriesInTransit ?? 0;
           const delayed = live.delayedDeliveries ?? 0;
-          const rateNum = typeof live.onTimeRate === 'number' ? live.onTimeRate : parseFloat(live.onTimeRate) || 95;
+          const rateNum = live.onTimeRate != null && !isNaN(parseFloat(live.onTimeRate)) ? parseFloat(live.onTimeRate) : null;
 
           setData([
             {
@@ -62,11 +62,11 @@ export default function TransporterKPIs() {
             },
             {
               ...zeroData[4],
-              value: live.onTimeRate ?? '—',
-              change: rateNum >= 90 ? 'optimal window' : 'monitoring',
-              isIncrease: rateNum >= 80 ? true : false,
-              sparkline: [88, 90, 92, rateNum],
-              color: rateNum >= 85 ? 'emerald' : 'rose',
+              value: rateNum !== null ? `${rateNum}%` : '—',
+              change: rateNum !== null ? (rateNum >= 90 ? 'optimal window' : 'monitoring') : 'no completed trips',
+              isIncrease: rateNum !== null ? (rateNum >= 80 ? true : false) : null,
+              sparkline: rateNum !== null ? [Math.max(0, rateNum - 4), Math.max(0, rateNum - 2), rateNum, rateNum] : [0, 0, 0, 0],
+              color: rateNum !== null ? (rateNum >= 85 ? 'emerald' : 'rose') : 'slate',
             },
           ]);
         } else {

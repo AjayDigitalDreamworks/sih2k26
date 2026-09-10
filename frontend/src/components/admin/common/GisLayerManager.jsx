@@ -39,6 +39,7 @@ const LAYER_CATEGORIES = [
     name: 'Weather & Risk',
     layers: [
       { id: 'weather', name: 'Weather', icon: Cloud, color: '#06B6D4', realtime: true },
+      { id: 'imd_radar', name: 'IMD Radar Observatories', icon: Radio, color: '#DC2626', realtime: true },
       { id: 'rainfall', name: 'Rainfall', icon: Droplets, color: '#2563EB' },
       { id: 'risk_flood', name: 'Flood Risk', icon: Droplets, color: '#DC2626', realtime: true },
       { id: 'risk_landslide', name: 'Landslide Risk', icon: Mountain, color: '#EA580C', realtime: true },

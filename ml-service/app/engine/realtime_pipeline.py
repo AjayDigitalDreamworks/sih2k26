@@ -282,36 +282,26 @@ async def _risk_recalculation_pass(state: PipelineState, force_context_refresh: 
         if not db_available:
             print("  [WARN] No corridor context from DB — using static config fallback.")
 
+        # Pre-fetch all district signals ONCE in parallel (O(1) lookup inside road loop)
+        dist_summary_list = await DataAggregator.get_all_districts_summary()
+        dist_summary_map = {d.get("district_id"): d for d in dist_summary_list if isinstance(d, dict) and d.get("district_id")}
+
         for road in ROAD_NETWORK:
             from_id = road["from"]
             to_id = road["to"]
             route_key = f"{from_id}-{to_id}"
 
-            # --- Real-time weather ---
-            try:
-                weather_from = await WeatherService.get_district_weather(from_id)
-                weather_to = await WeatherService.get_district_weather(to_id)
-                rainfall = max(
-                    weather_from.get("rainfall_24h_mm") or 0,
-                    weather_to.get("rainfall_24h_mm") or 0,
-                )
-            except Exception:
-                rainfall = 12.0
+            # --- Real-time weather & flood/landslide from pre-fetched district signals ---
+            summary_from = dist_summary_map.get(from_id, {})
+            summary_to = dist_summary_map.get(to_id, {})
+            rainfall = max(
+                float(summary_from.get("rainfall_mm") or 0),
+                float(summary_to.get("rainfall_mm") or 0),
+            )
+            flood_level = float(summary_from.get("flood_risk_level") or 0)
+            landslide_prob = float(summary_from.get("landslide_probability") or 0.1)
 
-            # --- Real-time flood / landslide ---
-            try:
-                flood = await FloodService.get_district_flood_risk(from_id)
-                flood_level = flood.get("flood_risk_level", 0)
-            except Exception:
-                flood_level = 0
-
-            try:
-                landslide = await LandslideService.get_district_landslide_risk(from_id)
-                landslide_prob = landslide.get("hazard_probability", 0.1)
-            except Exception:
-                landslide_prob = 0.1
-
-            # --- Real-time traffic congestion ---
+            # --- Real-time traffic congestion (cached per route) ---
             try:
                 origin = APIConfig.NER_DISTRICTS.get(from_id, {})
                 dest = APIConfig.NER_DISTRICTS.get(to_id, {})
@@ -694,8 +684,10 @@ async def _continual_learning_task(state: PipelineState):
         print(f"  [WARN] Continual learning check skipped: {e}")
 
 
-async def _run_task_loop(task_func, interval: int, task_name: str, state: PipelineState):
-    """Run a task in a loop with the specified interval."""
+async def _run_task_loop(task_func, interval: int, task_name: str, state: PipelineState, initial_delay: int = 0):
+    """Run a task in a loop with the specified interval and optional startup delay."""
+    if initial_delay > 0:
+        await asyncio.sleep(initial_delay)
     while state.running:
         try:
             start = time.time()
@@ -720,33 +712,32 @@ async def start_pipeline():
     print("  " + datetime.utcnow().isoformat())
     print("="*60)
 
-    # Run all tasks in parallel. Each loop executes its first pass immediately,
-    # so the app stays responsive while live-API checks run in the background.
-    print("\n  Running initial checks in background (non-blocking)...")
+    # Stagger tasks so the server boots instantly without an immediate thundering herd
+    print("\n  Running background checks with staggered warmups (non-blocking)...")
     tasks = [
         asyncio.create_task(_run_task_loop(
             _weather_monitoring_task, INTERVALS["weather_check"],
-            "Weather Monitoring", state
+            "Weather Monitoring", state, initial_delay=5
         )),
         asyncio.create_task(_run_task_loop(
             _risk_recalculation_task, INTERVALS["risk_recalculation"],
-            "Risk Recalculation", state
+            "Risk Recalculation", state, initial_delay=12
         )),
         asyncio.create_task(_run_task_loop(
             _disruption_prediction_task, INTERVALS["disruption_prediction"],
-            "Disruption Prediction", state
+            "Disruption Prediction", state, initial_delay=20
         )),
         asyncio.create_task(_run_task_loop(
             _map_update_task, INTERVALS["map_update"],
-            "Map Update", state
+            "Map Update", state, initial_delay=25
         )),
         asyncio.create_task(_run_task_loop(
             _continual_learning_task, INTERVALS["continual_learning_check"],
-            "Continual Learning Retraining", state
+            "Continual Learning Retraining", state, initial_delay=40
         )),
     ]
 
-    print("\n  [OK] Pipeline started! All tasks running in background.")
+    print("\n  [OK] Pipeline started! All tasks scheduled in background.")
     print("="*60 + "\n")
 
     return tasks

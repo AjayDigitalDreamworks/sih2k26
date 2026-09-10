@@ -35,5 +35,42 @@
         0.07081867754459381
       ]
     ]
+  },
+  {
+    "iteration": 2,
+    "timestamp": "2026-09-10T07:52:58.199061",
+    "total_samples": 3005,
+    "new_feedback_samples": 5,
+    "hard_false_negatives": 4,
+    "smooth_transits": 1,
+    "metrics": {
+      "mae": 2.72,
+      "rmse": 3.436,
+      "r2": 0.9416,
+      "level_accuracy": 0.9401,
+      "f1_score": 0.94
+    },
+    "top_features": [
+      [
+        "road_condition",
+        0.2722245454788208
+      ],
+      [
+        "historical_disruptions",
+        0.22204427421092987
+      ],
+      [
+        "bridge_condition",
+        0.15247716009616852
+      ],
+      [
+        "landslide_probability",
+        0.12417299300432205
+      ],
+      [
+        "flood_risk_level",
+        0.07826576381921768
+      ]
+    ]
   }
 ]

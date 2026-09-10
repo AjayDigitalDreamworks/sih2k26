@@ -25,6 +25,9 @@ export const AnalyticsPage = () => {
   const delays = delayTrends || [];
   const onTime = delays.filter(d => (d.avgDelayHours || 0) === 0).length;
   const delayed = delays.length - onTime;
+  const avgDelayHours = delays.length
+    ? (delays.reduce((acc, d) => acc + (Number(d.avgDelayHours) || 0), 0) / delays.length).toFixed(1)
+    : '0.0';
   const complianceData = [
     { label: 'On-Time (no delay)', count: onTime, percentage: delays.length ? Math.round(onTime / delays.length * 100) : 0, color: '#10B981' },
     { label: 'Delayed Routes', count: delayed, percentage: delays.length ? Math.round(delayed / delays.length * 100) : 0, color: '#F59E0B' },
@@ -135,10 +138,12 @@ export const AnalyticsPage = () => {
           </div>
 
           <div style={{ background: 'rgba(255,255,255,0.05)', borderRadius: '8px', padding: '14px 16px', border: '1px solid rgba(255,255,255,0.08)' }}>
-            <div style={{ fontSize: '11px', color: '#94A3B8', textTransform: 'uppercase', letterSpacing: '0.05em' }}>Fleet Idle Reduction</div>
-            <div style={{ fontSize: '22px', fontWeight: 800, color: '#FBBF24', margin: '4px 0' }}>-14.2% Bottleneck Delays</div>
+            <div style={{ fontSize: '11px', color: '#94A3B8', textTransform: 'uppercase', letterSpacing: '0.05em' }}>Average Corridor Delay</div>
+            <div style={{ fontSize: '22px', fontWeight: 800, color: '#FBBF24', margin: '4px 0' }}>
+              {Number(avgDelayHours) > 0 ? `${avgDelayHours}h Delay` : '0.0h Delay'}
+            </div>
             <p style={{ fontSize: '12px', color: '#CBD5E1', margin: 0, lineHeight: 1.4 }}>
-              Reduced stranded delay hours through automated driver broadcast reroutes.
+              Live calculated delay across monitored freight corridors.
             </p>
           </div>
         </div>

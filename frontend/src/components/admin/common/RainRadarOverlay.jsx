@@ -99,7 +99,8 @@ export const RainRadarOverlay = ({ onState, opacity = 0.5 }) => {
       url={url}
       opacity={opacity}
       zIndex={300}
-      maxNativeZoom={10}
+      maxNativeZoom={7}
+      maxZoom={20}
       minZoom={3}
     />
   );

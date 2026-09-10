@@ -33,6 +33,8 @@ router.delete('/drivers/:id', TransporterController.deleteDriver);
 
 // 5. Alerts
 router.get('/alerts', TransporterController.getAlerts);
+router.patch('/alerts/:id', TransporterController.updateAlertStatus);
+router.post('/alerts/mark-all-read', TransporterController.markAllAlertsRead);
 
 // 6. Deliveries
 router.post('/deliveries', TransporterController.createDelivery);

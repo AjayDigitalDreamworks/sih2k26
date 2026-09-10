@@ -4,6 +4,13 @@ import "leaflet/dist/leaflet.css";
 import { Truck } from "lucide-react";
 import { getSocket } from "@/lib/socket";
 import { useVehicleTracking } from "@/hooks/useVehicleTracking";
+import {
+  CARTO_VOYAGER_URL,
+  CARTO_POSITRON_URL,
+  ESRI_SATELLITE_URL,
+  CARTO_ATTRIBUTION,
+  ESRI_ATTRIBUTION,
+} from "@/config/mapConfig";
 
 export const NORTHEAST_HUBS = [
   { name: "Guwahati", state: "Assam", lat: 26.1445, lng: 91.7362, type: "hub", elevation: "55m" },
@@ -166,15 +173,16 @@ export function NortheastMap({
     L.control.zoom({ position: "bottomright" }).addTo(map);
 
     const tileUrls = {
-      voyager: "https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png",
-      satellite: "https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}",
-      positron: "https://{s}.tile.openstreetmap.fr/hot/{z}/{x}/{y}.png",
+      voyager: CARTO_VOYAGER_URL,
+      satellite: ESRI_SATELLITE_URL,
+      positron: CARTO_POSITRON_URL,
     };
 
     const tileLayer = L.tileLayer(tileUrls.voyager, {
-      maxZoom: 18,
-      attribution: '© <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors',
-      subdomains: "abc",
+      maxZoom: 20,
+      maxNativeZoom: 19,
+      attribution: CARTO_ATTRIBUTION,
+      subdomains: "abcd",
     }).addTo(map);
 
     map._currentTileLayer = tileLayer;
@@ -250,9 +258,9 @@ export function NortheastMap({
     if (!map) return;
 
     const tileUrls = {
-      voyager: "https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png",
-      satellite: "https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}",
-      positron: "https://{s}.tile.openstreetmap.fr/hot/{z}/{x}/{y}.png",
+      voyager: CARTO_VOYAGER_URL,
+      satellite: ESRI_SATELLITE_URL,
+      positron: CARTO_POSITRON_URL,
     };
 
     if (map._currentTileLayer) {
@@ -261,10 +269,10 @@ export function NortheastMap({
 
     const isEsri = tileLayerType === 'satellite';
     const newLayer = L.tileLayer(tileUrls[tileLayerType], {
-      maxZoom: 18,
-      maxNativeZoom: isEsri ? 17 : 18,
-      attribution: isEsri ? '© Esri, Maxar' : '© OpenStreetMap contributors',
-      subdomains: "abc",
+      maxZoom: isEsri ? 19 : 20,
+      maxNativeZoom: isEsri ? 17 : 19,
+      attribution: isEsri ? ESRI_ATTRIBUTION : CARTO_ATTRIBUTION,
+      subdomains: isEsri ? "abc" : "abcd",
     }).addTo(map);
 
     map._currentTileLayer = newLayer;

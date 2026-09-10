@@ -387,12 +387,27 @@ export class TransporterController {
         bridgeWarning.vehicleGvwTons = vehicleGvwTons;
       }
 
+      // ─── CHECK IMD CORRIDOR WEATHER IMPACT ───────────────────────────
+      let imdCorridorAdvisory: any = null;
+      try {
+        const mlRes = await fetch(`${env.mlServiceUrl}/realtime/imd/corridor-check`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ districts: [originDistrictId, destDistrictId] }),
+        });
+        if (mlRes.ok) {
+          imdCorridorAdvisory = await mlRes.json();
+        }
+      } catch (_e) {
+        // Fallback gracefully
+      }
+
       // ─── COST VS. SAFETY TRADEOFF MATRIX ─────────────────────────────
       // Primary route (Shortest Direct highway)
       const primaryDist = shortestOpt?.totalDistanceKm || Math.round(routeDistance * 0.9);
-      const primaryHours = Math.round((primaryDist / 42) * 10) / 10;
+      let primaryHours = Math.round((primaryDist / 42) * 10) / 10;
       const primaryDieselCost = Math.round(primaryDist * dieselPrice);
-      const primaryHazardPct = Math.min(95, Math.round(routeRisk * 1.3));
+      let primaryHazardPct = Math.min(95, Math.round(routeRisk * 1.3));
 
       // Detour route (All-Weather Safest Bypass)
       const detourDist = safestOpt?.totalDistanceKm || Math.round(routeDistance * 1.15);
@@ -400,13 +415,21 @@ export class TransporterController {
       const detourDieselCost = Math.round(detourDist * dieselPrice);
       const detourHazardPct = Math.max(10, Math.round(routeRisk * 0.35));
 
+      // Apply IMD severe weather penalty if active along corridor
+      if (imdCorridorAdvisory?.severeWeather) {
+        primaryHazardPct = Math.min(98, primaryHazardPct + (imdCorridorAdvisory.riskPenalty || 35));
+        primaryHours = Math.round((primaryDist / Math.max(20, (imdCorridorAdvisory.speedAdvisoryKmh || 25))) * 10) / 10;
+      }
+
       const deltaDistance = Math.round((detourDist - primaryDist) * 10) / 10;
       const deltaTime = Math.round((detourHours - primaryHours) * 10) / 10;
       const deltaCost = detourDieselCost - primaryDieselCost;
       const deltaHazard = detourHazardPct - primaryHazardPct; // negative when detour cuts hazard
 
       let recommendation = '';
-      if (deltaCost > 0 && deltaHazard < 0) {
+      if (imdCorridorAdvisory?.severeWeather && imdCorridorAdvisory?.detourRecommended) {
+        recommendation = imdCorridorAdvisory.justification || `Official IMD Alert: Detour corridor selected (+${deltaDistance} km, ₹${deltaCost} fuel delta) to avoid active severe weather zone.`;
+      } else if (deltaCost > 0 && deltaHazard < 0) {
         recommendation = `Pay ₹${deltaCost} extra in fuel to avoid ${Math.abs(deltaHazard)}% higher landslide risk on the primary route.`;
       } else if (deltaCost <= 0 && deltaHazard <= 0) {
         recommendation = 'Detour corridor is optimal on both commercial cost and weather safety.';
@@ -424,6 +447,7 @@ export class TransporterController {
         deltaHazardPercent: deltaHazard,
         recommendation,
         recommendationCopy: recommendation,
+        imdAdvisory: imdCorridorAdvisory,
       };
 
       const suggestion = {
@@ -431,6 +455,7 @@ export class TransporterController {
         name: route.name,
         origin: { districtId: originDistrictId, name: originName },
         destination: { districtId: destDistrictId, name: destName },
+        imdAdvisory: imdCorridorAdvisory,
         primary: primaryAlt,
         safest: safestOpt ? {
           routeId: route.id,
@@ -971,8 +996,46 @@ export class TransporterController {
   // 5. Relevant Alerts
   static async getAlerts(req: Request, res: Response) {
     try {
-      const alerts = await Alert.find({ status: 'active' }).sort({ createdAt: -1 }).limit(10);
+      const { status, severity, limit = 50 } = req.query;
+      const filter: any = {};
+      if (status && status !== 'all') {
+        filter.status = status;
+      }
+      if (severity && severity !== 'all') {
+        filter.severity = new RegExp(`^${severity}$`, 'i');
+      }
+      const alerts = await Alert.find(filter).sort({ createdAt: -1 }).limit(Number(limit) || 50);
       return sendSuccess(res, alerts, 'Corridor alerts for fleet retrieved');
+    } catch (err: any) {
+      return sendError(res, err.message);
+    }
+  }
+
+  static async updateAlertStatus(req: Request, res: Response) {
+    try {
+      const { id } = req.params;
+      const { status = 'acknowledged' } = req.body;
+      const updated = await Alert.findOneAndUpdate(
+        { $or: [{ id }, { _id: id }] },
+        { status },
+        { new: true }
+      );
+      if (!updated) {
+        return sendError(res, 'Alert not found', 404);
+      }
+      return sendSuccess(res, updated, 'Alert status updated successfully');
+    } catch (err: any) {
+      return sendError(res, err.message);
+    }
+  }
+
+  static async markAllAlertsRead(req: Request, res: Response) {
+    try {
+      await Alert.updateMany(
+        { status: 'active' },
+        { $set: { status: 'acknowledged' } }
+      );
+      return sendSuccess(res, null, 'All active corridor alerts marked as read');
     } catch (err: any) {
       return sendError(res, err.message);
     }

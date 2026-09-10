@@ -154,53 +154,6 @@ export const featureCards = [
   },
 ];
 
-export const statsItems = [
-  {
-    id: 1,
-    value: '12,500+',
-    label: 'KM of Roads Monitored',
-    icon: 'road',
-    valueColor: 'text-emerald-600',
-    iconColor: 'text-emerald-600',
-    iconBg: 'bg-emerald-50',
-  },
-  {
-    id: 2,
-    value: '122+',
-    label: 'Districts Covered',
-    icon: 'building',
-    valueColor: 'text-blue-600',
-    iconColor: 'text-blue-600',
-    iconBg: 'bg-blue-50',
-  },
-  {
-    id: 3,
-    value: '8,450+',
-    label: 'Active Vehicles',
-    icon: 'truck',
-    valueColor: 'text-purple-600',
-    iconColor: 'text-purple-600',
-    iconBg: 'bg-purple-50',
-  },
-  {
-    id: 4,
-    value: '2,300+',
-    label: 'Alerts Generated',
-    icon: 'alert-triangle',
-    valueColor: 'text-orange-500',
-    iconColor: 'text-orange-500',
-    iconBg: 'bg-orange-50',
-  },
-  {
-    id: 5,
-    value: '1.2L+',
-    label: 'Deliveries Tracked',
-    icon: 'package',
-    valueColor: 'text-teal-600',
-    iconColor: 'text-teal-600',
-    iconBg: 'bg-teal-50',
-  },
-];
 
 export const nerStates = [
   { name: 'Arunachal Pradesh', x: '72%', y: '10%' },

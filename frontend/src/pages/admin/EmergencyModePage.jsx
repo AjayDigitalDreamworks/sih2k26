@@ -45,116 +45,20 @@ export const EmergencyModePage = () => {
   const [stockpileFilter, setStockpileFilter] = useState('all');
   const [recomputingDosr, setRecomputingDosr] = useState(false);
 
-  // Interactive Emergency Stockpile State
-  const [stockpileData, setStockpileData] = useState([
-    {
-      id: 'cachar',
-      name: 'Cachar (Silchar)',
-      status: 'isolated',
-      statusLabel: 'ISOLATED (SEVERED)',
-      route: 'NH-6 via Sonapur (Severed)',
-      medicalOxygen: 1.8,
-      infantFood: 3.2,
-      firstAidSupplies: 1.5,
-      essentialGrains: 6.0,
-      bypassOption: 'IWAI Inland Ro-Ro Barge + Umrangso Route',
-    },
-    {
-      id: 'dima_hasao',
-      name: 'Dima Hasao (Haflong)',
-      status: 'isolated',
-      statusLabel: 'ISOLATED (BLOCKED)',
-      route: 'Hill Section NH-27 (Blocked at km 84)',
-      medicalOxygen: 1.2,
-      infantFood: 2.1,
-      firstAidSupplies: 1.4,
-      essentialGrains: 4.5,
-      bypassOption: 'Lumding Relief Railway + Foothill Bypass',
-    },
-    {
-      id: 'aizawl',
-      name: 'Aizawl (Mizoram)',
-      status: 'partial_access',
-      statusLabel: 'PARTIAL ACCESS',
-      route: 'NH-306 Corridor',
-      medicalOxygen: 4.2,
-      infantFood: 5.0,
-      firstAidSupplies: 3.8,
-      essentialGrains: 10.0,
-      bypassOption: 'Vairengte Hill Road Convoy Escort',
-    },
-    {
-      id: 'kohima',
-      name: 'Kohima (Nagaland)',
-      status: 'partial_access',
-      statusLabel: 'SLOPE CAUTION',
-      route: 'NH-29 Dimapur-Kohima Axis',
-      medicalOxygen: 3.8,
-      infantFood: 4.5,
-      firstAidSupplies: 3.2,
-      essentialGrains: 8.5,
-      bypassOption: 'Peducha Alternate Ridge Route',
-    },
-    {
-      id: 'kamrup',
-      name: 'Kamrup (Guwahati Hub)',
-      status: 'operational',
-      statusLabel: 'OPERATIONAL BASE',
-      route: 'All Primary Arteries Clear',
-      medicalOxygen: 15.0,
-      infantFood: 20.0,
-      firstAidSupplies: 14.0,
-      essentialGrains: 30.0,
-      bypassOption: 'Primary State Logistics Depot',
-    },
-  ]);
+  // Dynamic Emergency Stockpile State (populated from live DoSR telemetry)
+  const [stockpileData, setStockpileData] = useState([]);
 
-  // Active In-Transit Emergency Relief Convoys
-  const [reliefConvoys, setReliefConvoys] = useState([
-    {
-      id: 'CONVOY-RELIEF-01',
-      vehicle: 'AS-01-GC-4412 (Tata 407)',
-      driver: 'Bipul Sarma (+91 98640 12345)',
-      cargo: 'Medical Oxygen Cylinders (200 Units)',
-      destination: 'Silchar Civil Hospital (Cachar)',
-      status: 'In Transit — Green Corridor Priority',
-      statusColor: '#059669',
-      priority: 'CRITICAL PRIORITY 1',
-      corridor: 'IWAI Pandu Port Ro-Ro Bypass',
-      eta: '3h 20m',
-    },
-    {
-      id: 'CONVOY-RELIEF-02',
-      vehicle: 'AS-11-BC-8921 (Ashok Leyland 1618)',
-      driver: 'Pranab Das (+91 94350 67890)',
-      cargo: 'Infant Food & Emergency Medicines',
-      destination: 'Haflong Relief Center (Dima Hasao)',
-      status: 'Holding at Nagaon Depot (Awaiting Escort)',
-      statusColor: '#D97706',
-      priority: 'HIGH PRIORITY 2',
-      corridor: 'Rerouting via Umrangso Hill Corridor',
-      eta: '5h 45m',
-    },
-    {
-      id: 'CONVOY-RELIEF-03',
-      vehicle: 'TR-01-A-5520 (Eicher Pro 3015)',
-      driver: 'Joyanta Deb (+91 97740 33211)',
-      cargo: 'Emergency Food Rations & Water Kits',
-      destination: 'Aizawl Distribution Center (Mizoram)',
-      status: 'Cleared Vairengte Checkpost',
-      statusColor: '#2563EB',
-      priority: 'HIGH PRIORITY 2',
-      corridor: 'NH-306 Convoy Lane',
-      eta: '6h 10m',
-    },
-  ]);
+  // Active In-Transit Emergency Relief Convoys (populated from live deliveries and active fleet)
+  const [reliefConvoys, setReliefConvoys] = useState([]);
 
   const loadData = useCallback(async () => {
     try {
       setLoading(true);
-      const [disruptRes, gapRes] = await Promise.allSettled([
+      const [disruptRes, gapRes, vehicleRes, deliveryRes] = await Promise.allSettled([
         ApiClient.getPipelineDisruptions(),
         ApiClient.getSupplyChainGaps(),
+        ApiClient.getAdminVehicles(),
+        ApiClient.request('/admin/deliveries'),
       ]);
 
       if (disruptRes.status === 'fulfilled' && disruptRes.value?.success && disruptRes.value.data?.predictions) {
@@ -163,33 +67,82 @@ export const EmergencyModePage = () => {
 
       if (gapRes.status === 'fulfilled' && gapRes.value?.success) {
         const rawDistricts = gapRes.value.districts || (Array.isArray(gapRes.value.data) ? gapRes.value.data : []);
-        if (rawDistricts && rawDistricts.length > 0) {
-          setStockpileData((prev) =>
-            prev.map((item) => {
-              const matched = rawDistricts.find(
-                (sd) =>
-                  sd.districtId?.toLowerCase() === item.id.toLowerCase() ||
-                  sd.districtName?.toLowerCase() === item.name.toLowerCase().split(' ')[0]
-              );
-              if (matched) {
-                return {
-                  ...item,
-                  dosrDays: matched.dosrDays,
-                  enduranceState: matched.enduranceState,
-                  hospitalBedCapacity: matched.hospitalBedCapacity,
-                  dailyBurnRateKg: matched.dailyBurnRateKg,
-                  missingBurnRateConfig: matched.missingBurnRateConfig,
-                  medicalOxygen: matched.criticalSupplies?.medicalOxygen ?? item.medicalOxygen,
-                  infantFood: matched.criticalSupplies?.infantFood ?? item.infantFood,
-                  firstAidSupplies: matched.criticalSupplies?.firstAidSupplies ?? item.firstAidSupplies,
-                  essentialGrains: matched.criticalSupplies?.essentialGrains ?? item.essentialGrains,
-                };
+        if (Array.isArray(rawDistricts) && rawDistricts.length > 0) {
+          const districtMap = new Map();
+          for (const d of rawDistricts) {
+            const id = d.districtId || d.id;
+            if (!id) continue;
+            if (!districtMap.has(id)) {
+              districtMap.set(id, {
+                id,
+                name: d.districtName || id,
+                status: d.status === 'isolated' || d.enduranceState === 'critical' ? 'isolated' : (d.status === 'partial_access' || d.enduranceState === 'moderate') ? 'partial_access' : 'operational',
+                statusLabel: d.status === 'isolated' || d.enduranceState === 'critical' ? 'ISOLATED (CRITICAL DOSR)' : (d.status === 'partial_access' || d.enduranceState === 'moderate') ? 'PARTIAL ACCESS (CAUTION)' : 'OPERATIONAL BASE',
+                route: d.route || 'Primary Corridor Connected',
+                dosrDays: d.dosrDays != null ? d.dosrDays : null,
+                enduranceState: d.enduranceState,
+                hospitalBedCapacity: d.hospitalBedCapacity,
+                dailyBurnRateKg: d.dailyBurnRateKg,
+                missingBurnRateConfig: d.missingBurnRateConfig,
+                medicalOxygen: d.criticalSupplies?.medicalOxygen ?? (d.commodity === 'Medicine' ? d.dosrDays : (d.dosrDays ?? 0)),
+                infantFood: d.criticalSupplies?.infantFood ?? (d.commodity === 'Food' ? d.dosrDays : 0),
+                firstAidSupplies: d.criticalSupplies?.firstAidSupplies ?? 0,
+                essentialGrains: d.criticalSupplies?.essentialGrains ?? 0,
+                bypassOption: d.bypassOption || 'All-Weather Highway Corridor',
+              });
+            } else {
+              const item = districtMap.get(id);
+              if (d.commodity === 'Medicine') item.medicalOxygen = d.dosrDays;
+              if (d.commodity === 'Food') item.infantFood = d.dosrDays;
+              if (d.dosrDays != null && (item.dosrDays == null || d.dosrDays < item.dosrDays)) {
+                item.dosrDays = d.dosrDays;
+                item.enduranceState = d.enduranceState;
               }
-              return item;
-            })
-          );
+            }
+          }
+          setStockpileData(Array.from(districtMap.values()));
+        } else {
+          setStockpileData([]);
         }
       }
+
+      // Live Relief Convoys derived from active in-transit deliveries & moving vehicles
+      const convoys = [];
+      if (deliveryRes.status === 'fulfilled' && deliveryRes.value?.success && Array.isArray(deliveryRes.value.data)) {
+        const activeDeliveries = deliveryRes.value.data.filter((d) => ['in_transit', 'delayed', 'dispatched'].includes(d.status));
+        for (const d of activeDeliveries) {
+          convoys.push({
+            id: d.id || `DEL-${d.id}`,
+            vehicle: d.vehicle_id || d.vehicleId || 'Assigned Transport',
+            driver: d.driver_name || d.driverName || d.driver_phone || 'Driver Dispatched',
+            cargo: `${d.commodity_type || d.commodity || 'Supplies'} (${d.weight_kg ? d.weight_kg + ' kg' : 'Standard Manifest'})`,
+            destination: d.destination_address || d.dest_district_id || 'Designated Depot',
+            status: d.status === 'delayed' ? 'Delayed — Telemetry Monitoring' : 'In Transit — Active Dispatch',
+            statusColor: d.status === 'delayed' ? '#D97706' : '#059669',
+            priority: d.priority ? `${d.priority.toUpperCase()} PRIORITY` : 'CRITICAL PRIORITY',
+            corridor: d.route_id || 'Active Transit Corridor',
+            eta: d.estimated_arrival ? new Date(d.estimated_arrival).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) : (d.eta || 'En Route'),
+          });
+        }
+      }
+      if (vehicleRes.status === 'fulfilled' && vehicleRes.value?.success && Array.isArray(vehicleRes.value.data)) {
+        const movingVehicles = vehicleRes.value.data.filter((v) => v.status === 'moving' && !convoys.some((c) => c.vehicle === v.id));
+        for (const v of movingVehicles) {
+          convoys.push({
+            id: `CVY-${v.id}`,
+            vehicle: `${v.id} (${v.model || v.vehicle_type || 'Fleet Transport'})`,
+            driver: v.current_driver_name || v.driver_id || 'Assigned Driver',
+            cargo: `Essential Supplies (${v.loaded_kg ? v.loaded_kg + ' kg' : 'Fleet Payload'})`,
+            destination: v.current_route || 'Destination Hub',
+            status: 'In Transit — Active Fleet',
+            statusColor: '#059669',
+            priority: 'ACTIVE DISPATCH',
+            corridor: v.current_route || 'National Highway Link',
+            eta: 'En Route',
+          });
+        }
+      }
+      setReliefConvoys(convoys);
     } catch (e) {
       console.warn('Could not load ML disruption or supply chain predictions:', e);
     } finally {
@@ -724,7 +677,13 @@ export const EmergencyModePage = () => {
               </tr>
             </thead>
             <tbody>
-              {filteredStockpiles.map((d) => {
+              {filteredStockpiles.length === 0 ? (
+                <tr>
+                  <td colSpan={9} style={{ textAlign: 'center', padding: '36px 16px', color: 'var(--text-muted)', fontSize: '12px' }}>
+                    {loading ? 'Evaluating live district stockpile levels...' : 'No district stockpile telemetry reported.'}
+                  </td>
+                </tr>
+              ) : filteredStockpiles.map((d) => {
                 const isIso = d.status === 'isolated';
                 const isCritOx = d.medicalOxygen <= 2.0;
                 const isCritMeds = d.firstAidSupplies <= 2.0;
@@ -884,7 +843,13 @@ export const EmergencyModePage = () => {
               </tr>
             </thead>
             <tbody>
-              {reliefConvoys.map((convoy) => (
+              {reliefConvoys.length === 0 ? (
+                <tr>
+                  <td colSpan={7} style={{ textAlign: 'center', padding: '36px 16px', color: 'var(--text-muted)', fontSize: '12px' }}>
+                    No active emergency relief convoys in transit. Click "Fast-Track Convoy" on any district or deploy via Route Optimization to mobilize fleet.
+                  </td>
+                </tr>
+              ) : reliefConvoys.map((convoy) => (
                 <tr key={convoy.id}>
                   <td>
                     <div style={{ fontWeight: 700, color: '#0F172A' }}>{convoy.id}</div>

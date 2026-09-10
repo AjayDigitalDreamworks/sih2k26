@@ -56,6 +56,8 @@ class APIConfig:
     # --- IMD (India Meteorological Department) ---
     IMD_BASE_URL = os.getenv("IMD_API_URL", "https://api.imd.gov.in/api/v1")
     IMD_API_KEY = os.getenv("IMD_API_KEY", "")
+    IMD_JWT_TOKEN = os.getenv("IMD_JWT_TOKEN", "")
+    IMD_INTEGRATION_ENABLED = os.getenv("IMD_INTEGRATION_ENABLED", "true").lower() in ("true", "1", "yes")
 
     # --- NASA LHASA (Landslide Hazard Assessment) ---
     NASA_LHASA_URL = os.getenv("NASA_LHASA_URL", "https://maps.nccs.nasa.gov/download/landslides")

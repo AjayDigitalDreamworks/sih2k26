@@ -515,7 +515,22 @@ async def plan_route(payload: Dict[str, Any]):
     blocked_corridors_raw = payload.get("blockedCorridors") or payload.get("blocked_corridors") or []
     if isinstance(blocked_corridors_raw, str):
         blocked_corridors_raw = [blocked_corridors_raw]
-    corridor_alerts_raw = payload.get("corridorAlerts") or payload.get("alerts") or []
+    corridor_alerts_raw = list(payload.get("corridorAlerts") or payload.get("alerts") or [])
+
+    # Automatically ingest active IMD RED / severe warnings into routing avoidance
+    try:
+        imd_nowcasts = await WeatherService.get_active_nowcasts("warning")
+        for nc in imd_nowcasts:
+            if nc.get("alertColor") == "red":
+                corridor_alerts_raw.append({
+                    "district": nc.get("district"),
+                    "severity": "critical",
+                    "type": "weather_red_alert",
+                    "title": f"IMD RED ALERT: {nc.get('message')}",
+                    "message": nc.get("message"),
+                })
+    except Exception:
+        pass
 
     adj = _build_graph(
         avoid_corridors=avoid_corridors_raw,
@@ -1051,6 +1066,29 @@ async def plan_route(payload: Dict[str, Any]):
                 "speedAdvisoryKmh": 25 if seg.get("risk_score", 0) >= 80 else 35,
             })
 
+    # Evaluate corridor weather impact across the transit district chain
+    transit_districts = [origin]
+    for leg in (recommended.get("legs") or []):
+        if leg.get("from") and leg["from"] not in transit_districts:
+            transit_districts.append(leg["from"])
+        if leg.get("to") and leg["to"] not in transit_districts:
+            transit_districts.append(leg["to"])
+    if dest not in transit_districts:
+        transit_districts.append(dest)
+
+    try:
+        imd_corridor_advisory = await WeatherService.get_corridor_weather_impact(transit_districts)
+        if imd_corridor_advisory.get("severeWeather"):
+            alerts.insert(0, {
+                "type": "imd_severe_weather",
+                "severity": "critical" if imd_corridor_advisory.get("maxSeverity") == "red" else "high",
+                "title": f"Official IMD {imd_corridor_advisory.get('maxSeverity').upper()} Alert on Corridor",
+                "message": imd_corridor_advisory.get("justification"),
+                "speedAdvisoryKmh": imd_corridor_advisory.get("speedAdvisoryKmh"),
+            })
+    except Exception:
+        imd_corridor_advisory = {"severeWeather": False, "riskPenalty": 0, "detourRecommended": False}
+
     return {
         "success": True,
         "rerouted": is_rerouted,
@@ -1067,6 +1105,7 @@ async def plan_route(payload: Dict[str, Any]):
         "recommended": recommended,
         "alternatives": alternatives,
         "alerts": alerts,
+        "imdCorridorAdvisory": imd_corridor_advisory,
         "vehicleProfile": {
             "type": vehicle_type,
             "name": vehicle_profile["name"],

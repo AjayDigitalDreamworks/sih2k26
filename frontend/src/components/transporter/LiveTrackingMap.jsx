@@ -18,13 +18,15 @@ import {
 import { DISTRICTS } from '../../data/geoMaster';
 import { VehicleMarker } from '../admin/common/VehicleMarker';
 import RainRadarOverlay from '../admin/common/RainRadarOverlay';
+import { useApp } from '../../contexts/AppContext';
+import { BASEMAP_DEFINITIONS } from '../../config/mapConfig';
 
-// Basemaps (Keyless Esri & Carto Voyager)
+// Basemaps (Carto Voyager HD & Esri)
 const TILE_LAYERS = {
-  streets: { url: 'https://server.arcgisonline.com/ArcGIS/rest/services/World_Street_Map/MapServer/tile/{z}/{y}/{x}', name: 'Streets', attribution: '&copy; Esri, HERE, Garmin, OpenStreetMap contributors, and the GIS User Community', maxNativeZoom: 16 },
-  voyager: { url: 'https://{s}.basemaps.cartocdn.com/rastertiles/voyager/{z}/{x}/{y}{r}.png', name: 'Voyager', attribution: '&copy; OpenStreetMap contributors &copy; CARTO', maxNativeZoom: 19 },
-  satellite: { url: 'https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}', name: 'Satellite', attribution: '&copy; Esri, Maxar, Earthstar Geographics', maxNativeZoom: 17 },
-  dark: { url: 'https://server.arcgisonline.com/ArcGIS/rest/services/Canvas/World_Dark_Gray_Base/MapServer/tile/{z}/{y}/{x}', name: 'Dark', attribution: '&copy; Esri — World Dark Gray Canvas', maxNativeZoom: 15 },
+  voyager: BASEMAP_DEFINITIONS.voyager,
+  streets: BASEMAP_DEFINITIONS.streets,
+  satellite: BASEMAP_DEFINITIONS.satellite,
+  dark: BASEMAP_DEFINITIONS.dark,
 };
 
 const RISK_COLORS = { critical: '#7F1D1D', high: '#EF4444', medium: '#F59E0B', low: '#10B981' };
@@ -117,7 +119,7 @@ function MapMinimap({ mapRef, tile }) {
           keyboard: false,
         });
       } catch { if (!cancelled) setTimeout(boot, 200); return; }
-      L.tileLayer(tile.url, { attribution: '' }).addTo(mini);
+      L.tileLayer(tile.url, { attribution: '', subdomains: tile.subdomains || 'abc' }).addTo(mini);
 
       const rect = L.rectangle(main.getBounds(), {
         color: '#059669',
@@ -252,7 +254,7 @@ export default function LiveTrackingMap({ embedded = false, selectedId, onSelect
   const [zoomIn, setZoomIn] = useState(0);
   const [zoomOut, setZoomOut] = useState(0);
   const [centerT, setCenterT] = useState(0);
-  const [activeLayer, setActiveLayer] = useState('streets');
+  const [activeLayer, setActiveLayer] = useState('voyager');
   const [radarOn, setRadarOn] = useState(true);
   const [radarState, setRadarState] = useState('off'); // off | loading | live | unavailable
   const [radarMeta, setRadarMeta] = useState(null);
@@ -397,13 +399,20 @@ export default function LiveTrackingMap({ embedded = false, selectedId, onSelect
     return () => unsub();
   }, []);
 
+  const appCtx = useApp?.();
+  const contextAllWeather = appCtx?.allWeather;
+
   // Weather + radar metadata refresh (3 min + tab visible)
   const fetchLayers = useCallback(async () => {
-    const wx = await ApiClient.getAllWeather().catch(() => null);
-    if (wx?.success && wx.data) setWeatherMap(wx.data);
+    if (contextAllWeather && Object.keys(contextAllWeather).length > 0) {
+      setWeatherMap(contextAllWeather);
+    } else {
+      const wx = await ApiClient.getAllWeather().catch(() => null);
+      if (wx?.success && wx.data) setWeatherMap(wx.data);
+    }
     const sum = await ApiClient.getAllDistrictsSummary().catch(() => null);
     if (sum?.success && Array.isArray(sum.data)) setDistrictSummary(sum.data);
-  }, []);
+  }, [contextAllWeather]);
   useEffect(() => { fetchLayers(); }, [fetchLayers]);
   useEffect(() => {
     const i = setInterval(fetchLayers, 180000);
@@ -672,7 +681,7 @@ export default function LiveTrackingMap({ embedded = false, selectedId, onSelect
 
       <div className={`relative w-full rounded-2xl overflow-hidden border border-slate-200/80 select-none bg-slate-100 z-0 ${embedded ? 'h-[520px] lg:h-[580px]' : 'h-[400px] sm:h-[450px] lg:h-[520px]'}`}>
         <MapContainer center={centerPos} zoom={7} maxZoom={19} zoomControl={false} scrollWheelZoom className="w-full h-full z-0" ref={mapRef}>
-          <ResilientTileLayer key={activeLayer} url={tile.url} attribution={tile.attribution} maxNativeZoom={tile.maxNativeZoom || 16} maxZoom={19} />
+          <ResilientTileLayer key={activeLayer} url={tile.url} attribution={tile.attribution} maxNativeZoom={tile.maxNativeZoom || 19} maxZoom={tile.maxZoom || 20} fallbackUrl={tile.fallbackUrl} />
 
           {/* Real precipitation coverage (RainViewer radar, keyless) */}
           {radarOn && <RainRadarOverlay onState={(s, meta) => { setRadarState(s); setRadarMeta(meta || null); }} opacity={0.5} />}

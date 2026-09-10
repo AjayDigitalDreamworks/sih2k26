@@ -17,7 +17,11 @@ export const ActiveVehiclesList = () => {
       </div>
 
       <div style={{ display: 'flex', flexDirection: 'column', gap: '8px', flex: 1, overflowY: 'auto' }}>
-        {displayList.map((veh) => {
+        {displayList.length === 0 ? (
+          <div style={{ textAlign: 'center', color: 'var(--text-muted)', fontSize: '12px', padding: '24px 8px' }}>
+            No vehicles registered or active in fleet.
+          </div>
+        ) : displayList.map((veh) => {
           const statusClass = veh.statusClass || (veh.status ? veh.status.toLowerCase() : 'moving');
           return (
             <div

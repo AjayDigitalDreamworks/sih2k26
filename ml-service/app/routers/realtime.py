@@ -3,7 +3,7 @@ Real-Time Data Endpoints — provides live data from all integrated APIs.
 These are the primary endpoints for the frontend to consume real-time intelligence.
 """
 from fastapi import APIRouter, Query
-from typing import Optional
+from typing import Optional, Dict, Any
 from app.services.data_aggregator import DataAggregator
 from app.services.weather_service import WeatherService
 from app.services.flood_service import FloodService
@@ -20,20 +20,53 @@ router = APIRouter(prefix="/realtime", tags=["Real-Time Data"])
 
 @router.get("/weather/all")
 async def get_all_weather():
-    """Get weather for all 12 NER districts."""
+    """Get weather for all 12 NER districts from IMD with fallback."""
     return await WeatherService.get_all_districts_weather()
 
 
 @router.get("/weather/{district_id}")
 async def get_district_weather(district_id: str):
-    """Get real-time weather for a specific NER district."""
+    """Get real-time weather, 7-day forecast & nowcast for a specific district."""
     return await WeatherService.get_district_weather(district_id)
 
 
-@router.get("/weather/warnings/{district_id}")
-async def get_weather_warnings(district_id: str):
-    """Get weather warnings for a district from IMD."""
-    return await WeatherService.get_district_warnings(district_id)
+# --- IMD National Weather Intelligence Endpoints ---
+
+@router.get("/imd/stations")
+async def get_imd_stations(state: Optional[str] = None):
+    """Get geocoded IMD stations with current weather and warning colors for GIS Map."""
+    return await WeatherService.get_imd_stations(state_filter=state)
+
+
+@router.get("/imd/nowcasts")
+async def get_imd_nowcasts(min_severity: str = Query("all")):
+    """Get active 3-hour radar nowcast warnings across India."""
+    return await WeatherService.get_active_nowcasts(min_severity=min_severity)
+
+
+@router.get("/imd/national-summary")
+async def get_imd_national_summary():
+    """Get summary statistics of active Red/Orange/Yellow warnings across India."""
+    return await WeatherService.get_national_summary()
+
+
+@router.get("/imd/district/{district_id}")
+async def get_imd_district_report(district_id: str):
+    """Get full IMD report with 7-day forecast, 3-hour nowcast, and rainfall distribution."""
+    return await WeatherService.get_district_weather(district_id)
+
+
+@router.post("/imd/corridor-check")
+async def check_corridor_weather(body: Dict[str, Any]):
+    """Evaluate weather conditions along an array of transit districts."""
+    districts = body.get("districts") or body.get("districtChain") or []
+    return await WeatherService.get_corridor_weather_impact(districts)
+
+
+@router.get("/imd/health")
+async def get_imd_health():
+    """Get live telemetry, circuit breaker metrics, and cache stats."""
+    return WeatherService.get_health_status()
 
 
 # --- Flood Endpoints ---

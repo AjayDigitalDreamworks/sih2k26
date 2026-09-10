@@ -21,4 +21,9 @@ export const env = {
   mlServiceUrl: process.env.ML_SERVICE_URL || 'http://localhost:8010',
   frontendUrl: process.env.FRONTEND_URL || 'http://localhost:3000',
   coreBackendInternalKey: process.env.CORE_BACKEND_INTERNAL_KEY || '',
+  imdApiKey: process.env.IMD_API_KEY || '',
+  imdJwtToken: process.env.IMD_JWT_TOKEN || '',
+  imdBaseUrl: process.env.IMD_BASE_URL || 'https://api.imd.gov.in/api/v1',
+  imdIntegrationEnabled: (process.env.IMD_INTEGRATION_ENABLED || 'true').toLowerCase() === 'true',
+  tomtomApiKey: process.env.TOMTOM_API_KEY || '',
 };

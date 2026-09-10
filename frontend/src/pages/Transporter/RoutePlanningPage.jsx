@@ -849,6 +849,54 @@ export default function RoutePlanningPage() {
                     </div>
                   )}
 
+                  {/* Official IMD Corridor Safety Advisory Banner */}
+                  {((plan?.tradeoffMatrix?.weatherImpact && plan.tradeoffMatrix.weatherImpact !== 'NONE') ||
+                    (roadPlan?.imdCorridorAdvisory && roadPlan.imdCorridorAdvisory.weather_impact !== 'NONE')) && (() => {
+                    const impact = plan?.tradeoffMatrix?.weatherImpact || roadPlan?.imdCorridorAdvisory?.weather_impact || 'MODERATE';
+                    const advisory = plan?.tradeoffMatrix?.imdAdvisory || roadPlan?.imdCorridorAdvisory?.recommendation || 'Official IMD Weather Warning active along corridor.';
+                    const colors = plan?.tradeoffMatrix?.warningColors || roadPlan?.imdCorridorAdvisory?.warning_colors || [];
+                    const maxRain = plan?.tradeoffMatrix?.maxRainfallMm || roadPlan?.imdCorridorAdvisory?.max_rainfall_mm || 0;
+                    const isSevere = impact === 'SEVERE' || colors.includes('red');
+
+                    return (
+                      <div className={`p-3.5 rounded-2xl border text-xs shadow-sm space-y-2 ${
+                        isSevere
+                          ? 'bg-rose-50 border-rose-300 text-rose-950'
+                          : 'bg-amber-50 border-amber-300 text-amber-950'
+                      }`}>
+                        <div className="flex items-center justify-between flex-wrap gap-1.5">
+                          <div className="flex items-center gap-2">
+                            <ShieldAlert className={`w-4 h-4 flex-shrink-0 ${isSevere ? 'text-rose-600' : 'text-amber-600'}`} />
+                            <span className="font-black tracking-wide uppercase text-[10px] px-2 py-0.5 rounded bg-white/80 border border-current shadow-xs">
+                              IMD Mausam · Corridor Advisory
+                            </span>
+                          </div>
+                          <div className="flex items-center gap-1.5">
+                            {colors.map((c, idx) => (
+                              <span key={idx} className={`text-[9px] font-black px-2 py-0.5 rounded-full uppercase ${
+                                c === 'red' ? 'bg-rose-600 text-white' : c === 'orange' ? 'bg-amber-500 text-white' : 'bg-yellow-400 text-slate-900'
+                              }`}>
+                                {c} Alert
+                              </span>
+                            ))}
+                            {maxRain > 0 && (
+                              <span className="text-[9px] font-extrabold px-2 py-0.5 rounded bg-blue-100 text-blue-900 border border-blue-200">
+                                {maxRain} mm/24h Rain
+                              </span>
+                            )}
+                          </div>
+                        </div>
+                        <p className="font-extrabold text-slate-900 text-xs leading-snug">
+                          {advisory}
+                        </p>
+                        <div className="flex items-center justify-between text-[10px] text-slate-500 font-semibold pt-1 border-t border-slate-200/60">
+                          <span>India Meteorological Department · MoES</span>
+                          <span>Advisory: {isSevere ? 'Speed <25 km/h · Detour Recommended' : 'Drive with caution'}</span>
+                        </div>
+                      </div>
+                    );
+                  })()}
+
                   {/* Phase 2.4: Cost vs. Safety Tradeoff Matrix Card */}
                   {plan.tradeoffMatrix && (
                     <div className="p-3.5 rounded-2xl bg-gradient-to-br from-slate-900 to-slate-800 text-white border border-slate-700 shadow-sm space-y-2.5">

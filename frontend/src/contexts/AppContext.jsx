@@ -1,4 +1,4 @@
-import React, { createContext, useContext, useState, useEffect, useCallback } from 'react';
+import React, { createContext, useContext, useState, useEffect, useCallback, useRef } from 'react';
 import ApiClient from '@/lib/api';
 import { subscribeToVehiclePositions, subscribeToAlerts, subscribeToEmergency, subscribeToEmergencyCancelled } from '@/lib/socket';
 
@@ -63,6 +63,14 @@ export const AppProvider = ({ children, scope = 'admin' }) => {
   const [routePlannerInitialState, setRoutePlannerInitialState] = useState(null); // { vehicleId, currentLat, currentLng, destDistrictId, vehicleType, blockedCorridor }
 
   const [toasts, setToasts] = useState([]);
+
+  // Sound / notification callback refs — attached by AlertNotificationProvider
+  const onNewAlertRef = useRef(null);
+  const onEmergencyRef = useRef(null);
+  const registerAlertCallbacks = useCallback((onNewAlert, onEmergency) => {
+    onNewAlertRef.current = onNewAlert;
+    onEmergencyRef.current = onEmergency;
+  }, []);
 
 
   const addToast = useCallback((title, message, type = 'success') => {
@@ -132,13 +140,19 @@ export const AppProvider = ({ children, scope = 'admin' }) => {
     if (wxRes.status === 'fulfilled' && wxRes.value?.success && wxRes.value.data) {
       const d = wxRes.value.data;
       setWeather({
+        ...d,
         city: d.city || 'Guwahati',
-        temp: `${d.temp_celsius ?? '--'}°C`,
-        condition: d.weather_code > 20 ? 'Rainy' : d.weather_code > 10 ? 'Cloudy' : 'Clear',
+        temp: d.temp_celsius != null ? `${d.temp_celsius}°C` : '--',
+        condition: d.condition || (d.weather_code > 20 ? 'Rainy' : d.weather_code > 10 ? 'Cloudy' : 'Clear'),
         humidity: `${d.humidity_percent ?? '--'}%`,
         wind: `${d.wind_kmh ?? '--'} km/h`,
         rainfall: `${d.rainfall_24h_mm ?? 0} mm`,
-        source: d.source,
+        source: d.source || 'IMD Mausam',
+        asOfIst: d.as_of_ist || null,
+        status: d.status || 'OPERATIONAL',
+        forecast7Day: d.forecast_7day || [],
+        radarNowcast: d.radar_nowcast || null,
+        stationInfo: d.station_info || null,
       });
     }
     if (allWxRes.status === 'fulfilled' && allWxRes.value?.success && allWxRes.value.data) setAllWeather(allWxRes.value.data);
@@ -210,57 +224,8 @@ export const AppProvider = ({ children, scope = 'admin' }) => {
         }
       }
 
-      // Real-time integration data
-      const fetchRealtime = async () => {
-        // Weather
-        try {
-          const wxRes = await ApiClient.getWeather('kamrup');
-          if (wxRes?.success && wxRes.data) {
-            const d = wxRes.data;
-            setWeather({
-              city: d.city || 'Guwahati',
-              temp: `${d.temp_celsius ?? '--'}\u00B0C`,
-              condition: d.weather_code > 20 ? 'Rainy' : d.weather_code > 10 ? 'Cloudy' : 'Clear',
-              humidity: `${d.humidity_percent ?? '--'}%`,
-              wind: `${d.wind_kmh ?? '--'} km/h`,
-              rainfall: `${d.rainfall_24h_mm ?? 0} mm`,
-              source: d.source,
-            });
-          } else {
-            console.warn('[Raahi] Weather fetch failed:', wxRes?.message || 'No data');
-          }
-        } catch (e) { console.warn('[Raahi] Weather error:', e.message); }
-
-        // All districts weather
-        try {
-          const allWx = await ApiClient.getAllWeather();
-          if (allWx?.success && allWx.data) setAllWeather(allWx.data);
-        } catch (e) { /* will show empty */ }
-
-        // District summary (flood + landslide + weather) — fire-and-forget so the ML
-        // health + corridor scores below populate without waiting on this slower call.
-        ApiClient.getAllDistrictsSummary()
-          .then((sumRes) => { if (sumRes?.success && sumRes.data) applyDistrictSummary(sumRes.data); })
-          .catch(() => { /* will show empty */ });
-
-        // ML health
-        try {
-          const hRes = await ApiClient.getMLHealth();
-          if (hRes?.success && hRes.data) {
-            setMlHealth(hRes.data);
-          } else {
-            console.warn('[Raahi] ML health fetch failed:', hRes?.message || 'No data');
-          }
-        } catch (e) { console.warn('[Raahi] ML health error:', e.message); }
-
-        // Real ML per-corridor risk scores (xgboost engine)
-        try {
-          const riskRes = await ApiClient.getPipelineRiskScores();
-          if (riskRes?.success && riskRes.data) setPipelineRiskScores(riskRes.data);
-        } catch (e) { console.warn('[Raahi] Pipeline risk fetch failed:', e.message); }
-      };
-
-      fetchRealtime();
+      // Real-time integration data (non-blocking)
+      refreshRealtime();
     };
 
     fetchAll();
@@ -302,12 +267,16 @@ export const AppProvider = ({ children, scope = 'admin' }) => {
     const unsubAlerts = subscribeToAlerts((newAlert) => {
       setAlerts(prev => [newAlert, ...prev]);
       addToast('Hazard Broadcast', newAlert.title || 'New alert', 'warning');
+      // Trigger sound + browser notification via AlertNotificationProvider
+      if (onNewAlertRef.current) onNewAlertRef.current(newAlert);
     });
 
     // Real-time driver SOS — prominent banner + error toast for control room.
     const unsubEmergency = subscribeToEmergency((payload) => {
       setEmergencySos(payload);
       addToast('🚨 EMERGENCY SOS', `${payload.driver || 'Driver'} on ${payload.vehicleId || 'vehicle'} needs help — tap to open alerts`, 'error');
+      // Trigger emergency siren via AlertNotificationProvider
+      if (onEmergencyRef.current) onEmergencyRef.current(payload);
     });
     const unsubEmergencyCancel = subscribeToEmergencyCancelled(() => {
       setEmergencySos(null);
@@ -427,6 +396,7 @@ export const AppProvider = ({ children, scope = 'admin' }) => {
       addVehicle, addAlert,
       routePlannerInitialState, setRoutePlannerInitialState,
       toasts, addToast, removeToast,
+      registerAlertCallbacks,
     }}>
       {children}
     </AppContext.Provider>

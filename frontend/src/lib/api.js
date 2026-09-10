@@ -201,6 +201,10 @@ class ApiClient {
     });
   }
 
+  static getPublicOverview() {
+    return this.request('/public/overview');
+  }
+
   static getSupplyChainGaps() {
     return this.request('/admin/supply-chain/gaps');
   }
@@ -331,8 +335,22 @@ class ApiClient {
     });
   }
 
-  static getTransporterAlerts() {
-    return this.request('/transporter/alerts');
+  static getTransporterAlerts(params = {}) {
+    const qs = new URLSearchParams(params).toString();
+    return this.request(`/transporter/alerts${qs ? `?${qs}` : ''}`);
+  }
+
+  static updateTransporterAlert(id, payload) {
+    return this.request(`/transporter/alerts/${encodeURIComponent(id)}`, {
+      method: 'PATCH',
+      body: JSON.stringify(payload),
+    });
+  }
+
+  static markAllTransporterAlertsRead() {
+    return this.request('/transporter/alerts/mark-all-read', {
+      method: 'POST',
+    });
   }
 
   static reportIncident(payload) {
@@ -451,6 +469,30 @@ class ApiClient {
   }
   static getAllWeather() {
     return this.request('/integrations/weather');
+  }
+
+  // IMD National Weather Intelligence
+  static getImdStations(state) {
+    const qs = state ? `?state=${encodeURIComponent(state)}` : '';
+    return this.request(`/integrations/imd/stations${qs}`);
+  }
+  static getImdNowcasts(minSeverity = 'all') {
+    return this.request(`/integrations/imd/nowcasts?min_severity=${encodeURIComponent(minSeverity)}`);
+  }
+  static getImdNationalSummary() {
+    return this.request('/integrations/imd/national-summary');
+  }
+  static getImdDistrictReport(districtId) {
+    return this.request(`/integrations/imd/district/${encodeURIComponent(districtId)}`);
+  }
+  static checkCorridorWeather(districts) {
+    return this.request('/integrations/imd/corridor-check', {
+      method: 'POST',
+      body: JSON.stringify({ districts }),
+    });
+  }
+  static getImdHealth() {
+    return this.request('/integrations/imd/health');
   }
 
   // Flood

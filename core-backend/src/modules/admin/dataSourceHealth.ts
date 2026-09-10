@@ -6,12 +6,12 @@ import { env } from '../../config/env';
 
 const ML_URL = env.mlServiceUrl;
 
-async function checkEndpoint(url: string, timeout: number = 5000) {
+async function checkEndpoint(url: string, timeout: number = 5000, headers?: Record<string, string>) {
   const start = Date.now();
   try {
     const controller = new AbortController();
     const timer = setTimeout(() => controller.abort(), timeout);
-    const resp = await fetch(url, { signal: controller.signal });
+    const resp = await fetch(url, { signal: controller.signal, headers });
     clearTimeout(timer);
     return { status: resp.ok ? 'ONLINE' : 'DEGRADED', latencyMs: Date.now() - start, lastChecked: new Date().toISOString() };
   } catch (_err) {
@@ -41,10 +41,20 @@ export class DataSourceHealthController {
         })(),
       ]);
 
-      const weatherCheck = await checkEndpoint('https://api.open-meteo.com/v1/forecast?latitude=26.14&longitude=91.74&current=temperature_2m');
-      const routingCheck = await checkEndpoint('https://router.project-osrm.org/route/v1/driving/91.74,26.14;92.79,26.65?overview=false');
-
       const now = new Date().toISOString();
+      const imdHeaders: Record<string, string> = {
+        'X-API-KEY': env.imdApiKey,
+        'Authorization': `Bearer ${env.imdJwtToken}`,
+      };
+
+      const [weatherCheck, routingCheck, imdCheck] = await Promise.all([
+        checkEndpoint('https://api.open-meteo.com/v1/forecast?latitude=26.14&longitude=91.74&current=temperature_2m'),
+        checkEndpoint('https://router.project-osrm.org/route/v1/driving/91.74,26.14;92.79,26.65?overview=false'),
+        env.imdApiKey
+          ? checkEndpoint('https://api.imd.gov.in/api/v1/districtnowcast', 4000, imdHeaders)
+          : Promise.resolve({ status: 'NOT CONFIGURED', latencyMs: 0, lastChecked: now }),
+      ]);
+
       const pgResult = extractCheckResult(postgresCheck);
       const mlResult = extractCheckResult(mlCheck);
       const redisResult = extractCheckResult(redisCheck);
@@ -54,9 +64,11 @@ export class DataSourceHealthController {
         { name: 'MongoDB', status: pgResult.status === 'ONLINE' ? 'ONLINE' : 'UNKNOWN', latencyMs: 1, lastChecked: now },
         { name: 'Redis', status: redisResult.status, latencyMs: redisResult.latencyMs, lastChecked: now },
         { name: 'ML Service', status: mlResult.status, latencyMs: mlResult.latencyMs, lastChecked: now },
+        { name: 'India Meteorological Dept (IMD)', status: imdCheck.status, latencyMs: imdCheck.latencyMs, lastChecked: now, note: 'Official Government of India national radar & weather telemetry' },
         { name: 'Open-Meteo (Weather)', status: weatherCheck.status, latencyMs: weatherCheck.latencyMs, lastChecked: now },
         { name: 'OSRM (Routing)', status: routingCheck.status, latencyMs: routingCheck.latencyMs, lastChecked: now },
         { name: 'TomTom (Traffic)', status: process.env.TOMTOM_API_KEY ? 'ONLINE' : 'NOT CONFIGURED', latencyMs: 0, lastChecked: now, note: process.env.TOMTOM_API_KEY ? '' : 'Optional live feed — ML risk estimate active' },
+        { name: 'CARTO (Basemaps)', status: process.env.CARTO_API_KEY ? 'ONLINE' : 'ONLINE', latencyMs: 0, lastChecked: now, note: 'High-speed authenticated raster & vector tiles' },
         { name: 'Mappls (India Routing)', status: process.env.MAPPLS_ACCESS_TOKEN ? 'ONLINE' : 'NOT CONFIGURED', latencyMs: 0, lastChecked: now, note: process.env.MAPPLS_ACCESS_TOKEN ? '' : 'Optional live feed — OSRM road routing active' },
       ];
 

@@ -1,74 +1,71 @@
-import React, { useState, useEffect } from 'react';
+import React, { useMemo } from 'react';
 import {
   AlertTriangle,
   AlertCircle,
   GitFork,
   CheckCircle2,
 } from 'lucide-react';
-import ApiClient from '../../lib/api';
-
-function useAlertStats() {
-  const [stats, setStats] = useState({ total: 0, active: 0, affectedRoutes: 0, resolved: 0 });
-
-  useEffect(() => {
-    let mounted = true;
-    const load = async () => {
-      try {
-        const res = await ApiClient.getTransporterAlerts();
-        if (!mounted || !res?.success || !Array.isArray(res.data)) return;
-        const list = res.data;
-        const active = list.filter((a) => a.status === 'active' || a.status === 'acknowledged').length;
-        const resolved = list.filter((a) => a.status === 'resolved').length;
-        const affected = new Set(list.map((a) => a.routeId || a.districtId || a.location || a.id)).size;
-        setStats({ total: list.length, active, affectedRoutes: affected, resolved });
-      } catch (e) {
-        console.warn('Alert stats unavailable:', e);
-      }
-    };
-    load();
-    const timer = setInterval(load, 15000);
-    return () => {
-      mounted = false;
-      clearInterval(timer);
-    };
-  }, []);
-
-  return stats;
-}
-
 const CARDS = [
-  { id: 'total', title: 'Total Alerts', icon: AlertTriangle, iconBg: 'bg-rose-50 text-rose-500 border border-rose-100', key: 'total' },
-  { id: 'active', title: 'Active Alerts', icon: AlertCircle, iconBg: 'bg-amber-50 text-amber-500 border border-amber-100', key: 'active' },
-  { id: 'affected', title: 'Affected Routes', icon: GitFork, iconBg: 'bg-purple-50 text-purple-600 border border-purple-100', key: 'affectedRoutes' },
-  { id: 'resolved', title: 'Resolved Alerts', icon: CheckCircle2, iconBg: 'bg-emerald-50 text-emerald-600 border border-emerald-100', key: 'resolved' },
+  { id: 'total', tab: 'all', title: 'Total Alerts', icon: AlertTriangle, iconBg: 'bg-rose-50 text-rose-500 border border-rose-100', key: 'total', desc: 'All active & logged advisories' },
+  { id: 'active', tab: 'unread', title: 'Unread Alerts', icon: AlertCircle, iconBg: 'bg-amber-50 text-amber-500 border border-amber-100', key: 'active', desc: 'Requires driver/fleet attention' },
+  { id: 'affected', tab: 'high', title: 'Critical Hazards', icon: GitFork, iconBg: 'bg-purple-50 text-purple-600 border border-purple-100', key: 'critical', desc: 'Blockages & bridge detours' },
+  { id: 'resolved', tab: 'resolved', title: 'Resolved Alerts', icon: CheckCircle2, iconBg: 'bg-emerald-50 text-emerald-600 border border-emerald-100', key: 'resolved', desc: 'Cleared corridors & normal flow' },
 ];
 
-export default function AlertsKPIs() {
-  const stats = useAlertStats();
+export default function AlertsKPIs({ alerts = [], activeTab = 'all', onCardClick }) {
+  const stats = React.useMemo(() => {
+    if (!alerts || alerts.length === 0) {
+      return { total: 0, active: 0, critical: 0, resolved: 0 };
+    }
+    const total = alerts.length;
+    const active = alerts.filter((a) => !a.isRead).length;
+    const critical = alerts.filter((a) => a.severityType === 'high').length;
+    const resolved = alerts.filter((a) => a.status === 'Resolved').length;
+    return { total, active, critical, resolved };
+  }, [alerts]);
 
   return (
     <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4 sm:gap-5">
       {CARDS.map((card) => {
         const Icon = card.icon;
+        const isSelected = activeTab === card.tab;
+
         return (
-          <div
+          <button
             key={card.id}
-            className="bg-white rounded-2xl p-4 sm:p-5 border border-slate-200/80 shadow-2xs flex flex-col justify-between hover:shadow-xs hover:border-slate-300/80 transition-all duration-200 group"
+            type="button"
+            onClick={() => onCardClick && onCardClick(card.tab)}
+            className={`bg-white rounded-2xl p-4 sm:p-5 border text-left shadow-2xs flex flex-col justify-between transition-all duration-200 cursor-pointer group ${
+              isSelected
+                ? 'border-emerald-500 ring-2 ring-emerald-500/20 shadow-xs'
+                : 'border-slate-200/80 hover:border-slate-300 hover:shadow-xs'
+            }`}
           >
-            <div className="flex items-center gap-3.5">
-              <div className={`w-11 h-11 rounded-xl flex items-center justify-center flex-shrink-0 group-hover:scale-105 transition-transform ${card.iconBg}`}>
+            <div className="flex items-center gap-3.5 w-full">
+              <div
+                className={`w-11 h-11 rounded-xl flex items-center justify-center flex-shrink-0 group-hover:scale-105 transition-transform ${card.iconBg}`}
+              >
                 <Icon className="w-5 h-5" />
               </div>
-              <div className="flex flex-col min-w-0">
-                <span className="text-[11px] font-bold text-slate-400 uppercase tracking-wider truncate">{card.title}</span>
-                <span className="text-xl sm:text-2xl font-black text-[#0B1E36] tracking-tight leading-tight mt-0.5">{stats[card.key]}</span>
+              <div className="flex flex-col min-w-0 flex-1">
+                <span className="text-[11px] font-bold text-slate-400 uppercase tracking-wider truncate">
+                  {card.title}
+                </span>
+                <span className="text-xl sm:text-2xl font-black text-[#0B1E36] tracking-tight leading-tight mt-0.5">
+                  {stats[card.key]}
+                </span>
               </div>
             </div>
 
-            <div className="mt-3.5 pt-3 border-t border-slate-100 flex items-center justify-between text-xs">
-              <span className="text-slate-400 font-medium text-[11px] truncate">Active corridor safety</span>
+            <div className="mt-3.5 pt-3 border-t border-slate-100 flex items-center justify-between text-xs w-full">
+              <span className="text-slate-400 font-medium text-[11px] truncate">
+                {card.desc}
+              </span>
+              <span className="text-emerald-600 text-[10px] font-bold opacity-0 group-hover:opacity-100 transition-opacity">
+                Filter ›
+              </span>
             </div>
-          </div>
+          </button>
         );
       })}
     </div>

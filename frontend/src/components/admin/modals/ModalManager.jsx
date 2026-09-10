@@ -12,6 +12,7 @@ import {
   CheckCircle,
   MapPin,
 } from 'lucide-react';
+import { ImdWeatherIntelligenceModal } from './ImdWeatherIntelligenceModal';
 
 export const ModalManager = () => {
   const {
@@ -28,9 +29,9 @@ export const ModalManager = () => {
 
   // Add Vehicle Form State
   const [vId, setVId] = useState('');
-  const [vModel, setVModel] = useState('Tata 407');
+  const [vModel, setVModel] = useState('');
   const [vDriver, setVDriver] = useState('');
-  const [vRoute, setVRoute] = useState('Guwahati → Tezpur');
+  const [vRoute, setVRoute] = useState('');
   const [availableDrivers, setAvailableDrivers] = useState([]);
 
   useEffect(() => {
@@ -53,7 +54,7 @@ export const ModalManager = () => {
   // Create Alert Form State
   const [aTitle, setATitle] = useState('');
   const [aSeverity, setASeverity] = useState('High');
-  const [aLocation, setALocation] = useState('NH-27 Corridor');
+  const [aLocation, setALocation] = useState('');
 
   // Create Field Report State
   const [frType, setFrType] = useState('Road Damage');
@@ -638,6 +639,14 @@ export const ModalManager = () => {
             </div>
           </div>
         </Modal>
+      )}
+
+      {/* 9. IMD Weather Intelligence Command Center Modal */}
+      {activeModal === 'imdWeather' && (
+        <ImdWeatherIntelligenceModal
+          isOpen={true}
+          onClose={closeModal}
+        />
       )}
     </>
   );

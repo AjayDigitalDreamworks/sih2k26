@@ -118,13 +118,13 @@ export const DashboardPage = () => {
           <div
             className="info-pill-card"
             style={{ cursor: 'pointer' }}
-            onClick={() => setCurrentPage('live-map')}
-            title="Click to view live weather radar on map"
+            onClick={() => openModal('imdWeather')}
+            title="Click to open IMD Weather Intelligence Command Center"
           >
             <CloudSun size={20} color="#F59E0B" />
             <div className="info-pill-text">
               <span className="info-pill-primary">{weather?.temp || '--'}</span>
-              <span className="info-pill-secondary">{weather?.city || 'Guwahati'} ({weather?.source || 'live'})</span>
+              <span className="info-pill-secondary">{weather?.city || 'Guwahati'} ({weather?.source || 'IMD Mausam'})</span>
             </div>
             <ChevronDown size={14} color="var(--text-muted)" />
           </div>
@@ -236,7 +236,7 @@ export const DashboardPage = () => {
         display: 'flex', alignItems: 'center', gap: '14px', flexWrap: 'wrap', color: '#64748B'
       }}>
         <strong style={{ color: '#0F172A', fontWeight: 800 }}>LIVE INTELLIGENCE:</strong>
-        <span>Weather: <strong style={{color: weather?.source && weather.source !== 'unavailable' ? '#059669' : '#94A3B8'}}>{weather?.source && weather.source !== 'unavailable' ? 'LIVE RADAR' : 'Connecting...'}</strong></span>
+        <span style={{ cursor: 'pointer' }} onClick={() => openModal('imdWeather')} title="Open IMD Weather Command Center">Weather: <strong style={{color: weather?.source && weather.source !== 'unavailable' ? '#059669' : '#94A3B8'}}>{weather?.source && weather.source !== 'unavailable' ? 'LIVE IMD RADAR' : 'Connecting...'}</strong></span>
         <span>AI Engine: <strong style={{color: mlHealth?.mlModels ? '#059669' : '#94A3B8'}}>{mlHealth?.mlModels ? Object.values(mlHealth.mlModels).filter(m => typeof m === 'string' && m.includes('loaded')).length + ' models active' : 'Connecting...'}</strong></span>
         <span>Active Fleet: <strong style={{color: '#059669'}}>{vehicles.length} trucks live</strong></span>
         <span>GPS Pings: <strong style={{color: vehicles.some(v => v.lat && v.lng) ? '#059669' : '#94A3B8'}}>{vehicles.some(v => v.lat && v.lng) ? 'Online & Streaming' : 'Awaiting position fixes'}</strong></span>

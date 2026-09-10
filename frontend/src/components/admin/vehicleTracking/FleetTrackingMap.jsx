@@ -6,6 +6,7 @@ import { Layers, Navigation, RefreshCw, Signal, Battery, Clock, MapPin, AlertTri
 import { useApp } from '@/contexts/AppContext';
 import { MapZoomControls } from '@/components/admin/common/MapZoomControls';
 import { ResilientTileLayer } from '@/components/admin/common/ResilientTileLayer';
+import { BASEMAP_DEFINITIONS } from '@/config/mapConfig';
 import { RiskHeatLayer } from '@/components/admin/common/RiskHeatLayer';
 import { getSocket, subscribeToEmergency, subscribeToEmergencyCancelled, subscribeToDynamicReroute } from '@/lib/socket';
 import ApiClient from '@/lib/api';
@@ -28,11 +29,11 @@ const DISTRICT_COORDS = {
 };
 
 const TILE_LAYERS = {
-  streets: { url: 'https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', name: 'Streets', maxNativeZoom: 19 },
-  voyager: { url: 'https://{s}.basemaps.cartocdn.com/rastertiles/voyager/{z}/{x}/{y}{r}.png', name: 'Voyager', maxNativeZoom: 19 },
-  satellite: { url: 'https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}', name: 'Satellite', maxNativeZoom: 17 },
-  terrain: { url: 'https://server.arcgisonline.com/ArcGIS/rest/services/World_Topo_Map/MapServer/tile/{z}/{y}/{x}', name: 'Terrain', maxNativeZoom: 16 },
-  dark: { url: 'https://server.arcgisonline.com/ArcGIS/rest/services/Canvas/World_Dark_Gray_Base/MapServer/tile/{z}/{y}/{x}', name: 'Dark', maxNativeZoom: 15 },
+  voyager: BASEMAP_DEFINITIONS.voyager,
+  streets: BASEMAP_DEFINITIONS.streets,
+  satellite: BASEMAP_DEFINITIONS.satellite,
+  terrain: BASEMAP_DEFINITIONS.terrain,
+  dark: BASEMAP_DEFINITIONS.dark,
 };
 
 function getStatusColor(status) {
@@ -175,7 +176,7 @@ export const FleetTrackingMap = ({ selectedVehicleId, onSelectVehicle }) => {
   const { vehicles, allDistrictsSummary } = useApp();
   const socket = getSocket();
   const { positions, trails } = useVehicleTracking(socket);
-  const [activeLayer, setActiveLayer] = useState('streets');
+  const [activeLayer, setActiveLayer] = useState('voyager');
   const [layerOpen, setLayerOpen] = useState(false);
   const [heatMode, setHeatMode] = useState('off'); // off | rain | flood
 
@@ -415,7 +416,7 @@ export const FleetTrackingMap = ({ selectedVehicleId, onSelectVehicle }) => {
       )}
 
       <MapContainer center={mapCenter} zoom={7} maxZoom={19} style={{ height: '100%', width: '100%' }} zoomControl={false} attributionControl={false}>
-        <ResilientTileLayer url={tile.url} fallbackUrl={tile.fallbackUrl} attribution="&copy; OpenStreetMap" key={activeLayer} maxNativeZoom={tile.maxNativeZoom || 16} maxZoom={19} />
+        <ResilientTileLayer url={tile.url} fallbackUrl={tile.fallbackUrl} attribution={tile.attribution} key={activeLayer} maxNativeZoom={tile.maxNativeZoom || 19} maxZoom={tile.maxZoom || 20} />
 
         {/* Rainfall / flood heatmap from real district observations */}
         {heatMode !== 'off' && (

@@ -109,9 +109,11 @@ export default function RecentlyAddedVehiclesSection({ vehicles = [], onAddVehic
                 const isFirst = idx === 0;
                 const status = v.status || 'idle';
                 const statusBadge = STATUS_BADGE[status] || STATUS_BADGE.idle;
-                const capKg = Number(v.capacity_kg) || 5000;
-                const loadedKg = v.loaded_kg ?? 0;
-                const utilPct = v.capacity_utilization_percent ?? (v.status === 'moving' ? 64 : 0);
+                const capKg = Number(v.capacity_kg) || 0;
+                const loadedKg = Number(v.loaded_kg) || 0;
+                const utilPct = v.capacity_utilization_percent != null
+                  ? Number(v.capacity_utilization_percent)
+                  : (capKg > 0 && loadedKg > 0 ? Math.round((loadedKg / capKg) * 100) : 0);
                 const isAvailable = Boolean(v.available_for_load || (v.status === 'idle' && !v.current_trip_id));
 
                 return (
@@ -186,7 +188,7 @@ export default function RecentlyAddedVehiclesSection({ vehicles = [], onAddVehic
                         <div className="flex-1">
                           <div className="flex justify-between text-[10px] font-bold text-slate-600 mb-0.5">
                             <span>{utilPct}%</span>
-                            <span className="text-slate-400">{capKg.toLocaleString()} kg</span>
+                            <span className="text-slate-400">{capKg > 0 ? `${capKg.toLocaleString()} kg` : '—'}</span>
                           </div>
                           <div className="w-full h-1.5 bg-slate-100 rounded-full overflow-hidden border border-slate-200/60">
                             <div

@@ -27,6 +27,7 @@ import {
   Gauge,
   Package,
   Phone,
+  Radio,
 } from 'lucide-react';
 import { useAuth } from '@/contexts/AuthContext';
 import { useDriverTracking } from '@/hooks/useDriverTracking';
@@ -102,6 +103,23 @@ export default function DriverDashboardApp() {
   const [reroutedNotice, setReroutedNotice] = useState(null);
   const [hazardWarning, setHazardWarning] = useState(null);
   const [hazardDismissedId, setHazardDismissedId] = useState(null);
+  const [driverWeather, setDriverWeather] = useState(null);
+
+  useEffect(() => {
+    let alive = true;
+    ApiClient.getWeather('kamrup')
+      .then((res) => {
+        if (alive && res?.success && res.data) {
+          setDriverWeather({
+            temp: res.data.temp_celsius != null ? `${Math.round(res.data.temp_celsius)}°C` : '--',
+            condition: res.data.condition || 'Clear',
+            warning: res.data.radar_nowcast?.hazard_level || null,
+          });
+        }
+      })
+      .catch(() => {});
+    return () => { alive = false; };
+  }, []);
 
   const isDriver = user?.backendRole === 'driver';
   const vehicle = t.ctx?.vehicle;
@@ -469,6 +487,10 @@ export default function DriverDashboardApp() {
                 reroutedNotice={reroutedNotice}
                 deliveries={t.ctx?.deliveries || []}
                 onConfirmDelivery={handleConfirmDelivery}
+                hazardWarning={hazardWarning}
+                hazardDismissedId={hazardDismissedId}
+                setHazardDismissedId={setHazardDismissedId}
+                driverWeather={driverWeather}
               />
             )}
 
@@ -616,6 +638,10 @@ function TrackingView({
   reroutedNotice,
   deliveries = [],
   onConfirmDelivery,
+  hazardWarning,
+  hazardDismissedId,
+  setHazardDismissedId,
+  driverWeather,
 }) {
   const hasEvaluatedTrip = Boolean(trip && trip.status === 'planned' && trip.route_id);
   const isInTransit = Boolean(trip && trip.status === 'in_transit');
@@ -776,6 +802,21 @@ function TrackingView({
             <span>Server: {fmtAge(ageSec)}</span>
           </span>
         )}
+
+        {/* IMD Doppler Radar Pill */}
+        <span
+          className={`inline-flex items-center gap-1.5 text-[11px] font-bold px-3 py-1 rounded-full border ${
+            driverWeather?.warning === 'RED'
+              ? 'text-rose-700 bg-rose-50 border-rose-300'
+              : driverWeather?.warning === 'ORANGE'
+              ? 'text-amber-700 bg-amber-50 border-amber-300'
+              : 'text-blue-700 bg-blue-50 border-blue-200'
+          }`}
+          title="Live IMD Doppler Radar & Synoptic Weather"
+        >
+          <Radio className="w-3 h-3 animate-pulse" />
+          <span>IMD: {driverWeather ? `${driverWeather.temp} · ${driverWeather.condition}` : 'Radar Active'}</span>
+        </span>
 
         {/* Offline Queue Count */}
         {t.pendingCount > 0 && (

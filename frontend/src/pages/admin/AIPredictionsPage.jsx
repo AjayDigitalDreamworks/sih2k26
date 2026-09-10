@@ -76,21 +76,7 @@ export const AIPredictionsPage = () => {
           priority: (c.score ?? 0) >= 60 ? 'high' : (c.score ?? 0) >= 30 ? 'medium' : 'low',
         };
       })
-    : mlLoading ? [{
-        route: 'All NER Corridors',
-        riskLevel: 'Loading',
-        cause: 'ML engine is scoring the corridors — live predictions appear within seconds.',
-        recommendation: 'This page refreshes automatically every 5 minutes.',
-        timeWindow: '…',
-        priority: 'low',
-      }] : [{
-        route: 'All NER Corridors',
-        riskLevel: 'Low Risk',
-        cause: 'ML engine has not scored any corridor yet — scores appear as soon as the pipeline runs.',
-        recommendation: 'Check the ML engine status and pipeline health.',
-        timeWindow: '—',
-        priority: 'low',
-      }];
+    : [];
 
   return (
     <div className="ai-predictions-page" style={{ display: 'flex', flexDirection: 'column', gap: '24px' }}>
@@ -186,7 +172,23 @@ export const AIPredictionsPage = () => {
         </div>
 
         <div style={{ display: 'flex', flexDirection: 'column', gap: '14px' }}>
-          {predictionsList.map((item, i) => (
+          {predictionsList.length === 0 ? (
+            <div
+              style={{
+                padding: '32px 20px',
+                textAlign: 'center',
+                backgroundColor: 'var(--bg-card-alt)',
+                borderRadius: 'var(--radius-sm)',
+                border: '1px solid var(--border-light)',
+                color: 'var(--text-muted)',
+                fontSize: '13px',
+              }}
+            >
+              {mlLoading
+                ? 'ML risk engine is scoring corridors against live IMD telemetry and slope data...'
+                : 'No high-risk corridor disruptions predicted. All monitored transport arteries are operating within safe baseline parameters.'}
+            </div>
+          ) : predictionsList.map((item, i) => (
             <div
               key={i}
               style={{

@@ -3,6 +3,8 @@ import { motion, AnimatePresence } from 'framer-motion';
 import {
   Menu,
   Bell,
+  BellOff,
+  Volume2,
   Globe,
   ChevronDown,
   Calendar,
@@ -18,6 +20,7 @@ import {
 import { useNavigate } from 'react-router-dom';
 import { useAuth } from '../../contexts/AuthContext';
 import { useLang } from '../../contexts/LanguageContext';
+import { useAlertSoundContext } from '../alerts/AlertNotificationProvider';
 import ApiClient from '../../lib/api';
 import { toast } from 'sonner';
 
@@ -65,6 +68,11 @@ export default function TransporterHeader({ onToggleSidebar, isDashboard = true,
   const [notifications, setNotifications] = useState([]);
   const [unreadCount, setUnreadCount] = useState(0);
   const [searchTerm, setSearchTerm] = useState('');
+
+  // Sound notification context (from AlertNotificationProvider)
+  const alertSoundCtx = useAlertSoundContext();
+  const isSoundMuted = alertSoundCtx?.isMuted ?? false;
+  const toggleSoundMute = alertSoundCtx?.toggleMute ?? (() => {});
 
   // Real transporter-scoped alerts from the backend — no hardcoded notices.
   useEffect(() => {
@@ -164,8 +172,31 @@ export default function TransporterHeader({ onToggleSidebar, isDashboard = true,
             </div>
           </div>
 
-          {/* Right: Notifications, Language Dropdown, User Profile */}
+          {/* Right: Sound Toggle, Notifications, Language Dropdown, User Profile */}
           <div className="flex items-center gap-2.5 sm:gap-3.5">
+            {/* Sound DND / Mute Toggle */}
+            <button
+              type="button"
+              onClick={() => {
+                toggleSoundMute();
+                toast.success(isSoundMuted ? 'Sound alerts enabled' : 'Sound alerts muted');
+              }}
+              title={isSoundMuted ? 'Unmute sound alerts' : 'Mute sound alerts (DND)'}
+              className={`w-9 h-9 rounded-full border flex items-center justify-center shadow-2xs transition-all cursor-pointer relative ${
+                isSoundMuted
+                  ? 'bg-slate-100 border-slate-300 text-slate-500'
+                  : 'bg-white border-slate-200/90 text-emerald-600 hover:bg-emerald-50'
+              }`}
+            >
+              {isSoundMuted ? (
+                <BellOff className="w-4 h-4" />
+              ) : (
+                <>
+                  <Volume2 className="w-4 h-4" />
+                  <span className="absolute -top-0.5 -right-0.5 w-2.5 h-2.5 rounded-full bg-emerald-500 ring-2 ring-white sound-wave-pulse" />
+                </>
+              )}
+            </button>
             {/* Notification Bell with Dropdown */}
             <div className="relative">
               <button

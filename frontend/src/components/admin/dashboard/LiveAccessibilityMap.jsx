@@ -3,6 +3,7 @@ import { MapContainer, TileLayer, Marker, Popup, Polyline, CircleMarker, Tooltip
 import { RainRadarOverlay, radarStateLabel } from '@/components/admin/common/RainRadarOverlay';
 import { MapZoomControls } from '@/components/admin/common/MapZoomControls';
 import { ResilientTileLayer } from '@/components/admin/common/ResilientTileLayer';
+import { BASEMAP_DEFINITIONS } from '@/config/mapConfig';
 import { VehicleMarker } from '@/components/admin/common/VehicleMarker';
 import { useTheme } from '@/contexts/ThemeContext';
 import L from 'leaflet';
@@ -47,12 +48,11 @@ const STATE_VIEWPORTS = {
 };
 
 const TILE_LAYERS = {
-  // Professional light default — clean roads + labels, matches the app theme.
-  // Keyless Esri basemaps (no API key, no placeholder tiles).
-  streets: { url: 'https://server.arcgisonline.com/ArcGIS/rest/services/World_Street_Map/MapServer/tile/{z}/{y}/{x}', name: 'Streets', attribution: '&copy; Esri, HERE, Garmin, OpenStreetMap contributors, and the GIS User Community', maxNativeZoom: 16 },
-  satellite: { url: 'https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}', name: 'Satellite', attribution: '&copy; Esri, Maxar, Earthstar Geographics', maxNativeZoom: 17 },
-  terrain: { url: 'https://server.arcgisonline.com/ArcGIS/rest/services/World_Topo_Map/MapServer/tile/{z}/{y}/{x}', name: 'Terrain', attribution: '&copy; Esri — World Topo Map', maxNativeZoom: 16 },
-  dark: { url: 'https://server.arcgisonline.com/ArcGIS/rest/services/Canvas/World_Dark_Gray_Base/MapServer/tile/{z}/{y}/{x}', name: 'Dark', attribution: '&copy; Esri — World Dark Gray Canvas', maxNativeZoom: 15 },
+  voyager: BASEMAP_DEFINITIONS.voyager,
+  streets: BASEMAP_DEFINITIONS.streets,
+  satellite: BASEMAP_DEFINITIONS.satellite,
+  terrain: BASEMAP_DEFINITIONS.terrain,
+  dark: BASEMAP_DEFINITIONS.dark,
 };
 
 // Layers shown when the component is used without an explicit layer panel (dashboard)
@@ -61,7 +61,7 @@ const TILE_LAYERS = {
 const corridorGeoCache = new Map();
 
 const DEFAULT_ACTIVE_LAYERS = [
-  'base_map', 'districts', 'roads', 'routes', 'vehicles', 'weather', 'rainfall',
+  'base_map', 'districts', 'roads', 'routes', 'vehicles', 'weather', 'rainfall', 'imd_radar',
   'risk_flood', 'risk_landslide', 'traffic', 'disruptions', 'hospitals', 'warehouses', 'logistics_hubs',
 ];
 
@@ -142,6 +142,23 @@ function riskIcon(riskText, kind) {
     `<div style="width:26px;height:26px;border-radius:50%;background:${color};color:white;display:flex;align-items:center;justify-content:center;font-size:12px;border:2px solid white;box-shadow:0 1px 4px rgba(0,0,0,0.35)">${symbol}</div>`,
     28
   );
+}
+
+function imdStationIcon(color, hasWarning) {
+  const c = color ? color.toLowerCase() : 'green';
+  const hex = c === 'red' ? '#DC2626' : c === 'orange' ? '#EA580C' : c === 'yellow' ? '#D97706' : '#059669';
+  const pulseHtml = hasWarning ? `<span style="position:absolute;top:-4px;left:-4px;width:28px;height:28px;border-radius:50%;border:2px solid ${hex};animation:ping 1.5s cubic-bezier(0,0,0.2,1) infinite;opacity:0.75"></span>` : '';
+  return L.divIcon({
+    className: '',
+    html: `<div style="position:relative;width:22px;height:22px;display:flex;align-items:center;justify-content:center;">
+      ${pulseHtml}
+      <div style="width:20px;height:20px;border-radius:50%;background:${hex};border:2px solid white;box-shadow:0 1px 4px rgba(0,0,0,0.35);display:flex;align-items:center;justify-content:center;color:white;font-size:10px;">
+        📡
+      </div>
+    </div>`,
+    iconSize: [22, 22],
+    iconAnchor: [11, 11],
+  });
 }
 
 function alertIcon(severity) {
@@ -471,7 +488,7 @@ function MapMinimap({ mapRef, tile }) {
         touchZoom: false,
         keyboard: false,
       });
-      L.tileLayer(tile.url, { attribution: '' }).addTo(mini);
+      L.tileLayer(tile.url, { attribution: '', subdomains: tile.subdomains || 'abc' }).addTo(mini);
 
       const rect = L.rectangle(main.getBounds(), {
         color: '#059669',
@@ -545,6 +562,7 @@ export const LiveAccessibilityMap = ({ isFullScreen = false, activeLayers, activ
   const [districts, setDistricts] = useState([]);
   const [routes, setRoutes] = useState([]);
   const [weatherMap, setWeatherMap] = useState({});
+  const [imdStations, setImdStations] = useState([]);
   const [radarState, setRadarState] = useState('off');    // off | loading | live | unavailable
   const [radarMeta, setRadarMeta] = useState(null);
   const [riskAlerts, setRiskAlerts] = useState([]);       // pipeline alerts (disruptions layer)
@@ -557,7 +575,7 @@ export const LiveAccessibilityMap = ({ isFullScreen = false, activeLayers, activ
   const [flyTarget, setFlyTarget] = useState(null);
   const [flyZoom, setFlyZoom] = useState(null);
   const [lastRefresh, setLastRefresh] = useState(new Date());
-  const [activeLayer, setActiveLayer] = useState('streets');
+  const [activeLayer, setActiveLayer] = useState('voyager');
   const [corridorGeo, setCorridorGeo] = useState({});   // key -> { coords, source } real road geometry
   const [cursorLatLng, setCursorLatLng] = useState(null);
   const { theme } = useTheme();
@@ -582,6 +600,7 @@ export const LiveAccessibilityMap = ({ isFullScreen = false, activeLayers, activ
       ApiClient.getAdminDistricts().then(r => r?.success && setDistricts(r.data || [])).catch(() => {}),
       ApiClient.getAdminRoutes().then(r => r?.success && setRoutes(r.data || [])).catch(() => {}),
       ApiClient.getAllWeather().then(r => r?.success && r.data && setWeatherMap(r.data)).catch(() => {}),
+      ApiClient.getImdStations().then(r => r?.success && Array.isArray(r.data) && setImdStations(r.data)).catch(() => {}),
       ApiClient.getPipelineDisruptions().then(r => r?.success && r.data?.predictions && setDisruptions(r.data.predictions)).catch(() => {}),
       ApiClient.getPipelineRiskScores().then(r => r?.success && r.data?.scores && setRiskScores(r.data.scores)).catch(() => {}),
       ApiClient.getPipelineAlerts().then(r => r?.success && r.data?.alerts && setRiskAlerts(r.data.alerts)).catch(() => {}),
@@ -689,11 +708,14 @@ export const LiveAccessibilityMap = ({ isFullScreen = false, activeLayers, activ
     }
   }, [activeState]);
 
-  const tile = (activeLayer === 'streets' && themeDark) ? TILE_LAYERS.dark : TILE_LAYERS[activeLayer];
-  const tileKey = `${activeLayer}${activeLayer === 'streets' && themeDark ? '-dark' : ''}`;
+  const tile = ((activeLayer === 'streets' || activeLayer === 'voyager') && themeDark)
+    ? TILE_LAYERS.dark
+    : (TILE_LAYERS[activeLayer] || TILE_LAYERS.voyager);
+  const tileKey = `${activeLayer}${((activeLayer === 'streets' || activeLayer === 'voyager') && themeDark) ? '-dark' : ''}`;
   const showDistricts = layerOn('districts') || layerOn('accessibility');
   const showRouteLines = (layerOn('routes') || layerOn('roads')) && showRoutes;
   const showWeatherLayer = layerOn('weather');
+  const showImdRadar = layerOn('imd_radar') || layerOn('weather');
   const showRainLayer = layerOn('rainfall');
   const showFloodLayer = layerOn('risk_flood');
   const showLandslideLayer = layerOn('risk_landslide');
@@ -1033,6 +1055,64 @@ export const LiveAccessibilityMap = ({ isFullScreen = false, activeLayers, activ
                   </div>
                 </Popup>
                 <Tooltip direction="top">{Math.round(w.temp_celsius)}°C · {w.city || d.name}</Tooltip>
+              </Marker>
+            );
+          })}
+
+          {/* ── IMD Radar Observatories layer ── */}
+          {showImdRadar && imdStations.map((st, idx) => {
+            if (!st.lat || !st.lng) return null;
+            const isWarn = st.warningColor && st.warningColor.toLowerCase() !== 'green';
+            return (
+              <Marker
+                key={`imd-${st.stationCode || idx}`}
+                position={[st.lat, st.lng]}
+                icon={imdStationIcon(st.warningColor, isWarn)}
+                zIndexOffset={350}
+              >
+                <Popup>
+                  <div style={{ ...popupFont, minWidth: 200 }}>
+                    <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 4 }}>
+                      <span style={{ fontSize: 10, fontWeight: 700, color: '#1D4ED8', background: '#EFF6FF', padding: '2px 6px', borderRadius: 4 }}>
+                        IMD OBSERVATORY
+                      </span>
+                      {st.isStale && (
+                        <span style={{ fontSize: 9, color: '#DC2626', background: '#FEF2F2', padding: '1px 4px', borderRadius: 3 }}>
+                          STALE CACHE
+                        </span>
+                      )}
+                    </div>
+                    <div style={{ fontWeight: 700, fontSize: 14, color: '#202124' }}>{st.stationName}</div>
+                    <div style={{ fontSize: 11, color: '#5F6368', marginBottom: 6 }}>{st.state}</div>
+
+                    <div style={{
+                      padding: '4px 8px',
+                      borderRadius: 4,
+                      fontSize: 11,
+                      fontWeight: 600,
+                      marginBottom: 6,
+                      background: st.warningColor?.toLowerCase() === 'red' ? '#FEF2F2' : st.warningColor?.toLowerCase() === 'orange' ? '#FFFBEB' : '#ECFDF5',
+                      color: st.warningColor?.toLowerCase() === 'red' ? '#DC2626' : st.warningColor?.toLowerCase() === 'orange' ? '#D97706' : '#059669',
+                      border: `1px solid ${st.warningColor?.toLowerCase() === 'red' ? '#FECACA' : st.warningColor?.toLowerCase() === 'orange' ? '#FDE68A' : '#A7F3D0'}`
+                    }}>
+                      IMD Warning: {st.warningColor?.toUpperCase() || 'GREEN'}
+                      {st.warningText ? ` · ${st.warningText}` : ''}
+                    </div>
+
+                    <div style={{ fontSize: 12, color: '#3C4043', lineHeight: 1.4 }}>
+                      <div><b>Forecast:</b> {st.forecast || 'Normal'}</div>
+                      <div><b>Temp:</b> Max {st.maxTemp ?? '--'}°C | Min {st.minTemp ?? '--'}°C</div>
+                      <div><b>24h Rainfall:</b> {st.rainfall24h != null ? `${st.rainfall24h} mm` : '--'}</div>
+                      {st.humidity != null && <div><b>Humidity:</b> {st.humidity}%</div>}
+                    </div>
+                    <div style={{ fontSize: 10, color: '#9CA3AF', marginTop: 6, borderTop: '1px solid #F1F5F9', paddingTop: 4 }}>
+                      Ministry of Earth Sciences, Govt of India
+                    </div>
+                  </div>
+                </Popup>
+                <Tooltip direction="top">
+                  📡 IMD {st.stationName} ({st.warningColor?.toUpperCase() || 'NORMAL'})
+                </Tooltip>
               </Marker>
             );
           })}

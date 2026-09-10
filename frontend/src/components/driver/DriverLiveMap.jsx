@@ -3,6 +3,7 @@ import { MapContainer, Marker, Polyline, ScaleControl, Circle, Popup } from 'rea
 import L from 'leaflet';
 import 'leaflet/dist/leaflet.css';
 import { ResilientTileLayer } from '../admin/common/ResilientTileLayer';
+import { CARTO_VOYAGER_URL, CARTO_ATTRIBUTION, OSM_URL } from '../../config/mapConfig';
 
 delete L.Icon.Default.prototype._getIconUrl;
 L.Icon.Default.mergeOptions({
@@ -11,9 +12,9 @@ L.Icon.Default.mergeOptions({
   shadowUrl: 'https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.7.1/images/marker-shadow.png',
 });
 
-const CARTO_TILES = 'https://{s}.basemaps.cartocdn.com/rastertiles/voyager/{z}/{x}/{y}{r}.png';
-const OSM_TILES = 'https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png';
-const TILE_ATTR = '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors &copy; <a href="https://carto.com/attributions">CARTO</a>';
+const CARTO_TILES = CARTO_VOYAGER_URL;
+const OSM_TILES = OSM_URL;
+const TILE_ATTR = CARTO_ATTRIBUTION;
 
 const isValid = (p) => p && Number.isFinite(p.lat) && Number.isFinite(p.lng) && Math.abs(p.lat) <= 90 && Math.abs(p.lng) <= 180;
 

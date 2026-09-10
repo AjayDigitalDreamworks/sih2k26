@@ -27,7 +27,7 @@ router.get('/layers', async (_req: Request, res: Response) => {
     const imdConfigured = !!process.env.IMD_API_KEY;
 
     const layers = [
-      { id: 'base_map', name: 'Base Map', type: 'tile', source: 'OpenStreetMap', ...online() },
+      { id: 'base_map', name: 'Base Map', type: 'tile', source: 'CARTO Basemaps + OpenStreetMap', ...online() },
       { id: 'districts', name: 'Districts', type: 'vector', source: 'Database', ...online() },
       { id: 'roads', name: 'Roads', type: 'vector', source: 'Database', ...online() },
       { id: 'bridges', name: 'Bridges', type: 'vector', source: 'Database', ...online() },

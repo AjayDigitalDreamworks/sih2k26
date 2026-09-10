@@ -16,7 +16,11 @@ export const RecentAlertsList = () => {
       </div>
 
       <div style={{ display: 'flex', flexDirection: 'column', gap: '8px', flex: 1, overflowY: 'auto' }}>
-        {alerts.slice(0, 4).map((alt) => {
+        {alerts.length === 0 ? (
+          <div style={{ textAlign: 'center', color: 'var(--text-muted)', fontSize: '12px', padding: '24px 8px' }}>
+            No active corridor alerts.
+          </div>
+        ) : alerts.slice(0, 4).map((alt) => {
           const isHigh = alt.severityClass === 'high';
           const isMedium = alt.severityClass === 'medium';
 
