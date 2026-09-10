@@ -850,13 +850,42 @@ export default function RoutePlanningPage() {
                   )}
 
                   {/* Official IMD Corridor Safety Advisory Banner */}
-                  {((plan?.tradeoffMatrix?.weatherImpact && plan.tradeoffMatrix.weatherImpact !== 'NONE') ||
-                    (roadPlan?.imdCorridorAdvisory && roadPlan.imdCorridorAdvisory.weather_impact !== 'NONE')) && (() => {
-                    const impact = plan?.tradeoffMatrix?.weatherImpact || roadPlan?.imdCorridorAdvisory?.weather_impact || 'MODERATE';
-                    const advisory = plan?.tradeoffMatrix?.imdAdvisory || roadPlan?.imdCorridorAdvisory?.recommendation || 'Official IMD Weather Warning active along corridor.';
-                    const colors = plan?.tradeoffMatrix?.warningColors || roadPlan?.imdCorridorAdvisory?.warning_colors || [];
+                  {(() => {
+                    const imdAdv = plan?.tradeoffMatrix?.imdAdvisory || roadPlan?.imdCorridorAdvisory;
+                    const hasSevereWeather = Boolean(imdAdv?.severeWeather);
+                    const hasWeatherImpact = Boolean(
+                      (plan?.tradeoffMatrix?.weatherImpact && plan.tradeoffMatrix.weatherImpact !== 'NONE') ||
+                      (roadPlan?.imdCorridorAdvisory?.weather_impact && roadPlan.imdCorridorAdvisory.weather_impact !== 'NONE') ||
+                      (imdAdv?.maxSeverity && imdAdv.maxSeverity !== 'green') ||
+                      hasSevereWeather
+                    );
+
+                    if (!hasWeatherImpact && !hasSevereWeather) return null;
+
+                    const impact = plan?.tradeoffMatrix?.weatherImpact ||
+                      roadPlan?.imdCorridorAdvisory?.weather_impact ||
+                      (imdAdv?.maxSeverity === 'red' ? 'SEVERE' : hasSevereWeather ? 'HIGH' : 'MODERATE');
+
+                    const advisoryText =
+                      (typeof imdAdv?.justification === 'string' && imdAdv.justification) ||
+                      (typeof imdAdv?.warningText === 'string' && imdAdv.warningText) ||
+                      (typeof imdAdv?.recommendation === 'string' && imdAdv.recommendation) ||
+                      (typeof plan?.tradeoffMatrix?.recommendation === 'string' && plan.tradeoffMatrix.recommendation) ||
+                      (typeof plan?.tradeoffMatrix?.imdAdvisory === 'string' ? plan.tradeoffMatrix.imdAdvisory : null) ||
+                      (typeof roadPlan?.imdCorridorAdvisory?.recommendation === 'string' ? roadPlan.imdCorridorAdvisory.recommendation : null) ||
+                      'Official IMD Weather Warning active along corridor.';
+
+                    const colors = (Array.isArray(plan?.tradeoffMatrix?.warningColors) && plan.tradeoffMatrix.warningColors.length > 0)
+                      ? plan.tradeoffMatrix.warningColors
+                      : (Array.isArray(roadPlan?.imdCorridorAdvisory?.warning_colors) && roadPlan.imdCorridorAdvisory.warning_colors.length > 0)
+                      ? roadPlan.imdCorridorAdvisory.warning_colors
+                      : (imdAdv?.maxSeverity && imdAdv.maxSeverity !== 'green')
+                      ? [imdAdv.maxSeverity]
+                      : [];
+
                     const maxRain = plan?.tradeoffMatrix?.maxRainfallMm || roadPlan?.imdCorridorAdvisory?.max_rainfall_mm || 0;
-                    const isSevere = impact === 'SEVERE' || colors.includes('red');
+                    const isSevere = impact === 'SEVERE' || colors.includes('red') || imdAdv?.maxSeverity === 'red' || hasSevereWeather;
+                    const speedAdv = imdAdv?.speedAdvisoryKmh || 25;
 
                     return (
                       <div className={`p-3.5 rounded-2xl border text-xs shadow-sm space-y-2 ${
@@ -887,11 +916,11 @@ export default function RoutePlanningPage() {
                           </div>
                         </div>
                         <p className="font-extrabold text-slate-900 text-xs leading-snug">
-                          {advisory}
+                          {advisoryText}
                         </p>
                         <div className="flex items-center justify-between text-[10px] text-slate-500 font-semibold pt-1 border-t border-slate-200/60">
                           <span>India Meteorological Department · MoES</span>
-                          <span>Advisory: {isSevere ? 'Speed <25 km/h · Detour Recommended' : 'Drive with caution'}</span>
+                          <span>Advisory: {isSevere ? `Speed <${speedAdv} km/h · Detour Recommended` : 'Drive with caution'}</span>
                         </div>
                       </div>
                     );
@@ -935,7 +964,11 @@ export default function RoutePlanningPage() {
 
                       <div className="p-2 rounded-xl bg-emerald-950/40 border border-emerald-500/30 text-[11px] text-emerald-200 flex items-start gap-2">
                         <CheckCircle2 className="w-4 h-4 text-emerald-400 flex-shrink-0 mt-0.5" />
-                        <span className="font-semibold leading-snug">{plan.tradeoffMatrix.recommendation}</span>
+                        <span className="font-semibold leading-snug">
+                          {typeof plan.tradeoffMatrix.recommendation === 'string'
+                            ? plan.tradeoffMatrix.recommendation
+                            : (plan.tradeoffMatrix.recommendation?.justification || String(plan.tradeoffMatrix.recommendation || ''))}
+                        </span>
                       </div>
                     </div>
                   )}

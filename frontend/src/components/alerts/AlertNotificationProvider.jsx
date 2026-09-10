@@ -98,19 +98,19 @@ function AlertToastBanner({ toast: t, onDismiss, onView }) {
           </div>
 
           <h4 className="text-sm font-black text-slate-900 leading-snug truncate">
-            {t.title}
+            {typeof t.title === 'string' ? t.title : String(t.title || '')}
           </h4>
 
           {t.origin && (
             <div className="flex items-center gap-1.5 text-[11px] font-semibold text-slate-500 mt-0.5">
               <MapPin className="w-3 h-3 flex-shrink-0" />
-              <span className="truncate">{t.origin}{t.destination ? ` → ${t.destination}` : ''}</span>
+              <span className="truncate">{typeof t.origin === 'string' ? t.origin : ''}{t.destination ? ` → ${typeof t.destination === 'string' ? t.destination : ''}` : ''}</span>
             </div>
           )}
 
           {t.message && (
             <p className="text-[11px] text-slate-500 font-medium mt-1 line-clamp-2 leading-snug">
-              {t.message}
+              {typeof t.message === 'string' ? t.message : (t.message?.justification || t.message?.warningText || JSON.stringify(t.message))}
             </p>
           )}
 
