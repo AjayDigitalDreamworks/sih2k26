@@ -983,14 +983,9 @@ export class FieldOfficerController {
 
       // 3. Nearby active alerts from MongoDB
       try {
-        const alerts = await MongoAlert.find({ status: 'active' }).limit(30).lean().exec();
-        const alerts = await MongoAlert.find({}).sort({ createdAt: -1 }).limit(30).lean().exec();
-        for (const a of alerts as any[]) {
+        const mongoAlerts = await MongoAlert.find({}).sort({ createdAt: -1 }).limit(30).lean().exec();
+        for (const a of mongoAlerts as any[]) {
           results.push({
-            id: a.id,
-            title: a.title,
-            type: a.type.toUpperCase(),
-            severity: a.severity.toUpperCase(),
             id: a.id || a._id?.toString(),
             title: a.title || 'Regional Alert',
             type: (a.type || 'HAZARD').toUpperCase(),
@@ -998,7 +993,6 @@ export class FieldOfficerController {
             location: a.location,
             district_id: a.districtId,
             time: a.time,
-            message: a.message,
             message: a.message || a.description || a.title,
             description: a.message || a.description || a.title,
             timestamp: a.createdAt ? new Date(a.createdAt).toISOString() : (a.time || 'Active'),
@@ -1009,31 +1003,12 @@ export class FieldOfficerController {
 
       // 4. Nearby FieldTasks
       const tasks = await FieldTask.findAll({
-        where: {
-          status: { [Op.in]: ['ASSIGNED', 'ACCEPTED', 'EN_ROUTE', 'ARRIVED', 'VERIFYING'] },
-        },
-        order: [['created_at', 'DESC']],
+        order: [['createdAt', 'DESC']],
         limit: 30,
         raw: true,
       });
 
       for (const t of tasks) {
-        const dist = haversineMeters(lat, lng, t.latitude, t.longitude);
-        if (dist <= radiusMeters) {
-          results.push({
-            id: t.id,
-            title: t.title,
-            type: t.issue_type,
-            severity: t.priority,
-            distance_km: Math.round((dist / 1000) * 10) / 10,
-            latitude: t.latitude,
-            longitude: t.longitude,
-            district_id: t.district_id,
-            status: t.status,
-            description: t.description,
-            source: 'FIELD_TASK',
-          });
-        }
         const tLat = Number(t.latitude);
         const tLng = Number(t.longitude);
         const dist = (tLat && tLng) ? haversineMeters(lat, lng, tLat, tLng) : 0;
@@ -1054,7 +1029,6 @@ export class FieldOfficerController {
         });
       }
 
-      // Sort by distance if distance is present
       // 5. Submitted Ground-Truth Field Reports
       const reports = await FieldReportPostgres.findAll({
         order: [['createdAt', 'DESC']],

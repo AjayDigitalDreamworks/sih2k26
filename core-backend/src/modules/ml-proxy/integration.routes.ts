@@ -6,6 +6,7 @@ import { Vehicle, Trip, Route, District, FieldReportPostgres } from '../../model
 import { Alert } from '../../models/mongo/Alert';
 import { TrackingService } from '../tracking/tracking.service';
 import { env } from '../../config/env';
+import { redisClient } from '../../config/redis';
 import { LocalDisasterDigitalTwin } from './simulation.engine';
 
 const ML_URL = env.mlServiceUrl;

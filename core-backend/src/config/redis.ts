@@ -90,14 +90,15 @@ export const redisClient = {
     return item.value as T;
   },
 
-  async set(key: string, value: any, options?: { ex?: number }): Promise<'OK'> {
+  async set(key: string, value: any, options?: { ex?: number } | number): Promise<'OK'> {
+    const opts = typeof options === 'number' ? { ex: options } : options;
     const serialized = typeof value === 'string' ? value : JSON.stringify(value);
 
     // Try local Redis first
     if (localRedis) {
       try {
-        if (options?.ex) {
-          await localRedis.setex(key, options.ex, serialized);
+        if (opts?.ex) {
+          await localRedis.setex(key, opts.ex, serialized);
         } else {
           await localRedis.set(key, serialized);
         }
@@ -109,8 +110,8 @@ export const redisClient = {
     // Try Upstash
     if (upstashRedis) {
       try {
-        if (options?.ex) {
-          await upstashRedis.set(key, value, { ex: options.ex });
+        if (opts?.ex) {
+          await upstashRedis.set(key, value, { ex: opts.ex });
         } else {
           await upstashRedis.set(key, value);
         }
@@ -120,11 +121,11 @@ export const redisClient = {
       }
     }
     // In-memory fallback
-    const expiry = options?.ex ? Date.now() + options.ex * 1000 : null;
+    const expiry = opts?.ex ? Date.now() + opts.ex * 1000 : null;
     memoryStore.set(key, { value, expiry });
 
     // Update fast L1 cache
-    const l1Ttl = options?.ex ? Math.min(options.ex * 1000, L1_MAX_TTL_MS) : L1_MAX_TTL_MS;
+    const l1Ttl = opts?.ex ? Math.min(opts.ex * 1000, L1_MAX_TTL_MS) : L1_MAX_TTL_MS;
     l1Cache.set(key, { value, expiry: Date.now() + l1Ttl });
     return 'OK';
   },
