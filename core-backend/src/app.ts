@@ -153,7 +153,6 @@ app.use('/api/transporter', transporterRoutes);
 app.use('/api/ml', mlProxyRoutes);
 app.use('/api/ml', integrationRoutes);
 app.use('/api/integrations', integrationRoutes);
-app.use('/api/tracking', integrationRoutes);
 app.use('/api/tracking', trackingRoutes);
 app.use('/api/driver', driverRoutes);
 app.use('/api/gis', gisRoutes);

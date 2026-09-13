@@ -139,7 +139,15 @@ export const RouteSequenceTimeline = ({ plan, activeRouteId = 'safest' }) => {
         <h2 className="card-title" style={{ margin: 0 }}>Route Sequence</h2>
       </div>
       {districts.length === 0 ? (
-        <div style={{ textAlign: 'center', color: 'var(--text-muted)', padding: '20px' }}>Loading route data...</div>
+        <div style={{ textAlign: 'center', color: 'var(--text-muted)', padding: '28px 16px' }}>
+          <Navigation size={28} style={{ margin: '0 auto 8px', color: '#94A3B8', display: 'block' }} />
+          <div style={{ fontWeight: 600, color: 'var(--text-primary)', fontSize: '13px', marginBottom: '4px' }}>
+            No Active Route Corridor
+          </div>
+          <div style={{ fontSize: '12px', lineHeight: '1.4' }}>
+            Select origin & destination hubs above to view real-time sequential legs and weather risks.
+          </div>
+        </div>
       ) : (
         <div style={{ display: 'flex', flexDirection: 'column', gap: '0' }}>
           {districts.slice(0, 6).map((d, i) => (

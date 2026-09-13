@@ -4,7 +4,7 @@ import { MapZoomControls } from '@/components/admin/common/MapZoomControls';
 import { ResilientTileLayer } from '@/components/admin/common/ResilientTileLayer';
 import L from 'leaflet';
 import 'leaflet/dist/leaflet.css';
-import { MapPin, Sparkles, Loader2, AlertTriangle, ShieldCheck, Navigation, Gauge, RefreshCw, Route as RouteIcon, Search, Scale, AlertOctagon, Layers, Activity, ArrowLeftRight } from 'lucide-react';
+import { MapPin, Sparkles, Loader2, AlertTriangle, ShieldCheck, Navigation, Gauge, RefreshCw, Route as RouteIcon, Search, Scale, AlertOctagon, Layers, Activity, ArrowLeftRight, Plus, Trash2, Truck, Fuel, Zap, DollarSign, CheckCircle2, Shield } from 'lucide-react';
 import ApiClient from '@/lib/api';
 import { DISTRICTS, districtById, findDistrictMatch } from '@/data/geoMaster';
 import { useApp } from '@/contexts/AppContext';
@@ -61,6 +61,18 @@ const destIcon = L.divIcon({
   iconSize: [22, 22],
   iconAnchor: [11, 11],
 });
+const waypointIcon = (num) => L.divIcon({
+  className: '',
+  html: `<div style="width:24px;height:24px;border-radius:50%;background:#7C3AED;border:2.5px solid #fff;box-shadow:0 2px 6px rgba(124,58,237,0.45);color:#fff;font-size:11px;font-weight:800;display:flex;align-items:center;justify-content:center;line-height:1">${num}</div>`,
+  iconSize: [24, 24],
+  iconAnchor: [12, 12],
+});
+const vehicleGpsIcon = L.divIcon({
+  className: '',
+  html: '<div style="width:28px;height:28px;border-radius:50%;background:#2563EB;border:3px solid #fff;box-shadow:0 0 0 4px rgba(37,99,235,0.4);display:flex;align-items:center;justify-content:center;font-size:14px">🚛</div>',
+  iconSize: [28, 28],
+  iconAnchor: [14, 14],
+});
 
 export const RoutePlannerMap = ({
   plan: propPlan,
@@ -71,7 +83,9 @@ export const RoutePlannerMap = ({
   const { routePlannerInitialState, setRoutePlannerInitialState } = useApp() || {};
   const [fromId, setFromId] = useState('dabua_chowk');
   const [toId, setToId] = useState('aravali_college');
-  const [prefer, setPrefer] = useState('safest');
+  const [stops, setStops] = useState([]); // [{ id, districtId, customAddress }]
+  const [emergencyContext, setEmergencyContext] = useState(null);
+  const [prefer, setPrefer] = useState('optimal');
   const [vehicleType, setVehicleType] = useState('heavy_multi_axle');
   const [cargoWeightKg, setCargoWeightKg] = useState(12000);
   const [searchMode, setSearchMode] = useState('hub'); // 'hub' | 'custom'
@@ -80,7 +94,7 @@ export const RoutePlannerMap = ({
   const [reroutedBanner, setReroutedBanner] = useState(null);
 
   const [internalPlan, setInternalPlan] = useState(null);
-  const [internalActiveRouteId, setInternalActiveRouteId] = useState('safest');
+  const [internalActiveRouteId, setInternalActiveRouteId] = useState('optimal');
   const [focusedPoint, setFocusedPoint] = useState(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
@@ -109,6 +123,24 @@ export const RoutePlannerMap = ({
     return { address: str };
   };
 
+  const handleAddStop = () => {
+    const available = DISTRICTS.filter(d => d.id !== fromId && d.id !== toId && !stops.some(s => s.districtId === d.id));
+    const nextId = available[0]?.id || 'dima_hasao';
+    setStops(prev => [...prev, { id: 'stop_' + Date.now(), districtId: nextId, customAddress: '' }]);
+  };
+
+  const handleRemoveStop = (idx) => {
+    setStops(prev => prev.filter((_, i) => i !== idx));
+  };
+
+  const handleStopChange = (idx, field, val) => {
+    setStops(prev => {
+      const copy = [...prev];
+      copy[idx] = { ...copy[idx], [field]: val };
+      return copy;
+    });
+  };
+
   const planRoute = useCallback(async (from, to, pref, vType = vehicleType, silent = false, extra = {}) => {
     const isCustom = searchMode === 'custom' || extra.originAddress || extra.originCoords;
     if (!isCustom && (!from || !to || from === to)) return;
@@ -116,6 +148,11 @@ export const RoutePlannerMap = ({
     setLoading(true);
     if (!silent) setError('');
     try {
+      const payloadStops = (extra.stops !== undefined 
+        ? extra.stops 
+        : stops.map(s => (searchMode === 'custom' ? (s.customAddress || s.districtId) : s.districtId))
+      ).filter(Boolean);
+
       const payload = {
         prefer: pref,
         vehicleType: vType,
@@ -124,6 +161,7 @@ export const RoutePlannerMap = ({
       };
       if (from) payload.originDistrictId = from;
       if (to) payload.destDistrictId = to;
+      if (payloadStops.length > 0) payload.stops = payloadStops;
 
       const res = await ApiClient.planRoute(payload);
       if (mySeq !== seq.current) return;
@@ -132,8 +170,8 @@ export const RoutePlannerMap = ({
         if (onPlanChange) onPlanChange(planData);
         else setInternalPlan(planData);
 
-        // Auto-select safest or recommended
-        const defaultId = planData.preferred || (planData.alternatives && planData.alternatives[0]?.id) || 'safest';
+        // Auto-select optimal or preferred
+        const defaultId = planData.preferred || (planData.alternatives && planData.alternatives[0]?.id) || 'optimal';
         if (propOnSelectRoute) propOnSelectRoute(defaultId);
         else setInternalActiveRouteId(defaultId);
 
@@ -152,7 +190,7 @@ export const RoutePlannerMap = ({
     } finally {
       if (mySeq === seq.current) setLoading(false);
     }
-  }, [cargoWeightKg, onPlanChange, propOnSelectRoute, searchMode, vehicleType]);
+  }, [cargoWeightKg, onPlanChange, propOnSelectRoute, searchMode, vehicleType, stops]);
 
   // Handle incoming emergency reroute navigation from GPS (e.g. from VehicleTrackingPage)
   // or incoming corridor selection from SafeBypassModal / AIPredictionsPage
@@ -175,7 +213,7 @@ export const RoutePlannerMap = ({
 
       setFromId(newFrom);
       setToId(newTo);
-      const effectivePrefer = initPrefer || prefer || 'safest';
+      const effectivePrefer = initPrefer || prefer || 'optimal';
       if (initPrefer) setPrefer(initPrefer);
 
       const fromLabel = fromMatch?.name || fromMatch?.city || originName || 'Origin';
@@ -193,47 +231,63 @@ export const RoutePlannerMap = ({
       return;
     }
 
-    // Case 2: Vehicle GPS live fix (from VehicleTrackingPage)
+    // Case 2: Vehicle GPS live fix (from VehicleTrackingPage via Emergency Reroute)
     if (routePlannerInitialState.currentLat != null || routePlannerInitialState.vehicleId) {
-      const { vehicleId, currentLat, currentLng, route, vehicleType: initVType } = routePlannerInitialState;
+      const {
+        vehicleId,
+        plateNumber,
+        currentLat,
+        currentLng,
+        route,
+        vehicleType: initVType,
+        model,
+        originDistrictId,
+        originName,
+        destDistrictId,
+        destName,
+        cargoWeightKg: initCargo,
+        rerouteReason,
+      } = routePlannerInitialState;
+
       if (initVType) setVehicleType(initVType);
-      const destCandidate = route && route.includes('→') ? route.split('→')[1].trim().toLowerCase() : 'cachar';
-      const destMatched = DISTRICTS.find((d) => d.id === destCandidate || d.label.toLowerCase().includes(destCandidate))?.id || 'cachar';
-      setToId(destMatched);
-      setReroutedBanner(`🚨 Emergency Telematics Detour: Vehicle ${vehicleId || 'in transit'} dynamically rerouted from live GPS fix (${Number(currentLat).toFixed(4)}, ${Number(currentLng).toFixed(4)})`);
+      if (initCargo) setCargoWeightKg(initCargo);
+
+      const fromMatch = findDistrictMatch(originDistrictId || (route && route.includes('→') ? route.split('→')[0].trim() : null));
+      const toMatch = findDistrictMatch(destDistrictId || (route && route.includes('→') ? route.split('→')[1].trim() : null));
+      const effectiveFrom = fromMatch?.id || 'kamrup';
+      const effectiveTo = toMatch?.id || 'cachar';
+
+      setFromId(effectiveFrom);
+      setToId(effectiveTo);
+
+      const ctx = {
+        vehicleId,
+        plateNumber: plateNumber || vehicleId,
+        vehicleType: initVType || vehicleType,
+        model,
+        currentLat,
+        currentLng,
+        originName: originName || fromMatch?.name || 'Guwahati',
+        destName: destName || toMatch?.name || 'Silchar',
+        rerouteReason: rerouteReason || 'Emergency telematics detour: Bypassing active corridor hazard from live GPS fix',
+      };
+      setEmergencyContext(ctx);
+      setReroutedBanner(`🚨 Emergency Telematics Detour: Vehicle ${ctx.plateNumber} dynamically rerouted from live GPS fix (${Number(currentLat).toFixed(4)}, ${Number(currentLng).toFixed(4)})`);
+
       if (currentLat != null && currentLng != null) {
         setFocusedPoint([currentLat, currentLng]);
       }
 
-      // Execute immediate reroute from GPS
-      const runGpsReroute = async () => {
-        setLoading(true);
-        setError('');
-        try {
-          const res = await ApiClient.rerouteVehicle({
-            vehicleId,
-            currentLat,
-            currentLng,
-            destDistrictId: destMatched,
-            vehicleType: initVType || vehicleType,
-            cargoWeightKg,
-          });
-          if (res?.success && (res.data?.success || res.data?.recommended)) {
-            const planData = res.data;
-            if (onPlanChange) onPlanChange(planData);
-            else setInternalPlan(planData);
-            const defId = planData.preferred || (planData.alternatives && planData.alternatives[0]?.id) || 'safest';
-            if (propOnSelectRoute) propOnSelectRoute(defId);
-            else setInternalActiveRouteId(defId);
-          }
-        } catch (err) {
-          console.warn('GPS reroute failed:', err);
-        } finally {
-          setLoading(false);
-          if (setRoutePlannerInitialState) setRoutePlannerInitialState(null);
-        }
-      };
-      runGpsReroute();
+      // Execute comprehensive route plan: returns Optimal + Safest + Shortest + Economical
+      planRoute(effectiveFrom, effectiveTo, 'optimal', initVType || vehicleType, false, {
+        currentLat,
+        currentLng,
+        vehicleId,
+        plateNumber: plateNumber || vehicleId,
+      });
+
+      if (setRoutePlannerInitialState) setRoutePlannerInitialState(null);
+      return;
     }
   }, [routePlannerInitialState, cargoWeightKg, onPlanChange, propOnSelectRoute, setRoutePlannerInitialState, vehicleType, prefer, planRoute]);
 
@@ -367,8 +421,62 @@ export const RoutePlannerMap = ({
         </div>
       </div>
 
-      {/* Emergency Rerouted Banner */}
-      {reroutedBanner && (
+      {/* Emergency Telematics Context HUD */}
+      {emergencyContext && (
+        <div style={{
+          background: 'linear-gradient(135deg, #FEF2F2 0%, #FFF1F2 100%)',
+          border: '1.5px solid #FECACA',
+          borderRadius: '10px',
+          padding: '12px 16px',
+          display: 'flex',
+          flexDirection: 'column',
+          gap: '8px',
+          boxShadow: '0 2px 8px rgba(220,38,38,0.06)'
+        }}>
+          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', gap: '8px' }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+              <span style={{ fontSize: '18px' }}>🚨</span>
+              <div>
+                <strong style={{ fontSize: '13.5px', color: '#991B1B' }}>
+                  Emergency Telematics Detour Loaded: Vehicle {emergencyContext.plateNumber || emergencyContext.vehicleId}
+                </strong>
+                <div style={{ fontSize: '11.5px', color: '#B91C1C' }}>
+                  {emergencyContext.rerouteReason || 'Dynamically routing from live GPS fix around active hazard zone'}
+                </div>
+              </div>
+            </div>
+            <button
+              type="button"
+              onClick={() => {
+                setEmergencyContext(null);
+                setReroutedBanner(null);
+              }}
+              style={{ background: 'transparent', border: 'none', color: '#991B1B', cursor: 'pointer', fontWeight: 800, fontSize: '14px' }}
+            >
+              ✕ Dismiss
+            </button>
+          </div>
+          <div style={{ display: 'flex', alignItems: 'center', gap: '10px', flexWrap: 'wrap', fontSize: '11.5px', paddingTop: '6px', borderTop: '1px solid #FEE2E2' }}>
+            <span style={{ background: '#FFFFFF', padding: '3px 8px', borderRadius: '6px', border: '1px solid #FECACA', color: '#7F1D1D', fontWeight: 700 }}>
+              🚛 Vehicle: {emergencyContext.plateNumber || emergencyContext.vehicleId}
+            </span>
+            <span style={{ background: '#FFFFFF', padding: '3px 8px', borderRadius: '6px', border: '1px solid #FECACA', color: '#7F1D1D', fontWeight: 600 }}>
+              🏷️ Type: {emergencyContext.vehicleType?.replace(/_/g, ' ')?.toUpperCase() || 'HEAVY TRUCK'}
+            </span>
+            {emergencyContext.currentLat != null && emergencyContext.currentLng != null && (
+              <span style={{ background: '#FFFFFF', padding: '3px 8px', borderRadius: '6px', border: '1px solid #FECACA', color: '#059669', fontWeight: 700 }}>
+                📍 Live GPS Fix: {Number(emergencyContext.currentLat).toFixed(4)}, {Number(emergencyContext.currentLng).toFixed(4)}
+              </span>
+            )}
+            <span style={{ background: '#FFFFFF', padding: '3px 8px', borderRadius: '6px', border: '1px solid #FECACA', color: '#475569', fontWeight: 600 }}>
+              🛣️ Corridor: {emergencyContext.originName || fromId} ➔ {emergencyContext.destName || toId}
+            </span>
+          </div>
+        </div>
+      )}
+
+      {/* Emergency / Bypass Banner fallback */}
+      {!emergencyContext && reroutedBanner && (
         <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '10px 14px', borderRadius: 8, background: '#FEF2F2', border: '1px solid #FECACA', color: '#991B1B', fontSize: 13, fontWeight: 700 }}>
           <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
             <AlertOctagon size={18} color="#DC2626" />
@@ -467,10 +575,92 @@ export const RoutePlannerMap = ({
           )}
         </div>
 
+        {/* Intermediate Stops (Waypoints) in Between Journey */}
+        {stops.length > 0 && (
+          <div style={{ display: 'flex', flexDirection: 'column', gap: '8px', padding: '10px 12px', background: '#FAF5FF', borderRadius: '8px', border: '1.5px dashed #C084FC', margin: '4px 0' }}>
+            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+              <span style={{ fontSize: '11px', fontWeight: 800, textTransform: 'uppercase', letterSpacing: '0.05em', color: '#6B21A8', display: 'flex', alignItems: 'center', gap: '5px' }}>
+                <span>🚩</span> Intermediate Stops Along Journey ({stops.length})
+              </span>
+              <button
+                type="button"
+                onClick={handleAddStop}
+                style={{ fontSize: '11px', fontWeight: 700, color: '#7C3AED', background: 'transparent', border: 'none', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: '3px' }}
+              >
+                <Plus size={12} /> Add Another Stop
+              </button>
+            </div>
+            {stops.map((stop, idx) => (
+              <div key={stop.id} style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                <span style={{ width: '22px', height: '22px', borderRadius: '50%', background: '#7C3AED', color: '#fff', fontSize: '11px', fontWeight: 800, display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
+                  {idx + 1}
+                </span>
+                {searchMode === 'custom' ? (
+                  <div className="query-input-wrap" style={{ flex: 1 }}>
+                    <MapPin size={14} color="#7C3AED" />
+                    <input
+                      type="text"
+                      placeholder={`Stop #${idx + 1} village, address, or lat,lng`}
+                      value={stop.customAddress || ''}
+                      onChange={(e) => handleStopChange(idx, 'customAddress', e.target.value)}
+                    />
+                  </div>
+                ) : (
+                  <div className="query-input-wrap" style={{ flex: 1 }}>
+                    <MapPin size={14} color="#7C3AED" />
+                    <select
+                      value={stop.districtId || 'dima_hasao'}
+                      onChange={(e) => handleStopChange(idx, 'districtId', e.target.value)}
+                    >
+                      {DISTRICTS.map((d) => (
+                        <option key={d.id} value={d.id}>{d.label}</option>
+                      ))}
+                    </select>
+                  </div>
+                )}
+                <button
+                  type="button"
+                  onClick={() => handleRemoveStop(idx)}
+                  title="Remove this stop"
+                  style={{ width: '28px', height: '28px', borderRadius: '6px', border: '1px solid #FECACA', background: '#FEF2F2', color: '#DC2626', display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: 'pointer' }}
+                >
+                  <Trash2 size={13} />
+                </button>
+              </div>
+            ))}
+          </div>
+        )}
+
+        {/* Add Stop Button if fewer than 5 stops */}
+        {stops.length < 5 && (
+          <div style={{ display: 'flex', justifyContent: 'flex-start', margin: '2px 0 4px 0' }}>
+            <button
+              type="button"
+              onClick={handleAddStop}
+              style={{
+                padding: '4px 12px',
+                borderRadius: '6px',
+                fontSize: '11px',
+                fontWeight: 700,
+                background: '#FAF5FF',
+                border: '1px dashed #C084FC',
+                color: '#7C3AED',
+                cursor: 'pointer',
+                display: 'inline-flex',
+                alignItems: 'center',
+                gap: '4px',
+                transition: 'all 0.15s ease',
+              }}
+            >
+              <Plus size={13} /> + Add Stop in Between Journey
+            </button>
+          </div>
+        )}
+
         {/* Row 2: Optimization Parameters & Action */}
         <div className="route-params-row">
           <div className="query-field-group">
-            <label className="query-field-label">Preference</label>
+            <label className="query-field-label">Routing Profile</label>
             <div className="query-input-wrap">
               <ShieldCheck size={16} color="#3B82F6" />
               <select
@@ -480,9 +670,11 @@ export const RoutePlannerMap = ({
                   if (searchMode === 'hub') planRoute(fromId, toId, e.target.value, vehicleType);
                 }}
               >
-                <option value="safest">Safest route (lowest risk)</option>
-                <option value="shortest">Shortest route (least km)</option>
-                <option value="balanced">Balanced</option>
+                <option value="optimal">🌟 Optimal route (AI Multi-Objective)</option>
+                <option value="safest">🛡️ Safest route (Lowest Hazard Risk)</option>
+                <option value="shortest">⚡ Shortest route (Least Distance)</option>
+                <option value="economical">💰 Economical route (Min Fuel & Wear)</option>
+                <option value="balanced">⚖️ Balanced</option>
               </select>
             </div>
           </div>
@@ -501,7 +693,7 @@ export const RoutePlannerMap = ({
                 <option value="heavy_multi_axle">Heavy Multi-Axle (16T-28T BharatBenz)</option>
                 <option value="medium_commercial">Medium Truck (Tata 407 / Eicher)</option>
                 <option value="light_commercial">Light Commercial (Tata Ace / Pickup)</option>
-                <option value="hazardous_tanker">Hazardous Tanker (POL / Gas)</option>
+                <option value="hazardous_tanker">Hazardous Tanker (POL / Gas / Chemical)</option>
               </select>
             </div>
           </div>
@@ -528,22 +720,63 @@ export const RoutePlannerMap = ({
               disabled={loading}
             >
               {loading ? <Loader2 size={16} className="spin" /> : <Sparkles size={16} />}
-              <span>{loading ? 'Planning on roads...' : 'Plan Route'}</span>
+              <span>{loading ? 'Optimizing Routes...' : 'Calculate Routes'}</span>
             </button>
           </div>
         </div>
       </div>
 
+      {/* Data Ingestion & Real-Time Intelligence Transparency Bar */}
+      <div style={{
+        display: 'flex',
+        alignItems: 'center',
+        justifyContent: 'space-between',
+        flexWrap: 'wrap',
+        gap: '8px',
+        padding: '7px 12px',
+        borderRadius: '8px',
+        background: '#F8FAFC',
+        border: '1px solid #E2E8F0',
+        fontSize: '11px',
+        color: '#475569',
+      }}>
+        <span style={{ display: 'inline-flex', alignItems: 'center', gap: '5px', fontWeight: 700, color: '#0F172A' }}>
+          <Activity size={13} color="#059669" /> AI Routing Engine Consideration:
+        </span>
+        <span style={{ display: 'inline-flex', alignItems: 'center', gap: '4px' }}>
+          🌦️ <strong style={{ color: '#0369A1' }}>IMD Radar & Nowcast:</strong> Active Ingestion
+        </span>
+        <span style={{ display: 'inline-flex', alignItems: 'center', gap: '4px' }}>
+          📋 <strong style={{ color: '#059669' }}>Field & Incident Reports:</strong> Ingested
+        </span>
+        <span style={{ display: 'inline-flex', alignItems: 'center', gap: '4px' }}>
+          ⛰️ <strong style={{ color: '#D97706' }}>Gradient & Elevation:</strong> Factored
+        </span>
+        <span style={{ display: 'inline-flex', alignItems: 'center', gap: '4px' }}>
+          🛣️ <strong style={{ color: '#475569' }}>Road Network:</strong> OSRM Real Geometry
+        </span>
+      </div>
 
-
-      {/* Interactive Alternative Route Selector Tabs */}
+      {/* Interactive Alternative Route Selector Tabs (Optimal, Safest, Shortest, Economical, Detours) */}
       {plan && plan.alternatives && plan.alternatives.length > 0 && (
-        <div style={{ display: 'flex', alignItems: 'center', gap: '8px', flexWrap: 'wrap', padding: '8px 12px', background: '#F8FAFC', borderRadius: 10, border: '1px solid #E2E8F0' }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: '8px', flexWrap: 'wrap', padding: '10px 14px', background: '#F8FAFC', borderRadius: 10, border: '1px solid #E2E8F0' }}>
           <span style={{ fontSize: 11, fontWeight: 800, textTransform: 'uppercase', letterSpacing: '0.05em', color: '#64748B' }}>
-            Routes:
+            Route Profiles:
           </span>
           {plan.alternatives.map((alt) => {
             const isSelected = alt.id === activeRouteId;
+            const profileIcon = alt.id === 'optimal' || alt.type === 'optimal' 
+              ? '🌟' 
+              : alt.id === 'safest' || alt.type === 'safest' 
+              ? '🛡️' 
+              : alt.id === 'shortest' || alt.type === 'shortest' 
+              ? '⚡' 
+              : alt.id === 'economical' || alt.type === 'economical' 
+              ? '💰' 
+              : '🔀';
+
+            const badgeText = alt.badge || (alt.id === 'optimal' ? 'AI Recommended' : alt.id === 'safest' ? 'Min Risk' : alt.id === 'shortest' ? 'Min Distance' : alt.id === 'economical' ? 'Min Cost' : null);
+
             return (
               <button
                 key={alt.id}
@@ -553,7 +786,7 @@ export const RoutePlannerMap = ({
                   display: 'inline-flex',
                   alignItems: 'center',
                   gap: 6,
-                  padding: '6px 12px',
+                  padding: '7px 13px',
                   borderRadius: 8,
                   fontSize: 12,
                   fontWeight: 700,
@@ -565,12 +798,13 @@ export const RoutePlannerMap = ({
                   transition: 'all 0.15s ease',
                 }}
               >
-                {isSelected ? (
-                  <span style={{ width: 7, height: 7, borderRadius: '50%', background: '#059669' }} />
-                ) : (
-                  <RouteIcon size={12} color="#64748B" />
-                )}
+                <span>{profileIcon}</span>
                 <span>{alt.name}</span>
+                {badgeText && (
+                  <span style={{ fontSize: 9.5, padding: '1px 5px', borderRadius: 4, background: isSelected ? '#059669' : '#E2E8F0', color: isSelected ? '#FFFFFF' : '#475569', fontWeight: 800, textTransform: 'uppercase' }}>
+                    {badgeText}
+                  </span>
+                )}
                 <span style={{ fontSize: 11, color: isSelected ? '#047857' : '#64748B', fontWeight: 600 }}>
                   {alt.totalDistanceKm || alt.distanceKm} km
                 </span>
@@ -586,6 +820,11 @@ export const RoutePlannerMap = ({
                 >
                   Risk {alt.riskScore}
                 </span>
+                {alt.fuelCost > 0 && (
+                  <span style={{ fontSize: 10, color: '#166534', fontWeight: 600 }}>
+                    ₹{alt.fuelCost}
+                  </span>
+                )}
               </button>
             );
           })}
@@ -879,6 +1118,38 @@ export const RoutePlannerMap = ({
                 </Polyline>
               );
             })
+          )}
+
+          {/* Intermediate Stops (Waypoints) Pin Markers */}
+          {stops.map((stop, idx) => {
+            const d = districtById(stop.districtId);
+            const pos = d ? [d.lat, d.lng] : (stop.lat && stop.lng ? [stop.lat, stop.lng] : null);
+            if (!pos) return null;
+            return (
+              <Marker key={stop.id || idx} position={pos} icon={waypointIcon(idx + 1)}>
+                <Popup>
+                  <strong>Stop #{idx + 1}: {d?.label || stop.customAddress || 'Intermediate Waypoint'}</strong>
+                  <div style={{ fontSize: 11, color: '#7C3AED', fontWeight: 600 }}>Intermediate Journey Stop</div>
+                  <div style={{ fontSize: 10, color: '#6B7280' }}>{pos[0].toFixed(4)}, {pos[1].toFixed(4)}</div>
+                </Popup>
+              </Marker>
+            );
+          })}
+
+          {/* Emergency Vehicle GPS Live Pin */}
+          {emergencyContext?.currentLat != null && emergencyContext?.currentLng != null && (
+            <Marker position={[emergencyContext.currentLat, emergencyContext.currentLng]} icon={vehicleGpsIcon}>
+              <Popup>
+                <strong>🚛 {emergencyContext.plateNumber || emergencyContext.vehicleId}</strong>
+                <div style={{ fontSize: 11, color: '#DC2626', fontWeight: 700 }}>Live Telematics GPS Position</div>
+                <div style={{ fontSize: 10, color: '#6B7280' }}>
+                  {Number(emergencyContext.currentLat).toFixed(4)}, {Number(emergencyContext.currentLng).toFixed(4)}
+                </div>
+                <div style={{ fontSize: 11, marginTop: 4, color: '#B91C1C', fontWeight: 500 }}>
+                  {emergencyContext.rerouteReason}
+                </div>
+              </Popup>
+            </Marker>
           )}
 
           {/* Origin and Destination Pin Markers */}

@@ -40,10 +40,21 @@ async def lifespan(app: FastAPI):
     else:
         print("[OK] Pre-trained models found.")
 
-    # Load models into memory
+    import asyncio
     from app.engine.ml_inference import MLModels
     models = MLModels()
-    print(f"[MODELS] Status: {models.get_status()}")
+    print(f"[MODELS] Status: {models.get_status()} (Lazy-loading enabled)")
+
+    # Non-blocking background warmup for core models (after server is up and listening)
+    async def _async_warmup():
+        await asyncio.sleep(5)
+        try:
+            models.load_all_models()
+            print("[WARMUP] Core ML models pre-warmed in background.")
+        except Exception as e:
+            print(f"[WARMUP] Background warm-up notice: {e}")
+
+    asyncio.create_task(_async_warmup())
 
     # Start real-time background pipeline
     print("[PIPELINE] Starting real-time processing pipeline...")

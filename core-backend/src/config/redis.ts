@@ -42,14 +42,28 @@ if (env.redisUrl) {
   console.warn('[Redis] ⚠️ No Redis configured. Using in-memory fallback. Set REDIS_URL for local Docker Redis.');
 }
 
+// Fast in-memory L1 cache to avoid repeated Upstash REST network calls
+const l1Cache = new Map<string, { value: any; expiry: number }>();
+const L1_MAX_TTL_MS = 30 * 1000; // 30s L1 cache
+
 export const redisClient = {
   async get<T = any>(key: string): Promise<T | null> {
+    const now = Date.now();
+    // 0. Check fast in-memory L1 cache first (< 0.1ms)
+    const l1 = l1Cache.get(key);
+    if (l1 && l1.expiry > now) {
+      return l1.value as T;
+    }
+
     // Try local Redis first
     if (localRedis) {
       try {
         const data = await localRedis.get(key);
         if (data === null) return null;
-        try { return JSON.parse(data) as T; } catch { return data as unknown as T; }
+        let parsed: T;
+        try { parsed = JSON.parse(data) as T; } catch { parsed = data as unknown as T; }
+        l1Cache.set(key, { value: parsed, expiry: now + L1_MAX_TTL_MS });
+        return parsed;
       } catch (err) {
         console.warn(`[Redis] get error for ${key}:`, (err as Error).message);
       }
@@ -57,7 +71,11 @@ export const redisClient = {
     // Try Upstash
     if (upstashRedis) {
       try {
-        return (await upstashRedis.get(key)) as T;
+        const val = (await upstashRedis.get(key)) as T;
+        if (val !== null && val !== undefined) {
+          l1Cache.set(key, { value: val, expiry: now + L1_MAX_TTL_MS });
+        }
+        return val;
       } catch (err) {
         console.warn(`[Redis] Upstash get error for ${key}:`, (err as Error).message);
       }
@@ -104,10 +122,15 @@ export const redisClient = {
     // In-memory fallback
     const expiry = options?.ex ? Date.now() + options.ex * 1000 : null;
     memoryStore.set(key, { value, expiry });
+
+    // Update fast L1 cache
+    const l1Ttl = options?.ex ? Math.min(options.ex * 1000, L1_MAX_TTL_MS) : L1_MAX_TTL_MS;
+    l1Cache.set(key, { value, expiry: Date.now() + l1Ttl });
     return 'OK';
   },
 
   async del(key: string): Promise<number> {
+    l1Cache.delete(key);
     if (localRedis) {
       try { return await localRedis.del(key); } catch {}
     }

@@ -8,7 +8,7 @@ import { VehicleMarker } from '@/components/admin/common/VehicleMarker';
 import { useTheme } from '@/contexts/ThemeContext';
 import L from 'leaflet';
 import 'leaflet/dist/leaflet.css';
-import { Search, Layers, MapPin, X, ChevronDown, ChevronUp } from 'lucide-react';
+import { Search, Layers, MapPin, X, ChevronDown, ChevronUp, Truck } from 'lucide-react';
 import { useApp } from '@/contexts/AppContext';
 import ApiClient from '@/lib/api';
 import { getCorridorRoadCoordinates } from '@/data/corridorGeometry';
@@ -34,6 +34,79 @@ const DISTRICT_COORDS = {
   papum_pare: { lat: 27.0844, lng: 93.6053, name: 'Itanagar', state: 'Arunachal Pradesh' },
   west_tripura: { lat: 23.8315, lng: 91.2868, name: 'Agartala', state: 'Tripura' },
 };
+
+const NER_STATE_PREFIXES = {
+  AS: 'assam',
+  ML: 'meghalaya',
+  NL: 'nagaland',
+  MN: 'manipur',
+  MZ: 'mizoram',
+  TR: 'tripura',
+  AR: 'arunachal pradesh',
+  SK: 'sikkim',
+};
+
+function isVehicleInState(v, activeState, districts) {
+  if (!activeState || activeState === 'All') return true;
+  const target = activeState.toLowerCase();
+
+  // 1. Explicit state attribute on vehicle
+  if (v.state && v.state.toLowerCase() === target) return true;
+
+  // 2. Derive state from real GPS coordinates (primary source of truth)
+  if (v.lat != null && v.lng != null) {
+    let closestDist = Infinity;
+    let closestState = null;
+
+    for (const d of Object.values(DISTRICT_COORDS)) {
+      if (d.lat != null && d.lng != null && d.state) {
+        const dsq = (v.lat - d.lat) ** 2 + (v.lng - d.lng) ** 2;
+        if (dsq < closestDist) {
+          closestDist = dsq;
+          closestState = d.state;
+        }
+      }
+    }
+
+    if (Array.isArray(districts)) {
+      for (const d of districts) {
+        const lat = d.lat ?? d.latitude;
+        const lng = d.lng ?? d.longitude;
+        const st = d.state || d.state_name;
+        if (lat != null && lng != null && st) {
+          const dsq = (v.lat - lat) ** 2 + (v.lng - lng) ** 2;
+          if (dsq < closestDist) {
+            closestDist = dsq;
+            closestState = st;
+          }
+        }
+      }
+    }
+
+    if (closestState) {
+      return closestState.toLowerCase() === target;
+    }
+  }
+
+  // 3. Check route corridor / endpoints
+  const routeStr = `${v.route || ''} ${v.current_route || ''} ${v.origin || ''} ${v.destination || ''}`.toLowerCase();
+  if (routeStr.includes(target)) return true;
+
+  for (const [key, d] of Object.entries(DISTRICT_COORDS)) {
+    if (d.state && d.state.toLowerCase() === target) {
+      if (routeStr.includes(key) || (d.name && routeStr.includes(d.name.toLowerCase()))) {
+        return true;
+      }
+    }
+  }
+
+  // 4. Registration number prefix fallback (e.g. AS-01 -> Assam)
+  const id = String(v.id || '').toUpperCase();
+  const prefix = id.slice(0, 2);
+  if (NER_STATE_PREFIXES[prefix] === target) return true;
+
+  return false;
+}
 
 const STATE_VIEWPORTS = {
   All: { center: [25.8, 93.2], zoom: 6.8 },
@@ -184,6 +257,15 @@ function poiIcon(type, color) {
   );
 }
 
+function roadDamageIcon() {
+  return L.divIcon({
+    className: '',
+    html: '<div style="width:22px;height:22px;background:#EF4444;border-radius:6px;border:2px solid white;box-shadow:0 1px 6px rgba(239,68,68,0.7);display:flex;align-items:center;justify-content:center;color:white;font-size:12px">🚧</div>',
+    iconSize: [22, 22],
+    iconAnchor: [11, 11],
+  });
+}
+
 function fmtKmh(speed) {
   const n = parseFloat(speed);
   return Number.isFinite(n) ? `${Math.round(n)} km/h` : 'N/A';
@@ -197,24 +279,38 @@ function fmtMins(seconds) {
 }
 
 /* --- Google Maps-style search bar overlay --- */
-function MapSearchBar({ districts, onSelectDistrict }) {
+function MapSearchBar({ districts, vehicles = [], onSelectDistrict, onSelectVehicle }) {
   const [query, setQuery] = useState('');
   const [open, setOpen] = useState(false);
-  // Stable lookup so the dropdown list never re-derives during unrelated map churn.
-  const filtered = query.length > 0
+  const q = query.trim().toLowerCase();
+
+  const filteredDistricts = q.length > 0
     ? districts.filter(d => {
         const name = (d.name || '').toLowerCase();
         const id = (d.id || '').toLowerCase();
-        return name.includes(query.toLowerCase()) || id.includes(query.toLowerCase());
+        return name.includes(q) || id.includes(q);
       })
     : [];
+
+  const filteredVehicles = q.length > 0
+    ? vehicles.filter(v => {
+        const id = (v.id || '').toLowerCase();
+        const model = (v.model || '').toLowerCase();
+        const driver = (v.driver || '').toLowerCase();
+        const route = (v.route || v.current_route || '').toLowerCase();
+        return id.includes(q) || model.includes(q) || driver.includes(q) || route.includes(q);
+      })
+    : [];
+
+  const hasResults = filteredDistricts.length > 0 || filteredVehicles.length > 0;
+
   return (
-    <div style={{ position: 'absolute', top: 10, left: '50%', transform: 'translateX(-50%)', zIndex: 1000, width: 320 }}>
+    <div style={{ position: 'absolute', top: 10, left: '50%', transform: 'translateX(-50%)', zIndex: 1000, width: 340 }}>
       <div style={{ background: 'white', borderRadius: 8, boxShadow: '0 2px 6px rgba(0,0,0,0.25)', display: 'flex', alignItems: 'center', padding: '0 12px', height: 40 }}>
         <Search size={16} color="#9AA0A6" style={{ flexShrink: 0 }} />
         <input
           type="text"
-          placeholder="Search districts, routes..."
+          placeholder="Search districts, routes, vehicles..."
           value={query}
           onChange={e => { setQuery(e.target.value); setOpen(true); }}
           onFocus={() => setOpen(true)}
@@ -226,11 +322,11 @@ function MapSearchBar({ districts, onSelectDistrict }) {
           </button>
         )}
       </div>
-      {open && filtered.length > 0 && (
-        <div style={{ background: 'white', borderRadius: '0 0 8px 8px', boxShadow: '0 4px 8px rgba(0,0,0,0.2)', maxHeight: 200, overflowY: 'auto', borderTop: '1px solid #E8EAED' }}>
-          {filtered.map(d => (
+      {open && hasResults && (
+        <div style={{ background: 'white', borderRadius: '0 0 8px 8px', boxShadow: '0 4px 8px rgba(0,0,0,0.2)', maxHeight: 260, overflowY: 'auto', borderTop: '1px solid #E8EAED' }}>
+          {filteredDistricts.map(d => (
             <div
-              key={d.id}
+              key={`dist-${d.id}`}
               onClick={() => { onSelectDistrict(d); setQuery(d.name || d.id); setOpen(false); }}
               style={{ padding: '8px 14px', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: 8, fontSize: 13, fontFamily: "'Roboto', 'Segoe UI', Arial, sans-serif" }}
               onMouseEnter={e => e.currentTarget.style.background = '#F1F3F4'}
@@ -241,11 +337,37 @@ function MapSearchBar({ districts, onSelectDistrict }) {
               <span style={{ marginLeft: 'auto', fontSize: 11, color: getStatusColor(d.connectivity_status), fontWeight: 500 }}>{d.connectivity_score}%</span>
             </div>
           ))}
+          {filteredVehicles.map(v => (
+            <div
+              key={`veh-${v.id}`}
+              onClick={() => {
+                if (onSelectVehicle) onSelectVehicle(v);
+                setQuery(v.id);
+                setOpen(false);
+              }}
+              style={{ padding: '8px 14px', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: 8, fontSize: 13, fontFamily: "'Roboto', 'Segoe UI', Arial, sans-serif", borderTop: '1px solid #F3F4F6' }}
+              onMouseEnter={e => e.currentTarget.style.background = '#EFF6FF'}
+              onMouseLeave={e => e.currentTarget.style.background = 'white'}
+            >
+              <Truck size={14} color="#F59E0B" />
+              <div>
+                <span style={{ fontWeight: 600, color: '#1F2937' }}>{v.id}</span>
+                <span style={{ fontSize: 11, color: '#6B7280', marginLeft: 6 }}>{v.model || v.driver}</span>
+              </div>
+              <span style={{
+                marginLeft: 'auto', fontSize: 10, fontWeight: 700, padding: '1px 6px', borderRadius: 4,
+                background: v.speedNum > 0 ? '#ECFDF5' : '#F3F4F6',
+                color: v.speedNum > 0 ? '#059669' : '#6B7280',
+              }}>
+                {v.speed || `${Math.round(v.speedNum || 0)} km/h`}
+              </span>
+            </div>
+          ))}
         </div>
       )}
-      {open && query && filtered.length === 0 && (
+      {open && query && !hasResults && (
         <div style={{ background: 'white', borderRadius: '0 0 8px 8px', boxShadow: '0 4px 8px rgba(0,0,0,0.2)', padding: '12px 14px', fontSize: 13, color: '#5F6368', borderTop: '1px solid #E8EAED' }}>
-          No results found
+          No districts or vehicles found
         </div>
       )}
     </div>
@@ -305,17 +427,21 @@ function MapLegend({ onLayers, showRoutes, setShowRoutes, showVehicles, setShowV
   const onVehicles = useCallback((e) => setShowVehicles(e.target.checked), [setShowVehicles]);
   const rows = [];
   if (onLayers('districts') || onLayers('accessibility')) {
-    rows.push({ header: 'Districts', items: [
+    rows.push({ header: onLayers('accessibility') ? 'Accessibility' : 'Districts', items: [
       { color: '#10B981', label: 'Accessible' },
       { color: '#F59E0B', label: 'Partial' },
       { color: '#EF4444', label: 'Blocked' },
     ]});
   }
-  if (onLayers('routes') || onLayers('roads')) {
+  if (onLayers('routes')) {
     rows.push({ header: 'Routes', items: [
       { color: '#10B981', label: 'Low risk' },
       { color: '#F59E0B', label: 'Medium risk' },
       { color: '#EF4444', label: 'High risk' },
+    ]});
+  } else if (onLayers('roads')) {
+    rows.push({ header: 'Roads', items: [
+      { color: '#10B981', label: 'Highway Network' },
     ]});
   }
   if (onLayers('traffic')) {
@@ -341,14 +467,19 @@ function MapLegend({ onLayers, showRoutes, setShowRoutes, showVehicles, setShowV
     { color: '#F59E0B', label: '40-80mm (24h)' }, { color: '#DC2626', label: '>80mm (24h)' },
     { color: '#2563EB', label: 'Live radar (now)' },
   ]});
+  if (onLayers('road_damage')) rows.push({ header: 'Road Damage', items: [
+    { color: '#EF4444', label: 'Blocked / Hazard' },
+  ]});
   if (onLayers('disruptions')) rows.push({ header: 'Disruptions', items: [
     { color: '#EF4444', label: 'Active alert' },
   ]});
-  if (onLayers('hospitals') || onLayers('warehouses') || onLayers('logistics_hubs')) {
-    rows.push({ header: 'POIs', items: [
+  if (onLayers('hospitals') || onLayers('warehouses') || onLayers('logistics_hubs') || onLayers('airports') || onLayers('railway')) {
+    rows.push({ header: 'POIs & Transit', items: [
       ...(onLayers('hospitals') ? [{ color: '#EC4899', label: 'Hospital' }] : []),
       ...(onLayers('warehouses') ? [{ color: '#8B5CF6', label: 'Warehouse' }] : []),
       ...(onLayers('logistics_hubs') ? [{ color: '#0EA5E9', label: 'Logistics hub' }] : []),
+      ...(onLayers('airports') ? [{ color: '#0EA5E9', label: 'Airport' }] : []),
+      ...(onLayers('railway') ? [{ color: '#6366F1', label: 'Railway' }] : []),
     ]});
   }
   return (
@@ -557,17 +688,482 @@ function MapMinimap({ mapRef, tile }) {
 /* Shared popup markup helpers */
 const popupFont = { fontFamily: "'Roboto', sans-serif" };
 
+function getNearestDistrict(lat, lng, districts) {
+  if (!lat || !lng || !districts || !districts.length) return null;
+  let closest = null;
+  let minDistanceKm = Infinity;
+  for (const d of districts) {
+    const coord = DISTRICT_COORDS[d.id];
+    if (!coord) continue;
+    const latRad = (lat * Math.PI) / 180;
+    const dLat = (lat - coord.lat) * 110.574;
+    const dLng = (lng - coord.lng) * (111.32 * Math.cos(latRad));
+    const dist = Math.sqrt(dLat * dLat + dLng * dLng);
+    if (dist < minDistanceKm) {
+      minDistanceKm = dist;
+      closest = { district: d, coord, distKm: Math.max(0, Math.round(dist)) };
+    }
+  }
+  return closest;
+}
+
+/* Descriptive Card visible immediately on Hover for Districts (Zero Tap) */
+function DistrictHoverCard({ d, coord, w, disrup, imdStation }) {
+  const color = getStatusColor(d?.connectivity_status);
+  const temp = w?.temp_celsius != null ? Math.round(w.temp_celsius) : null;
+  const rain = w?.rainfall_24h_mm;
+  const floodProb = disrup?.floodProbability != null ? Math.round(disrup.floodProbability * 100) : null;
+  const lsProb = disrup?.landslideProbability != null ? Math.round(disrup.landslideProbability * 100) : null;
+  const hasWarning = imdStation?.warningColor && imdStation.warningColor.toLowerCase() !== 'green';
+
+  return (
+    <div style={{
+      background: 'rgba(255, 255, 255, 0.98)',
+      backdropFilter: 'blur(12px)',
+      borderRadius: 12,
+      padding: '12px 14px',
+      boxShadow: '0 12px 28px -4px rgba(0,0,0,0.28), 0 8px 12px -6px rgba(0,0,0,0.2)',
+      border: '1.5px solid rgba(226, 232, 240, 0.95)',
+      minWidth: 240,
+      maxWidth: 300,
+      fontFamily: "'Roboto', -apple-system, sans-serif",
+      color: '#1E293B',
+      pointerEvents: 'none',
+      lineHeight: 1.35,
+    }}>
+      {/* Header */}
+      <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', gap: 8, marginBottom: 8 }}>
+        <div>
+          <div style={{ fontWeight: 800, fontSize: 14, color: '#0F172A', lineHeight: 1.2 }}>{d.name || coord.name}</div>
+          <div style={{ fontSize: 11, fontWeight: 600, color: '#64748B' }}>{coord.state || d.state || 'North East'}</div>
+        </div>
+        <div style={{
+          display: 'inline-flex', alignItems: 'center', gap: 4,
+          padding: '3px 8px', borderRadius: 999,
+          fontSize: 11, fontWeight: 800, color: 'white',
+          background: color, boxShadow: `0 2px 6px ${color}55`,
+          flexShrink: 0
+        }}>
+          <span>{d.connectivity_score}%</span>
+          <span style={{ fontSize: 9, opacity: 0.9, textTransform: 'uppercase' }}>{d.connectivity_status}</span>
+        </div>
+      </div>
+
+      {/* IMD Warning Banner if active */}
+      {hasWarning && (
+        <div style={{
+          background: imdStation.warningColor.toLowerCase() === 'red' ? '#FEF2F2' : '#FFFBEB',
+          border: `1px solid ${imdStation.warningColor.toLowerCase() === 'red' ? '#FECACA' : '#FDE68A'}`,
+          color: imdStation.warningColor.toLowerCase() === 'red' ? '#DC2626' : '#D97706',
+          borderRadius: 8, padding: '4px 8px', fontSize: 10, fontWeight: 700,
+          marginBottom: 8, display: 'flex', alignItems: 'center', gap: 5
+        }}>
+          <span>⚠️ IMD {imdStation.warningColor.toUpperCase()}:</span>
+          <span style={{ fontWeight: 600, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+            {imdStation.warningText || 'Advisory in effect'}
+          </span>
+        </div>
+      )}
+
+      {/* Weather telemetry grid */}
+      {w && (
+        <div style={{
+          background: '#F8FAFC', borderRadius: 8, padding: '8px 10px',
+          marginBottom: 8, border: '1px solid #F1F5F9',
+        }}>
+          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 4 }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 5, fontSize: 12, fontWeight: 700, color: '#0F172A' }}>
+              <span>🌡️ {temp != null ? `${temp}°C` : '--'}</span>
+              <span style={{ color: '#475569', fontWeight: 600 }}>· {weatherLabel(w.weather_code)}</span>
+            </div>
+            <span style={{ fontSize: 9, fontWeight: 800, color: '#059669', background: '#ECFDF5', padding: '1px 5px', borderRadius: 4 }}>
+              LIVE IMD
+            </span>
+          </div>
+          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 4, fontSize: 11, color: '#475569' }}>
+            <div>🌧️ Rain: <b style={{ color: rain != null && rain > 30 ? '#DC2626' : '#0F172A' }}>{rain != null ? `${rain} mm` : '0 mm'}</b></div>
+            <div>💧 Hum: <b>{w.humidity_percent != null ? `${w.humidity_percent}%` : '--'}</b></div>
+            {w.wind_kmh != null && <div>💨 Wind: <b>{w.wind_kmh} km/h</b></div>}
+          </div>
+        </div>
+      )}
+
+      {/* Disruption & Multi-hazard risk */}
+      {disrup && (
+        <div style={{
+          background: disrup.roadBlocked ? '#FEF2F2' : '#F0FDF4',
+          borderRadius: 8, padding: '8px 10px', border: `1px solid ${disrup.roadBlocked ? '#FECACA' : '#DCFCE7'}`,
+          fontSize: 11
+        }}>
+          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 4 }}>
+            <span style={{ fontWeight: 800, color: disrup.roadBlocked ? '#DC2626' : '#166534', fontSize: 11 }}>
+              {disrup.roadBlocked ? '⚠ ROUTE BLOCKED / RESTRICTED' : '✓ CORRIDOR ACCESSIBLE'}
+            </span>
+            <span style={{ fontSize: 10, color: '#64748B' }}>ML Risk</span>
+          </div>
+          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', color: '#334155' }}>
+            <span>🌊 Flood Risk: <b style={{ color: riskLevelColor(disrup.floodRisk) }}>{floodProb != null ? `${floodProb}%` : '--'}</b></span>
+            <span>⛰️ Landslide: <b style={{ color: riskLevelColor(disrup.landslideRisk) }}>{lsProb != null ? `${lsProb}%` : '--'}</b></span>
+          </div>
+        </div>
+      )}
+
+      {/* Footer coords */}
+      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginTop: 8, paddingTop: 6, borderTop: '1px solid #F1F5F9', fontSize: 10, color: '#94A3B8' }}>
+        <span>GPS: {coord.lat.toFixed(3)}°N, {coord.lng.toFixed(3)}°E</span>
+        <span style={{ color: '#059669', fontWeight: 700 }}>Instant Hover</span>
+      </div>
+    </div>
+  );
+}
+
+/* Descriptive Card visible immediately on Hover for IMD Observatories (Zero Tap) */
+function ImdStationHoverCard({ st }) {
+  const isWarn = st.warningColor && st.warningColor.toLowerCase() !== 'green';
+  const c = st.warningColor ? st.warningColor.toLowerCase() : 'green';
+  const badgeBg = c === 'red' ? '#FEF2F2' : c === 'orange' ? '#FFFBEB' : c === 'yellow' ? '#FEFCE8' : '#ECFDF5';
+  const badgeColor = c === 'red' ? '#DC2626' : c === 'orange' ? '#D97706' : c === 'yellow' ? '#B45309' : '#059669';
+  const badgeBorder = c === 'red' ? '#FECACA' : c === 'orange' ? '#FDE68A' : c === 'yellow' ? '#FEF08A' : '#A7F3D0';
+
+  return (
+    <div style={{
+      background: 'rgba(255, 255, 255, 0.98)',
+      backdropFilter: 'blur(12px)',
+      borderRadius: 12,
+      padding: '12px 14px',
+      boxShadow: '0 12px 28px -4px rgba(0,0,0,0.28), 0 8px 12px -6px rgba(0,0,0,0.2)',
+      border: '1.5px solid rgba(226, 232, 240, 0.95)',
+      minWidth: 240,
+      maxWidth: 300,
+      fontFamily: "'Roboto', -apple-system, sans-serif",
+      color: '#1E293B',
+      pointerEvents: 'none',
+      lineHeight: 1.35,
+    }}>
+      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 6 }}>
+        <span style={{ fontSize: 10, fontWeight: 800, color: '#1D4ED8', background: '#EFF6FF', border: '1px solid #DBEAFE', padding: '2px 7px', borderRadius: 6 }}>
+          📡 IMD OBSERVATORY
+        </span>
+        <span style={{ fontSize: 9, fontWeight: 700, color: '#64748B' }}>
+          LIVE FEED
+        </span>
+      </div>
+
+      <div style={{ fontWeight: 800, fontSize: 14, color: '#0F172A', marginBottom: 2 }}>{st.stationName}</div>
+      <div style={{ fontSize: 11, fontWeight: 600, color: '#64748B', marginBottom: 8 }}>{st.state}</div>
+
+      <div style={{
+        background: badgeBg, border: `1px solid ${badgeBorder}`, color: badgeColor,
+        borderRadius: 8, padding: '5px 8px', fontSize: 11, fontWeight: 700, marginBottom: 8,
+      }}>
+        <div style={{ textTransform: 'uppercase', fontSize: 10, fontWeight: 900 }}>
+          {isWarn ? `⚠ IMD ${st.warningColor.toUpperCase()} WARNING` : '✓ NORMAL METEOROLOGICAL CONDITIONS'}
+        </div>
+        {st.warningText && st.warningText !== 'No warning' && (
+          <div style={{ fontWeight: 600, fontSize: 10, marginTop: 2, opacity: 0.95 }}>
+            {st.warningText}
+          </div>
+        )}
+      </div>
+
+      <div style={{ background: '#F8FAFC', borderRadius: 8, padding: '8px 10px', fontSize: 11, color: '#334155', border: '1px solid #F1F5F9' }}>
+        <div style={{ marginBottom: 3 }}><b>Forecast:</b> {st.forecast || 'Normal conditions'}</div>
+        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 4, marginTop: 4 }}>
+          <div>🌡️ Max: <b>{st.maxTemp ?? '--'}°C</b></div>
+          <div>❄️ Min: <b>{st.minTemp ?? '--'}°C</b></div>
+          <div>🌧️ 24h Rain: <b style={{ color: st.rainfall24h > 20 ? '#DC2626' : '#0F172A' }}>{st.rainfall24h != null ? `${st.rainfall24h} mm` : '0 mm'}</b></div>
+          <div>💧 Humidity: <b>{st.humidity != null ? `${st.humidity}%` : '--'}</b></div>
+        </div>
+      </div>
+
+      <div style={{ marginTop: 8, paddingTop: 6, borderTop: '1px solid #F1F5F9', fontSize: 9, color: '#94A3B8', display: 'flex', justifyContent: 'space-between' }}>
+        <span>Ministry of Earth Sciences, Govt of India</span>
+        <span>{st.lat.toFixed(2)}°, {st.lng.toFixed(2)}°</span>
+      </div>
+    </div>
+  );
+}
+
+function getRouteColor(status, liveScore) {
+  if (liveScore?.level) return RISK_COLORS[liveScore.level] || riskLevelColor(liveScore.level);
+  if (status === 'blocked') return '#EF4444';
+  if (status === 'at_risk') return '#F59E0B';
+  return '#10B981';
+}
+
+/* Descriptive Card visible immediately on Hover for Routes (Zero Tap) */
+function RouteHoverCard({ r, liveScore, traffic, color }) {
+  const score = liveScore?.score != null ? Math.round(liveScore.score) : null;
+  const routeColor = color || getRouteColor(r?.status, liveScore);
+
+  return (
+    <div style={{
+      background: 'rgba(255, 255, 255, 0.98)',
+      backdropFilter: 'blur(12px)',
+      borderRadius: 12,
+      padding: '12px 14px',
+      boxShadow: '0 12px 28px -4px rgba(0,0,0,0.28), 0 8px 12px -6px rgba(0,0,0,0.2)',
+      border: '1.5px solid rgba(226, 232, 240, 0.95)',
+      minWidth: 240,
+      maxWidth: 300,
+      fontFamily: "'Roboto', -apple-system, sans-serif",
+      color: '#1E293B',
+      pointerEvents: 'none',
+      lineHeight: 1.35,
+    }}>
+      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 6 }}>
+        <span style={{ fontSize: 10, fontWeight: 800, color: '#4F46E5', background: '#EEF2FF', border: '1px solid #E0E7FF', padding: '2px 7px', borderRadius: 6 }}>
+          🛣️ TRANSIT HIGHWAY CORRIDOR
+        </span>
+        <span style={{
+          fontSize: 10, fontWeight: 800, color: 'white', background: routeColor,
+          padding: '2px 7px', borderRadius: 6, textTransform: 'uppercase'
+        }}>
+          {r?.status || 'open'}
+        </span>
+      </div>
+
+      <div style={{ fontWeight: 800, fontSize: 14, color: '#0F172A', marginBottom: 4 }}>
+        {r.name || `${r.origin_district_id} ➔ ${r.dest_district_id}`}
+      </div>
+
+      {score != null && (
+        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', fontSize: 11, marginBottom: 6 }}>
+          <span style={{ color: '#64748B', fontWeight: 600 }}>ML Safety Score:</span>
+          <b style={{ color: score < 50 ? '#DC2626' : score < 75 ? '#D97706' : '#059669', fontSize: 12 }}>
+            {score}/100 ({score >= 75 ? 'Safe' : score >= 50 ? 'Caution' : 'Severe Risk'})
+          </b>
+        </div>
+      )}
+
+      {traffic && traffic.source === 'tomtom' ? (
+        <div style={{ background: '#F8FAFC', borderRadius: 8, padding: '7px 9px', fontSize: 11, border: '1px solid #F1F5F9' }}>
+          <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 2 }}>
+            <span style={{ color: '#64748B' }}>Live Traffic:</span>
+            <b style={{ color: CONGESTION_COLORS[traffic.congestion_level] || '#059669', textTransform: 'capitalize' }}>
+              {traffic.congestion_level}
+            </b>
+          </div>
+          <div style={{ color: '#475569', fontSize: 10 }}>
+            Delay: <b>{fmtMins(traffic.traffic_delay_seconds)}</b> · Travel: <b>{fmtMins(traffic.travel_time_seconds)}</b>
+          </div>
+        </div>
+      ) : (
+        <div style={{ fontSize: 10, color: '#64748B', background: '#F8FAFC', padding: '6px 8px', borderRadius: 6 }}>
+          Real OSRM corridor route geometry active
+        </div>
+      )}
+    </div>
+  );
+}
+
+/* Floating Live Location & Risk Inspector HUD Card (Updates on Hovering ANYWHERE on Map) */
+function MapLiveInspectorCard({ cursorLatLng, districts, weatherMap, disruptions, imdStations, hoveredEntity, isFullScreen }) {
+  const [collapsed, setCollapsed] = useState(false);
+
+  // If no cursor movement yet, show subtle readiness pill
+  if (!cursorLatLng && !hoveredEntity) {
+    return (
+      <div style={{
+        position: 'absolute', bottom: isFullScreen ? 28 : 12, right: 12, zIndex: 1000,
+        background: 'rgba(255,255,255,0.92)', backdropFilter: 'blur(8px)',
+        borderRadius: 8, padding: '4px 10px', fontSize: 11, fontWeight: 600,
+        color: '#64748B', border: '1px solid #E2E8F0', boxShadow: '0 2px 8px rgba(0,0,0,0.1)',
+        display: 'flex', alignItems: 'center', gap: 6, pointerEvents: 'none'
+      }}>
+        <span style={{ width: 6, height: 6, borderRadius: '50%', background: '#059669', animation: 'pulse 1.5s infinite' }} />
+        <span>Hover anywhere on map for live risk & weather</span>
+      </div>
+    );
+  }
+
+  // Active coordinates
+  const lat = hoveredEntity?.coord?.lat || cursorLatLng?.lat;
+  const lng = hoveredEntity?.coord?.lng || cursorLatLng?.lng;
+
+  // Resolve nearest district if not directly hovering an entity
+  let d = hoveredEntity?.d;
+  let coord = hoveredEntity?.coord;
+  let distKm = 0;
+
+  if (!d && lat && lng) {
+    const nearest = getNearestDistrict(lat, lng, districts);
+    if (nearest) {
+      d = nearest.district;
+      coord = nearest.coord;
+      distKm = nearest.distKm;
+    }
+  }
+
+  if (!coord) return null;
+
+  const w = d ? (weatherMap[d.id] || weatherMap[d.id?.toLowerCase()] || weatherMap[d.name?.toLowerCase()]) : null;
+  const disrup = d ? (disruptions[d.id] || disruptions[d.id?.toLowerCase()]) : null;
+  const color = d ? getStatusColor(d.connectivity_status) : '#64748B';
+  const floodProb = disrup?.floodProbability != null ? Math.round(disrup.floodProbability * 100) : null;
+  const lsProb = disrup?.landslideProbability != null ? Math.round(disrup.landslideProbability * 100) : null;
+
+  // IMD station / district warning check
+  let activeWarning = null;
+  if (Array.isArray(imdStations) && imdStations.length > 0) {
+    const dNameLower = d?.name?.toLowerCase() || coord?.name?.toLowerCase() || '';
+    const dIdLower = d?.id?.toLowerCase() || '';
+    const matchingStation = imdStations.find(st => {
+      const sName = (st.stationName || st.Station_Name || st.name || '').toLowerCase();
+      const sDist = (st.district || st.District || '').toLowerCase();
+      if (dNameLower && (sName.includes(dNameLower) || sDist.includes(dNameLower) || dNameLower.includes(sName))) return true;
+      if (dIdLower && (sName.includes(dIdLower) || sDist.includes(dIdLower) || dIdLower.includes(sDist))) return true;
+      if (st.lat && st.lng && coord?.lat && coord?.lng) {
+        const dLat = Math.abs(st.lat - coord.lat);
+        const dLng = Math.abs(st.lng - coord.lng);
+        if (dLat < 0.8 && dLng < 0.8) return true;
+      }
+      if (st.lat && st.lng) {
+        const dLat = Math.abs(st.lat - lat);
+        const dLng = Math.abs(st.lng - lng);
+        return (dLat < 0.5 && dLng < 0.5);
+      }
+      return false;
+    });
+    if (matchingStation && matchingStation.warningColor && matchingStation.warningColor.toLowerCase() !== 'green') {
+      activeWarning = {
+        name: matchingStation.stationName || matchingStation.Station_Name || matchingStation.name || coord.name,
+        warningColor: matchingStation.warningColor,
+        warningText: matchingStation.warningText || matchingStation.Day_1_Warning || matchingStation.message || 'Advisory active'
+      };
+    }
+  }
+
+  // Fallback to district weather object's own warning if available
+  if (!activeWarning && w?.warningColor && w.warningColor.toLowerCase() !== 'green') {
+    activeWarning = {
+      name: w.city || coord?.name,
+      warningColor: w.warningColor,
+      warningText: w.warningText || w.nowcastRadar?.message || 'Advisory active'
+    };
+  }
+
+  return (
+    <div style={{
+      position: 'absolute', bottom: isFullScreen ? 30 : 12, right: 12, zIndex: 1000,
+      width: collapsed ? 'auto' : 280,
+      background: 'rgba(255, 255, 255, 0.98)', backdropFilter: 'blur(14px)',
+      borderRadius: 12, border: '1.5px solid rgba(226, 232, 240, 0.95)',
+      boxShadow: '0 12px 30px -4px rgba(0,0,0,0.22), 0 6px 12px -3px rgba(0,0,0,0.15)',
+      fontFamily: "'Roboto', -apple-system, sans-serif", overflow: 'hidden',
+      transition: 'all 0.2s ease', pointerEvents: 'auto'
+    }}>
+      {/* Header bar with toggle */}
+      <div style={{
+        background: 'linear-gradient(90deg, #0F172A 0%, #1E293B 100%)',
+        padding: '7px 12px', display: 'flex', alignItems: 'center', justifyContent: 'space-between',
+        color: 'white'
+      }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+          <span style={{ width: 7, height: 7, borderRadius: '50%', background: '#10B981', boxShadow: '0 0 8px #10B981' }} />
+          <span style={{ fontSize: 11, fontWeight: 800, letterSpacing: '0.4px', textTransform: 'uppercase' }}>
+            Live Inspector
+          </span>
+          <span style={{ fontSize: 9, opacity: 0.8, fontFamily: 'monospace' }}>
+            {lat?.toFixed(3)}°, {lng?.toFixed(3)}°
+          </span>
+        </div>
+        <button
+          onClick={() => setCollapsed(!collapsed)}
+          style={{ background: 'none', border: 'none', color: '#94A3B8', cursor: 'pointer', padding: 2, display: 'flex' }}
+          title={collapsed ? 'Expand inspector' : 'Collapse inspector'}
+        >
+          {collapsed ? <ChevronUp size={14} /> : <ChevronDown size={14} />}
+        </button>
+      </div>
+
+      {!collapsed && (
+        <div style={{ padding: '10px 12px', display: 'flex', flexDirection: 'column', gap: 7 }}>
+          {/* Proximity / Nearest District */}
+          <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', gap: 6 }}>
+            <div>
+              <div style={{ fontWeight: 800, fontSize: 13, color: '#0F172A', lineHeight: 1.2 }}>
+                {coord.name || d.name}
+              </div>
+              <div style={{ fontSize: 10, fontWeight: 600, color: '#64748B' }}>
+                {coord.state || d.state} {distKm > 0 ? `(approx. ${distKm} km away)` : '(exact location)'}
+              </div>
+            </div>
+            {d && (
+              <span style={{
+                background: `${color}20`, color, border: `1px solid ${color}40`,
+                fontSize: 10, fontWeight: 800, padding: '2px 6px', borderRadius: 6,
+                textTransform: 'uppercase', whiteSpace: 'nowrap'
+              }}>
+                {d.connectivity_score}% {d.connectivity_status}
+              </span>
+            )}
+          </div>
+
+          {/* Active IMD Warning Alert */}
+          {activeWarning && (
+            <div style={{
+              background: activeWarning.warningColor.toLowerCase() === 'red' ? '#FEF2F2' : '#FFFBEB',
+              border: `1px solid ${activeWarning.warningColor.toLowerCase() === 'red' ? '#FECACA' : '#FDE68A'}`,
+              color: activeWarning.warningColor.toLowerCase() === 'red' ? '#DC2626' : '#D97706',
+              padding: '4px 8px', borderRadius: 6, fontSize: 10, fontWeight: 700
+            }}>
+              ⚠️ IMD {activeWarning.warningColor.toUpperCase()}: {activeWarning.warningText || 'Advisory active'}
+            </div>
+          )}
+
+          {/* Weather pill */}
+          {w && (
+            <div style={{
+              background: '#F8FAFC', borderRadius: 8, padding: '6px 8px',
+              border: '1px solid #EEF2F6', display: 'flex', alignItems: 'center',
+              justifyContent: 'space-between', fontSize: 11
+            }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
+                <span style={{ fontWeight: 800, color: '#0F172A' }}>{w.temp_celsius != null ? `${Math.round(w.temp_celsius)}°C` : '--'}</span>
+                <span style={{ color: '#475569', fontSize: 10 }}>· {weatherLabel(w.weather_code)}</span>
+              </div>
+              <div style={{ fontSize: 10, color: '#64748B', display: 'flex', gap: 6 }}>
+                <span>🌧️ <b>{w.rainfall_24h_mm ?? 0} mm</b></span>
+                <span>💧 <b>{w.humidity_percent ?? '--'}%</b></span>
+              </div>
+            </div>
+          )}
+
+          {/* Disruption / Risk summary */}
+          {disrup && (
+            <div style={{
+              background: disrup.roadBlocked ? '#FEF2F2' : '#F0FDF4',
+              border: `1px solid ${disrup.roadBlocked ? '#FECACA' : '#DCFCE7'}`,
+              borderRadius: 8, padding: '6px 8px', fontSize: 10,
+              display: 'flex', alignItems: 'center', justifyContent: 'space-between'
+            }}>
+              <span style={{ fontWeight: 700, color: disrup.roadBlocked ? '#DC2626' : '#166534' }}>
+                {disrup.roadBlocked ? '⚠ Road Blocked' : '✓ Open & Passable'}
+              </span>
+              <div style={{ display: 'flex', gap: 6, color: '#334155' }}>
+                <span>Flood: <b style={{ color: riskLevelColor(disrup.floodRisk) }}>{floodProb ?? 0}%</b></span>
+                <span>Landslide: <b style={{ color: riskLevelColor(disrup.landslideRisk) }}>{lsProb ?? 0}%</b></span>
+              </div>
+            </div>
+          )}
+        </div>
+      )}
+    </div>
+  );
+}
+
 export const LiveAccessibilityMap = ({ isFullScreen = false, activeLayers, activeState = 'All' }) => {
-  const { vehicles } = useApp();
+  const { vehicles, allWeather, pipelineRiskScores, alerts: appAlerts } = useApp();
   const [districts, setDistricts] = useState([]);
   const [routes, setRoutes] = useState([]);
-  const [weatherMap, setWeatherMap] = useState({});
+  const [weatherMap, setWeatherMap] = useState(() => (allWeather && Object.keys(allWeather).length > 0 ? allWeather : {}));
   const [imdStations, setImdStations] = useState([]);
   const [radarState, setRadarState] = useState('off');    // off | loading | live | unavailable
   const [radarMeta, setRadarMeta] = useState(null);
-  const [riskAlerts, setRiskAlerts] = useState([]);       // pipeline alerts (disruptions layer)
+  const [riskAlerts, setRiskAlerts] = useState(() => (Array.isArray(appAlerts) && appAlerts.length > 0 ? appAlerts : [])); // pipeline alerts (disruptions layer)
   const [disruptions, setDisruptions] = useState({});     // {districtId: {floodRisk, landslideRisk, ...}}
-  const [riskScores, setRiskScores] = useState({});       // {from-to: {score, level}}
+  const [riskScores, setRiskScores] = useState(() => (pipelineRiskScores?.scores || {})); // {from-to: {score, level}}
   const [pois, setPois] = useState([]);                   // FeatureCollection features
   const [trafficByRoute, setTrafficByRoute] = useState({});
   const [trafficState, setTrafficState] = useState('off'); // off | loading | live | unavailable
@@ -578,12 +1174,26 @@ export const LiveAccessibilityMap = ({ isFullScreen = false, activeLayers, activ
   const [activeLayer, setActiveLayer] = useState('voyager');
   const [corridorGeo, setCorridorGeo] = useState({});   // key -> { coords, source } real road geometry
   const [cursorLatLng, setCursorLatLng] = useState(null);
+  const [hoveredEntity, setHoveredEntity] = useState(null);
   const { theme } = useTheme();
   const themeDark = theme === 'dark';
   const [showRoutes, setShowRoutes] = useState(true);
   const [showVehicles, setShowVehicles] = useState(true);
   const [selectedDistrict, setSelectedDistrict] = useState(null);
   const mapRef = useRef(null);
+
+  // Sync with AppContext updates if available
+  useEffect(() => {
+    if (allWeather && Object.keys(allWeather).length > 0) {
+      setWeatherMap(prev => (Object.keys(prev).length === 0 ? allWeather : prev));
+    }
+  }, [allWeather]);
+
+  useEffect(() => {
+    if (pipelineRiskScores?.scores && Object.keys(pipelineRiskScores.scores).length > 0) {
+      setRiskScores(prev => (Object.keys(prev).length === 0 ? pipelineRiskScores.scores : prev));
+    }
+  }, [pipelineRiskScores]);
 
   // Keep the predicate stable across active-layers churn: the callback identity
   // only changes when the activeLayers ordering/entry actually changes.
@@ -600,7 +1210,10 @@ export const LiveAccessibilityMap = ({ isFullScreen = false, activeLayers, activ
       ApiClient.getAdminDistricts().then(r => r?.success && setDistricts(r.data || [])).catch(() => {}),
       ApiClient.getAdminRoutes().then(r => r?.success && setRoutes(r.data || [])).catch(() => {}),
       ApiClient.getAllWeather().then(r => r?.success && r.data && setWeatherMap(r.data)).catch(() => {}),
-      ApiClient.getImdStations().then(r => r?.success && Array.isArray(r.data) && setImdStations(r.data)).catch(() => {}),
+      ApiClient.getImdStations('ner').then(r => {
+        const list = Array.isArray(r?.data) ? r.data : (Array.isArray(r?.data?.stations) ? r.data.stations : []);
+        if (list.length > 0) setImdStations(list);
+      }).catch(() => {}),
       ApiClient.getPipelineDisruptions().then(r => r?.success && r.data?.predictions && setDisruptions(r.data.predictions)).catch(() => {}),
       ApiClient.getPipelineRiskScores().then(r => r?.success && r.data?.scores && setRiskScores(r.data.scores)).catch(() => {}),
       ApiClient.getPipelineAlerts().then(r => r?.success && r.data?.alerts && setRiskAlerts(r.data.alerts)).catch(() => {}),
@@ -625,18 +1238,31 @@ export const LiveAccessibilityMap = ({ isFullScreen = false, activeLayers, activ
     return () => { clearInterval(i); document.removeEventListener('visibilitychange', onVisible); };
   }, [fetchData]);
 
-  /* Real corridor geometry: upgrade hub lines to actual OSRM road paths
-     (concurrency 3, one-time per corridor per session, silent fallback). */
+  /* Real corridor geometry: instant zero-latency pre-computed road paths.
+     Only query network routing for previously unknown corridors. */
   const geometryWanted = layerOn('routes') || layerOn('roads');
   useEffect(() => {
-    if (!geometryWanted) return undefined;
+    if (!geometryWanted || !routes.length) return undefined;
     let cancelled = false;
+
+    // First seed all known routes from pre-computed geometries immediately
+    routes.forEach(r => {
+      const key = `${r.origin_district_id}-${r.dest_district_id}`;
+      if (!corridorGeoCache.has(key)) {
+        const pre = getCorridorRoadCoordinates(r.origin_district_id, r.dest_district_id);
+        if (pre && pre.length > 2) {
+          corridorGeoCache.set(key, { coords: pre, source: 'precomputed' });
+        }
+      }
+    });
+
     const missing = routes
       .map(r => `${r.origin_district_id}-${r.dest_district_id}`)
       .filter(k => !corridorGeoCache.has(k));
+
     if (missing.length === 0) return undefined;
+
     let i = 0, active = 0;
-    // Concurrency 6 keeps the straight hub-line fallback window short on Live Map.
     const loadOne = async (key) => {
       const [from, to] = key.split('-');
       try {
@@ -649,45 +1275,91 @@ export const LiveAccessibilityMap = ({ isFullScreen = false, activeLayers, activ
           corridorGeoCache.set(key, entry);
           setCorridorGeo(prev => ({ ...prev, [key]: entry }));
         }
-      } catch { /* keep the hub line as fallback — no fake geometry */ }
+      } catch { /* keep straight hub fallback */ }
       finally { active--; pump(); }
     };
-    const pump = () => { while (active < 6 && i < missing.length) { const k = missing[i++]; active++; loadOne(k); } };
+    const pump = () => { while (active < 2 && i < missing.length) { const k = missing[i++]; active++; loadOne(k); } };
     pump();
     return () => { cancelled = true; };
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [geometryWanted, routes]);
 
-  /* ---- Live traffic per corridor (only when the traffic layer is on) ---- */
+  /* ---- Live traffic per corridor (deferred, bounded concurrency & cached) ---- */
   const trafficCache = useRef({});
   useEffect(() => {
     if (!trafficOn) { setTrafficState('off'); return undefined; }
     let cancelled = false;
-    const fetchTraffic = async () => {
-      const targets = routes.filter(r => DISTRICT_COORDS[r.origin_district_id] && DISTRICT_COORDS[r.dest_district_id]);
-      if (!targets.length) { setTrafficState('unavailable'); return; }
-      setTrafficState('loading');
-      const out = {};
-      let anyLive = false;
-      await Promise.all(targets.map(async (r) => {
-        const key = `${r.origin_district_id}-${r.dest_district_id}`;
-        const cached = trafficCache.current[key];
-        if (cached && (Date.now() - cached.at) < 240000) { out[key] = cached.data; if (cached.data?.source === 'tomtom') anyLive = true; return; }
-        const a = DISTRICT_COORDS[r.origin_district_id];
-        const b = DISTRICT_COORDS[r.dest_district_id];
-        try {
-          const res = await ApiClient.getRouteTraffic({ origin_lat: a.lat, origin_lng: a.lng, dest_lat: b.lat, dest_lng: b.lng });
-          const data = res?.success ? res.data : { source: 'unavailable' };
-          trafficCache.current[key] = { at: Date.now(), data };
-          out[key] = data;
-          if (data?.source === 'tomtom') anyLive = true;
-        } catch { out[key] = { source: 'unavailable' }; }
-      }));
-      if (!cancelled) { setTrafficByRoute(out); setTrafficState(anyLive ? 'live' : 'unavailable'); }
+
+    // Defer traffic fetch by 800ms so base map, road curves, and markers render with 0 jank
+    const timer = setTimeout(() => {
+      const fetchTraffic = async () => {
+        const targets = routes.filter(r => DISTRICT_COORDS[r.origin_district_id] && DISTRICT_COORDS[r.dest_district_id]);
+        if (!targets.length) { setTrafficState('unavailable'); return; }
+        setTrafficState('loading');
+        const out = {};
+        let anyLive = false;
+
+        // Process in gentle batches of 3 to prevent HTTP pool starvation
+        const BATCH_SIZE = 3;
+        for (let idx = 0; idx < targets.length; idx += BATCH_SIZE) {
+          if (cancelled) break;
+          const chunk = targets.slice(idx, idx + BATCH_SIZE);
+          await Promise.all(chunk.map(async (r) => {
+            const key = `${r.origin_district_id}-${r.dest_district_id}`;
+            const cached = trafficCache.current[key];
+            if (cached && (Date.now() - cached.at) < 300000) {
+              out[key] = cached.data;
+              if (cached.data?.source === 'tomtom') anyLive = true;
+              return;
+            }
+            const a = DISTRICT_COORDS[r.origin_district_id];
+            const b = DISTRICT_COORDS[r.dest_district_id];
+            try {
+              const res = await ApiClient.getRouteTraffic({ origin_lat: a.lat, origin_lng: a.lng, dest_lat: b.lat, dest_lng: b.lng });
+              const data = res?.success ? res.data : { source: 'unavailable' };
+              trafficCache.current[key] = { at: Date.now(), data };
+              out[key] = data;
+              if (data?.source === 'tomtom') anyLive = true;
+            } catch {
+              out[key] = { source: 'unavailable' };
+            }
+          }));
+        }
+
+        if (!cancelled) {
+          setTrafficByRoute(out);
+          setTrafficState(anyLive ? 'live' : 'unavailable');
+        }
+      };
+
+      fetchTraffic();
+    }, 800);
+
+    const iv = setInterval(() => {
+      if (!cancelled) {
+        // Background refresh
+        const targets = routes.filter(r => DISTRICT_COORDS[r.origin_district_id] && DISTRICT_COORDS[r.dest_district_id]);
+        if (targets.length) {
+          Promise.all(targets.slice(0, 4).map(async (r) => {
+            const key = `${r.origin_district_id}-${r.dest_district_id}`;
+            const a = DISTRICT_COORDS[r.origin_district_id];
+            const b = DISTRICT_COORDS[r.dest_district_id];
+            try {
+              const res = await ApiClient.getRouteTraffic({ origin_lat: a.lat, origin_lng: a.lng, dest_lat: b.lat, dest_lng: b.lng });
+              if (res?.success && res.data) {
+                trafficCache.current[key] = { at: Date.now(), data: res.data };
+                setTrafficByRoute(prev => ({ ...prev, [key]: res.data }));
+              }
+            } catch {}
+          }));
+        }
+      }
+    }, 300000);
+
+    return () => {
+      cancelled = true;
+      clearTimeout(timer);
+      clearInterval(iv);
     };
-    fetchTraffic();
-    const iv = setInterval(fetchTraffic, 240000);
-    return () => { cancelled = true; clearInterval(iv); };
   }, [trafficOn, routes]);
 
   const handleSearchSelect = (district) => {
@@ -698,6 +1370,20 @@ export const LiveAccessibilityMap = ({ isFullScreen = false, activeLayers, activ
       setFlyZoom(11);
     }
   };
+
+  const handleSelectVehicle = (v) => {
+    if (v && v.lat && v.lng) {
+      setFlyTarget([v.lat, v.lng]);
+      setFlyZoom(13);
+    }
+  };
+
+  // If activeLayers turns vehicles on (e.g. preset clicked), make sure showVehicles isn't false
+  useEffect(() => {
+    if (layerOn('vehicles')) {
+      setShowVehicles(true);
+    }
+  }, [layerOn]);
 
   // When activeState selector changes, automatically navigate map to that state's center + zoom
   useEffect(() => {
@@ -712,13 +1398,21 @@ export const LiveAccessibilityMap = ({ isFullScreen = false, activeLayers, activ
     ? TILE_LAYERS.dark
     : (TILE_LAYERS[activeLayer] || TILE_LAYERS.voyager);
   const tileKey = `${activeLayer}${((activeLayer === 'streets' || activeLayer === 'voyager') && themeDark) ? '-dark' : ''}`;
-  const showDistricts = layerOn('districts') || layerOn('accessibility');
-  const showRouteLines = (layerOn('routes') || layerOn('roads')) && showRoutes;
+  const showBaseMap = layerOn('base_map');
+  const showDistricts = layerOn('districts');
+  const showAccessibility = layerOn('accessibility');
+  const showRoutesLayer = layerOn('routes') && showRoutes;
+  const showRoadsLayer = layerOn('roads');
+  const showRailway = layerOn('railway');
+  const showAirports = layerOn('airports');
+  const showVehiclesLayer = (layerOn('vehicles') || layerOn('live_tracking')) && showVehicles;
   const showWeatherLayer = layerOn('weather');
-  const showImdRadar = layerOn('imd_radar') || layerOn('weather');
+  const showImdRadar = layerOn('imd_radar');
   const showRainLayer = layerOn('rainfall');
   const showFloodLayer = layerOn('risk_flood');
   const showLandslideLayer = layerOn('risk_landslide');
+  const showTraffic = layerOn('traffic');
+  const showRoadDamage = layerOn('road_damage');
   const showAlertLayer = layerOn('disruptions');
   const showHospitals = layerOn('hospitals');
   const showWarehouses = layerOn('warehouses');
@@ -810,13 +1504,15 @@ export const LiveAccessibilityMap = ({ isFullScreen = false, activeLayers, activ
           attributionControl={true}
           ref={mapRef}
         >
-          <ResilientTileLayer
-            url={tile.url}
-            attribution={tile.attribution}
-            maxNativeZoom={tile.maxNativeZoom || 16}
-            maxZoom={19}
-            key={tileKey}
-          />
+          {showBaseMap && (
+            <ResilientTileLayer
+              url={tile.url}
+              attribution={tile.attribution}
+              maxNativeZoom={tile.maxNativeZoom || 16}
+              maxZoom={19}
+              key={tileKey}
+            />
+          )}
           {/* Real precipitation coverage (RainViewer radar) when the Rainfall layer is on */}
           {showRainLayer && (
             <RainRadarOverlay
@@ -830,15 +1526,15 @@ export const LiveAccessibilityMap = ({ isFullScreen = false, activeLayers, activ
           <MouseCoords onMove={setCursorLatLng} />
           <MapEvents onMoveEnd={() => {}} />
 
-          {/* ── Route lines ── */}
-          {showRouteLines && routes.map((r, i) => {
+          {/* ── Route lines & Road network ── */}
+          {(showRoutesLayer || showRoadsLayer) && routes.map((r, i) => {
             const fromCoord = DISTRICT_COORDS[r.origin_district_id];
             const toCoord = DISTRICT_COORDS[r.dest_district_id];
             if (!fromCoord || !toCoord) return null;
-            const base = routeLineColor(r);
-            const liveScore = scoreForRoute(r);
+            const base = showRoutesLayer ? routeLineColor(r) : '#10B981';
+            const liveScore = showRoutesLayer ? scoreForRoute(r) : null;
             const mid = { lat: (fromCoord.lat + toCoord.lat) / 2, lng: (fromCoord.lng + toCoord.lng) / 2 };
-            const traffic = trafficOn ? trafficByRoute[`${r.origin_district_id}-${r.dest_district_id}`] : null;
+            const traffic = (showTraffic && trafficOn) ? trafficByRoute[`${r.origin_district_id}-${r.dest_district_id}`] : null;
             const dash = r.status === 'blocked' ? '10, 8' : undefined;
             // REAL OSRM road geometry (from dynamic load or pre-seeded cache)
             const geoKey = `${r.origin_district_id}-${r.dest_district_id}`;
@@ -858,7 +1554,7 @@ export const LiveAccessibilityMap = ({ isFullScreen = false, activeLayers, activ
               : [mid.lat, mid.lng];
             const showCasing = (tileKey.startsWith('satellite') || tileKey.startsWith('terrain')) && hasRoad;
             const pathStyle = {
-              color: base, weight: hasRoad ? 4 : 2.5, opacity: 0.95,
+              color: base, weight: hasRoad ? (showRoutesLayer ? 4 : 3) : 2.5, opacity: 0.95,
               dashArray: hasRoad ? dash : '3, 7',
               lineCap: 'round', lineJoin: 'round',
             };
@@ -868,23 +1564,34 @@ export const LiveAccessibilityMap = ({ isFullScreen = false, activeLayers, activ
                 {showCasing && (
                   <Polyline positions={positions} pathOptions={{ color: 'rgba(255,255,255,0.85)', weight: 7, opacity: 0.9, lineCap: 'round', lineJoin: 'round' }} />
                 )}
-                <Polyline positions={positions} pathOptions={pathStyle}>
+                <Polyline
+                  positions={positions}
+                  pathOptions={pathStyle}
+                  eventHandlers={{
+                    mouseover: () => setHoveredEntity({ type: 'route', r, liveScore, traffic }),
+                    mouseout: () => setHoveredEntity(null),
+                  }}
+                >
                   <Popup>
                     <div style={{ ...popupFont, minWidth: 180 }}>
                       <div style={{ fontWeight: 700, fontSize: 13, color: '#202124' }}>{r.name}</div>
                       <div style={{ fontSize: 12, color: '#5F6368', marginTop: 2 }}>
                         {fromCoord.name} → {toCoord.name} · {r.distance_km ? `${r.distance_km} km` : ''}
                       </div>
-                      {liveScore ? (
+                      {showRoutesLayer && liveScore ? (
                         <div style={{ fontSize: 12, color: '#5F6368', marginTop: 4 }}>
                           <b style={{ color: base }}>ML Risk: {liveScore.score}/100</b> ({liveScore.level})
                           {liveScore.factors?.recordedRainfallMm != null && (
                             <div>Rainfall: {liveScore.factors.recordedRainfallMm} mm · Slope: {liveScore.factors.terrainSlopeRisk}%</div>
                           )}
                         </div>
-                      ) : (
+                      ) : showRoutesLayer ? (
                         <div style={{ fontSize: 12, color: '#5F6368', marginTop: 4 }}>
                           Risk: <b style={{ color: base }}>{r.current_risk_score ?? 'N/A'}/100</b> · Status: {r.status}
+                        </div>
+                      ) : (
+                        <div style={{ fontSize: 12, color: '#059669', marginTop: 4, fontWeight: 600 }}>
+                          National Highway Corridor Network
                         </div>
                       )}
                       {traffic && (
@@ -906,10 +1613,12 @@ export const LiveAccessibilityMap = ({ isFullScreen = false, activeLayers, activ
                       )}
                     </div>
                   </Popup>
-                  <Tooltip sticky>{r.name}</Tooltip>
+                  <Tooltip sticky direction="top" opacity={1} className="raahi-custom-tooltip">
+                    <RouteHoverCard r={r} liveScore={liveScore} traffic={traffic} color={base} />
+                  </Tooltip>
                 </Polyline>
                 {/* Congestion overlay from live TomTom data */}
-                {trafficOn && traffic && traffic.source === 'tomtom' && (
+                {showTraffic && trafficOn && traffic && traffic.source === 'tomtom' && (
                   <React.Fragment key={`t-${r.id || i}`}>
                     <Polyline
                       positions={positions}
@@ -937,12 +1646,14 @@ export const LiveAccessibilityMap = ({ isFullScreen = false, activeLayers, activ
             );
           })}
 
-          {/* ── POIs ── */}
+          {/* ── POIs: Hospitals, Warehouses, Hubs, Airports, Railway Stations ── */}
           {pois.filter(p => {
             const t = p.properties?.type;
             if (t === 'hospital') return showHospitals;
             if (t === 'warehouse') return showWarehouses;
             if (t === 'logistics_hub') return showHubs;
+            if (t === 'airport') return showAirports;
+            if (t === 'railway') return showRailway;
             return false;
           }).map(p => {
             const [lng, lat] = p.geometry.coordinates;
@@ -971,7 +1682,7 @@ export const LiveAccessibilityMap = ({ isFullScreen = false, activeLayers, activ
             const inActiveState = activeState === 'All' ||
               (d.state && d.state.toLowerCase() === activeState.toLowerCase()) ||
               (coord.state && coord.state.toLowerCase() === activeState.toLowerCase());
-            const color = getStatusColor(d.connectivity_status);
+            const color = showAccessibility ? getStatusColor(d.connectivity_status) : '#3B82F6';
             const isSelected = selectedDistrict?.id === d.id || (activeState !== 'All' && inActiveState);
             const markerRadius = isSelected ? (activeState !== 'All' ? 14 : 12) : 10;
             const markerOpacity = (activeState === 'All' || inActiveState) ? 0.9 : 0.45;
@@ -984,21 +1695,34 @@ export const LiveAccessibilityMap = ({ isFullScreen = false, activeLayers, activ
                   fillOpacity={markerOpacity}
                   color={isSelected ? '#0F172A' : 'white'}
                   weight={isSelected ? 3 : 2}
-                  eventHandlers={{ click: () => { setSelectedDistrict(d); setFlyTarget([coord.lat, coord.lng]); setFlyZoom(11); } }}
+                  eventHandlers={{
+                    click: () => { setSelectedDistrict(d); setFlyTarget([coord.lat, coord.lng]); setFlyZoom(11); },
+                    mouseover: () => setHoveredEntity({ type: 'district', d, coord, w: weatherMap[d.id], disrup: disruptions[d.id] }),
+                    mouseout: () => setHoveredEntity(null),
+                  }}
                 >
-                  <Tooltip direction="top" offset={[0, -10]} permanent={isSelected}>
-                    <div style={{ background: 'white', padding: '6px 10px', borderRadius: 4, boxShadow: '0 1px 4px rgba(0,0,0,0.2)', fontFamily: "'Roboto', sans-serif", border: '1px solid #DADCE0', fontSize: 12, whiteSpace: 'nowrap' }}>
-                      <div style={{ fontWeight: 600, color: '#202124' }}>{d.name || coord.name}</div>
-                      <div style={{ fontSize: 11, color: '#5F6368' }}>Score: {d.connectivity_score}% | <span style={{ color, fontWeight: 500 }}>{d.connectivity_status}</span></div>
-                    </div>
+                  <Tooltip direction="top" offset={[0, -14]} opacity={1} className="raahi-custom-tooltip">
+                    <DistrictHoverCard
+                      d={d}
+                      coord={coord}
+                      w={weatherMap[d.id]}
+                      disrup={disruptions[d.id]}
+                      imdStation={imdStations.find(st => st.lat && Math.abs(st.lat - coord.lat) < 0.35 && Math.abs(st.lng - coord.lng) < 0.35)}
+                    />
                   </Tooltip>
                   <Popup>
                     <div style={{ ...popupFont, minWidth: 190 }}>
                       <div style={{ fontWeight: 700, fontSize: 14, color: '#202124', marginBottom: 4 }}>{d.name || coord.name}</div>
-                      <div style={{ fontSize: 12, color: '#5F6368', marginBottom: 4 }}>Connectivity: {d.connectivity_score}%</div>
-                      <div style={{ display: 'inline-block', padding: '2px 8px', borderRadius: 10, fontSize: 11, fontWeight: 600, color: 'white', background: color }}>
-                        {d.connectivity_status}
-                      </div>
+                      {showAccessibility ? (
+                        <>
+                          <div style={{ fontSize: 12, color: '#5F6368', marginBottom: 4 }}>Connectivity: {d.connectivity_score}%</div>
+                          <div style={{ display: 'inline-block', padding: '2px 8px', borderRadius: 10, fontSize: 11, fontWeight: 600, color: 'white', background: color }}>
+                            {d.connectivity_status}
+                          </div>
+                        </>
+                      ) : (
+                        <div style={{ fontSize: 12, color: '#5F6368', marginBottom: 4 }}>{coord.state} District Center</div>
+                      )}
                       {showWeatherLayer && weatherMap[d.id] && (
                         <div style={{ marginTop: 8, paddingTop: 6, borderTop: '1px solid #EEF0F2' }}>
                           <div style={{ fontWeight: 600, fontSize: 11, color: '#5F6368', marginBottom: 3 }}>Weather · {weatherMap[d.id].source}</div>
@@ -1059,9 +1783,25 @@ export const LiveAccessibilityMap = ({ isFullScreen = false, activeLayers, activ
             );
           })}
 
-          {/* ── IMD Radar Observatories layer ── */}
-          {showImdRadar && imdStations.map((st, idx) => {
-            if (!st.lat || !st.lng) return null;
+          {/* ── IMD Radar Observatories layer (filtered for North East Region) ── */}
+          {showImdRadar && imdStations.filter(st => {
+            if (!st.lat || !st.lng) return false;
+            const lat = Number(st.lat);
+            const lng = Number(st.lng);
+            // Strict geographic filter for North East Region & Gateway corridor:
+            // 1. Seven Sisters: 21.5°N - 29.8°N, 89.7°E - 97.5°E
+            // 2. Sikkim & North Bengal Gateway Corridor: 26.3°N - 28.5°N, 88.0°E - 89.7°E
+            const inNerGeo = (lat >= 21.5 && lat <= 29.8 && lng >= 89.7 && lng <= 97.5) ||
+                             (lat >= 26.3 && lat <= 28.5 && lng >= 88.0 && lng < 89.7);
+            if (!inNerGeo) return false;
+            if (activeState && activeState !== 'All') {
+              const s = (st.state || '').toLowerCase();
+              const n = (st.stationName || '').toLowerCase();
+              const target = activeState.toLowerCase();
+              if (s && !s.includes(target) && !target.includes(s) && !n.includes(target)) return false;
+            }
+            return true;
+          }).map((st, idx) => {
             const isWarn = st.warningColor && st.warningColor.toLowerCase() !== 'green';
             return (
               <Marker
@@ -1069,6 +1809,10 @@ export const LiveAccessibilityMap = ({ isFullScreen = false, activeLayers, activ
                 position={[st.lat, st.lng]}
                 icon={imdStationIcon(st.warningColor, isWarn)}
                 zIndexOffset={350}
+                eventHandlers={{
+                  mouseover: () => setHoveredEntity({ type: 'station', st }),
+                  mouseout: () => setHoveredEntity(null),
+                }}
               >
                 <Popup>
                   <div style={{ ...popupFont, minWidth: 200 }}>
@@ -1110,8 +1854,8 @@ export const LiveAccessibilityMap = ({ isFullScreen = false, activeLayers, activ
                     </div>
                   </div>
                 </Popup>
-                <Tooltip direction="top">
-                  📡 IMD {st.stationName} ({st.warningColor?.toUpperCase() || 'NORMAL'})
+                <Tooltip direction="top" offset={[0, -14]} opacity={1} className="raahi-custom-tooltip">
+                  <ImdStationHoverCard st={st} />
                 </Tooltip>
               </Marker>
             );
@@ -1238,17 +1982,22 @@ export const LiveAccessibilityMap = ({ isFullScreen = false, activeLayers, activ
           })}
 
           {/* ── Vehicle markers — directional, LIVE pulse, real GPS heading ── */}
-          {showVehicles && vehicles.filter(v => v.lat && v.lng).map(v => (
-            <VehicleMarker
-              key={v.id}
-              v={{
-                ...v,
-                liveStatus: v.liveStatus || (v.trackingActive ? 'live' : null),
-                heading: typeof v.heading === 'number' ? v.heading : null,
-              }}
-              zIndexOffset={700}
-            />
-          ))}
+          {showVehiclesLayer && vehicles
+            .filter(v => {
+              if (!v.lat || !v.lng) return false;
+              return isVehicleInState(v, activeState, districts);
+            })
+            .map(v => (
+              <VehicleMarker
+                key={v.id}
+                v={{
+                  ...v,
+                  liveStatus: v.liveStatus || (v.trackingActive ? 'live' : null),
+                  heading: typeof v.heading === 'number' ? v.heading : null,
+                }}
+                zIndexOffset={700}
+              />
+            ))}
 
           {/* ── Rain × landslide/flood trigger flags (real thresholds, auto) ── */}
           {showRainLayer && Object.entries(disruptions).map(([id, d]) => {
@@ -1273,12 +2022,45 @@ export const LiveAccessibilityMap = ({ isFullScreen = false, activeLayers, activ
               </Marker>
             );
           })}
+
+          {/* ── Road Damage / Blockage flags ── */}
+          {showRoadDamage && Object.entries(disruptions).filter(([_, d]) => d?.roadBlocked || String(d?.landslideRisk || '').toLowerCase() === 'high' || String(d?.landslideRisk || '').toLowerCase() === 'critical').map(([id, d]) => {
+            const coord = DISTRICT_COORDS[id];
+            if (!coord) return null;
+            return (
+              <Marker
+                key={`rd-damage-${id}`}
+                position={[coord.lat - 0.18, coord.lng + 0.18]}
+                icon={roadDamageIcon()}
+                zIndexOffset={850}
+              >
+                <Popup>
+                  <div style={{ ...popupFont, minWidth: 180 }}>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+                      <span style={{ background: '#FEF2F2', color: '#DC2626', border: '1px solid #FECACA', padding: '2px 8px', borderRadius: 6, fontSize: 10, fontWeight: 800 }}>
+                        ROAD DAMAGE / BLOCKED
+                      </span>
+                    </div>
+                    <div style={{ fontWeight: 700, fontSize: 13, color: '#202124', marginTop: 4 }}>{d.districtName || coord.name} Sector</div>
+                    <div style={{ fontSize: 12, color: '#5F6368', marginTop: 2 }}>Status: {d.roadBlocked ? 'Highway corridor blocked' : 'Hazardous road condition'}</div>
+                    <div style={{ fontSize: 11, color: '#9CA3AF', marginTop: 4 }}>Disruption Severity: {d.disruptionSeverity || 'High'}/100</div>
+                  </div>
+                </Popup>
+                <Tooltip direction="top">Road Damage · {d.districtName || coord.name}</Tooltip>
+              </Marker>
+            );
+          })}
         </MapContainer>
 
         {/* Mini overview map (synced with the main view) */}
         <MapMinimap mapRef={mapRef} tile={tile} />
         {/* Search Bar Overlay */}
-        <MapSearchBar districts={districts} onSelectDistrict={handleSearchSelect} />
+        <MapSearchBar
+          districts={districts}
+          vehicles={vehicles}
+          onSelectDistrict={handleSearchSelect}
+          onSelectVehicle={handleSelectVehicle}
+        />
         {/* Layer Control */}
         <LayerControl activeLayer={activeLayer} setActiveLayer={setActiveLayer} />
         {/* Legend */}
@@ -1287,12 +2069,16 @@ export const LiveAccessibilityMap = ({ isFullScreen = false, activeLayers, activ
         <div style={{ position: 'absolute', bottom: 6, right: 6, zIndex: 999, background: 'rgba(255,255,255,0.85)', borderRadius: 3, padding: '1px 4px', fontSize: 9, color: '#666', fontFamily: "'Roboto', sans-serif" }}>
           Raahi GIS · live data
         </div>
-        {/* Cursor coordinate readout */}
-        {cursorLatLng && (
-          <div style={{ position: 'absolute', bottom: 6, left: '50%', transform: 'translateX(-50%)', zIndex: 999, background: 'rgba(255,255,255,0.9)', borderRadius: 4, padding: '2px 8px', fontSize: 10, color: '#444', fontFamily: "'Roboto Mono', monospace", boxShadow: '0 1px 3px rgba(0,0,0,0.15)' }}>
-            {cursorLatLng.lat.toFixed(4)}, {cursorLatLng.lng.toFixed(4)}
-          </div>
-        )}
+        {/* Live Location & Risk Inspector HUD Card (Updates on hover anywhere on map) */}
+        <MapLiveInspectorCard
+          cursorLatLng={cursorLatLng}
+          districts={districts}
+          weatherMap={weatherMap}
+          disruptions={disruptions}
+          imdStations={imdStations}
+          hoveredEntity={hoveredEntity}
+          isFullScreen={isFullScreen}
+        />
       </div>
 
       <style>{`
@@ -1341,6 +2127,16 @@ export const LiveAccessibilityMap = ({ isFullScreen = false, activeLayers, activ
           border-radius: 4px !important;
           font-family: 'Roboto', sans-serif !important;
           padding: 4px 8px !important;
+        }
+        /* Custom borderless, transparent container for rich hover cards */
+        .leaflet-tooltip.raahi-custom-tooltip {
+          background: transparent !important;
+          border: none !important;
+          box-shadow: none !important;
+          padding: 0 !important;
+        }
+        .leaflet-tooltip.raahi-custom-tooltip::before {
+          display: none !important;
         }
       `}</style>
     </div>

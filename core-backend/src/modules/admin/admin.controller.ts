@@ -26,9 +26,15 @@ import { redisClient } from '../../config/redis';
 import bcrypt from 'bcrypt';
 
 export class AdminController {
-  // 1. Overview KPIs — all counts from live DB
+  // 1. Overview KPIs — with 15s caching
   static async getOverviewKpis(req: Request, res: Response) {
     try {
+      const cacheKey = 'admin:kpi:overview';
+      const cached = await redisClient.get(cacheKey);
+      if (cached) {
+        return sendSuccess(res, cached, 'Dashboard KPIs retrieved');
+      }
+
       const [totalRoutes, atRiskRoutes, blockedRoutes, activeVehicles, inTransitDeliveries] =
         await Promise.all([
           Route.count(),
@@ -64,6 +70,7 @@ export class AdminController {
         deliveriesInTransit: { value: inTransitDeliveries, trend: trendPct(inTransitDeliveries, prevInTransit), period: 'vs yesterday', isUp: inTransitDeliveries >= prevInTransit },
       };
 
+      await redisClient.set(cacheKey, data, { ex: 15 });
       return sendSuccess(res, data, 'Dashboard KPIs retrieved');
     } catch (err: any) {
       return sendError(res, err.message);
@@ -83,9 +90,23 @@ export class AdminController {
   // 3. Districts
   static async getDistricts(req: Request, res: Response) {
     try {
+      const cacheKey = 'admin:districts:list';
+      try {
+        const cached = await redisClient.get(cacheKey);
+        if (cached) {
+          const parsed = typeof cached === 'string' ? JSON.parse(cached) : cached;
+          return sendSuccess(res, parsed, 'Districts retrieved (cached)');
+        }
+      } catch {}
+
       const districts = await District.findAll({
         include: [{ model: Road, as: 'roads' }],
       });
+
+      try {
+        await redisClient.set(cacheKey, JSON.stringify(districts), 60);
+      } catch {}
+
       return sendSuccess(res, districts, 'Districts retrieved');
     } catch (err: any) {
       return sendError(res, err.message);
@@ -122,9 +143,23 @@ export class AdminController {
   // 4. Routes & Risk
   static async getRoutes(req: Request, res: Response) {
     try {
+      const cacheKey = 'admin:routes:list';
+      try {
+        const cached = await redisClient.get(cacheKey);
+        if (cached) {
+          const parsed = typeof cached === 'string' ? JSON.parse(cached) : cached;
+          return sendSuccess(res, parsed, 'Routes retrieved (cached)');
+        }
+      } catch {}
+
       const routes = await Route.findAll({
         include: [{ model: RiskScore, as: 'risk_scores', limit: 1, order: [['computed_at', 'DESC']] }],
       });
+
+      try {
+        await redisClient.set(cacheKey, JSON.stringify(routes), 60);
+      } catch {}
+
       return sendSuccess(res, routes, 'Routes retrieved');
     } catch (err: any) {
       return sendError(res, err.message);

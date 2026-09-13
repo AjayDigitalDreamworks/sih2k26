@@ -62,6 +62,16 @@ async function startServer() {
         mode: env.nodeEnv,
         health: `http://localhost:${env.port}/health`,
       });
+
+      // Automatically launch Northeast 6-vehicle live fleet simulation
+      try {
+        const { FleetSimulationService } = require('./modules/tracking/fleet-simulation.service');
+        FleetSimulationService.start(3500).catch((e: any) => {
+          logger.warn(`FleetSimulationService auto-start warning: ${e}`);
+        });
+      } catch (e) {
+        logger.warn(`Failed to initialize FleetSimulationService: ${e}`);
+      }
     });
   } catch (err: any) {
     logger.error('Failed to start server', err);
@@ -70,3 +80,4 @@ async function startServer() {
 }
 
 startServer();
+// Active Northeast multi-vehicle live fleet simulation online

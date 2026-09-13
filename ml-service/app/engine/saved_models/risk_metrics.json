@@ -1,59 +1,59 @@
 {
-  "mae": 2.72,
-  "rmse": 3.436,
-  "r2": 0.9416,
-  "level_accuracy": 0.9401,
-  "f1_score": 0.94,
+  "mae": 2.719,
+  "rmse": 3.431,
+  "r2": 0.9379,
+  "level_accuracy": 0.9301,
+  "f1_score": 0.931,
   "feature_importance": {
-    "road_condition": 0.2722,
-    "historical_disruptions": 0.222,
-    "bridge_condition": 0.1525,
-    "landslide_probability": 0.1242,
-    "flood_risk_level": 0.0783,
-    "river_proximity": 0.0476,
-    "rainfall_24h_mm": 0.039,
-    "congestion_level": 0.0295,
-    "month": 0.0097,
-    "slope_risk": 0.0094,
-    "elevation_m": 0.0091,
-    "road_distance_km": 0.0065
+    "road_condition": 0.3322,
+    "landslide_probability": 0.2136,
+    "historical_disruptions": 0.1882,
+    "bridge_condition": 0.1018,
+    "flood_risk_level": 0.0472,
+    "rainfall_24h_mm": 0.0308,
+    "congestion_level": 0.0277,
+    "river_proximity": 0.0216,
+    "month": 0.0116,
+    "slope_risk": 0.009,
+    "elevation_m": 0.0088,
+    "road_distance_km": 0.0074
   },
-  "trained_at": "2026-09-10T07:52:58.200100",
+  "trained_at": "2026-09-12T16:44:09.095768",
   "n_samples": 3005,
   "continual_learning": {
-    "iteration": 2,
-    "timestamp": "2026-09-10T07:52:58.199061",
+    "iteration": 3,
+    "timestamp": "2026-09-12T16:44:09.094770",
     "total_samples": 3005,
     "new_feedback_samples": 5,
-    "hard_false_negatives": 4,
-    "smooth_transits": 1,
+    "hard_false_negatives": 0,
+    "smooth_transits": 5,
     "metrics": {
-      "mae": 2.72,
-      "rmse": 3.436,
-      "r2": 0.9416,
-      "level_accuracy": 0.9401,
-      "f1_score": 0.94
+      "mae": 2.719,
+      "rmse": 3.431,
+      "r2": 0.9379,
+      "level_accuracy": 0.9301,
+      "f1_score": 0.931
     },
     "top_features": [
       [
         "road_condition",
-        0.2722245454788208
-      ],
-      [
-        "historical_disruptions",
-        0.22204427421092987
-      ],
-      [
-        "bridge_condition",
-        0.15247716009616852
+        0.3322162926197052
       ],
       [
         "landslide_probability",
-        0.12417299300432205
+        0.21355797350406647
+      ],
+      [
+        "historical_disruptions",
+        0.18821103870868683
+      ],
+      [
+        "bridge_condition",
+        0.10183713585138321
       ],
       [
         "flood_risk_level",
-        0.07826576381921768
+        0.04723716899752617
       ]
     ]
   }

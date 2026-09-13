@@ -6,6 +6,9 @@ import { env } from '../../config/env';
 
 const isProduction = env.nodeEnv === 'production';
 
+const ACCESS_TOKEN_COOKIE_MAX_AGE = 86400 * 1000; // 1 day
+const REFRESH_TOKEN_COOKIE_MAX_AGE = 7 * 86400 * 1000; // 7 days
+
 const getCookieOptions = (maxAgeMs: number) => ({
   httpOnly: true,
   secure: isProduction,
@@ -20,8 +23,8 @@ export class AuthController {
       const result = await AuthService.register(req.body);
 
       // Set secure HttpOnly cookies
-      res.cookie('ner_access_token', result.accessToken, getCookieOptions(3600 * 1000));
-      res.cookie('ner_refresh_token', result.refreshToken, getCookieOptions(86400 * 1000));
+      res.cookie('ner_access_token', result.accessToken, getCookieOptions(ACCESS_TOKEN_COOKIE_MAX_AGE));
+      res.cookie('ner_refresh_token', result.refreshToken, getCookieOptions(REFRESH_TOKEN_COOKIE_MAX_AGE));
 
       return sendSuccess(res, result, 'User registered successfully', 201);
     } catch (err: any) {
@@ -35,8 +38,8 @@ export class AuthController {
       const result = await AuthService.login(email, password);
 
       // Set secure HttpOnly cookies to protect against XSS token theft
-      res.cookie('ner_access_token', result.accessToken, getCookieOptions(3600 * 1000));
-      res.cookie('ner_refresh_token', result.refreshToken, getCookieOptions(86400 * 1000));
+      res.cookie('ner_access_token', result.accessToken, getCookieOptions(ACCESS_TOKEN_COOKIE_MAX_AGE));
+      res.cookie('ner_refresh_token', result.refreshToken, getCookieOptions(REFRESH_TOKEN_COOKIE_MAX_AGE));
 
       return sendSuccess(res, result, 'Login successful');
     } catch (err: any) {
@@ -53,8 +56,8 @@ export class AuthController {
       const tokens = await AuthService.refresh(refreshToken);
 
       // Update secure HttpOnly cookies
-      res.cookie('ner_access_token', tokens.accessToken, getCookieOptions(3600 * 1000));
-      res.cookie('ner_refresh_token', tokens.refreshToken, getCookieOptions(86400 * 1000));
+      res.cookie('ner_access_token', tokens.accessToken, getCookieOptions(ACCESS_TOKEN_COOKIE_MAX_AGE));
+      res.cookie('ner_refresh_token', tokens.refreshToken, getCookieOptions(REFRESH_TOKEN_COOKIE_MAX_AGE));
 
       return sendSuccess(res, tokens, 'Token refreshed successfully');
     } catch (err: any) {

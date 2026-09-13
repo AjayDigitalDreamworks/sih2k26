@@ -19,7 +19,7 @@ class TrafficService:
     async def get_route_traffic(cls, origin_lat: float, origin_lng: float,
                                  dest_lat: float, dest_lng: float) -> Dict[str, Any]:
         """Get real-time traffic conditions for a route between two points."""
-        cache_key = f"traffic:{origin_lat},{origin_lng}:{dest_lat},{dest_lng}"
+        cache_key = f"traffic:{round(origin_lat, 2)},{round(origin_lng, 2)}:{round(dest_lat, 2)},{round(dest_lng, 2)}"
         cached = cls._cache.get(cache_key)
         if cached and (datetime.utcnow() - cached.get("_fetched_at", datetime.min)).seconds < cls._cache_ttl:
             return cached
@@ -52,7 +52,7 @@ class TrafficService:
         )
 
         try:
-            async with httpx.AsyncClient(timeout=10) as client:
+            async with httpx.AsyncClient(timeout=2.0) as client:
                 resp = await client.get(url)
                 if resp.status_code == 200:
                     data = resp.json()
@@ -88,7 +88,7 @@ class TrafficService:
         )
 
         try:
-            async with httpx.AsyncClient(timeout=10) as client:
+            async with httpx.AsyncClient(timeout=2.0) as client:
                 resp = await client.get(url)
                 if resp.status_code == 200:
                     data = resp.json()
@@ -134,30 +134,33 @@ class TrafficService:
             f"&language=en-GB"
         )
 
-        async with httpx.AsyncClient(timeout=15) as client:
-            resp = await client.get(url)
-            if resp.status_code == 200:
-                data = resp.json()
-                routes = data.get("routes", [])
-                if routes:
-                    route = routes[0]
-                    summary = route.get("summary", {})
-                    legs = route.get("legs", [])
+        try:
+            async with httpx.AsyncClient(timeout=2.0) as client:
+                resp = await client.get(url)
+                if resp.status_code == 200:
+                    data = resp.json()
+                    routes = data.get("routes", [])
+                    if routes:
+                        route = routes[0]
+                        summary = route.get("summary", {})
+                        legs = route.get("legs", [])
 
-                    return {
-                        "source": "tomtom",
-                        "distance_km": round(summary.get("lengthInMeters", 0) / 1000, 1),
-                        "travel_time_seconds": summary.get("travelTimeInSeconds", 0),
-                        "departure_time": summary.get("departureTime", ""),
-                        "arrival_time": summary.get("arrivalTime", ""),
-                        "traffic_delay_seconds": summary.get("trafficDelayInSeconds", 0),
-                        "traffic_length_km": round(summary.get("trafficLengthInMeters", 0) / 1000, 1),
-                        "congestion_level": cls._classify_congestion(
-                            summary.get("trafficDelayInSeconds", 0),
-                            summary.get("travelTimeInSeconds", 1)
-                        ),
-                        "waypoints": len(legs[0].get("points", [])) if legs else 0,
-                    }
+                        return {
+                            "source": "tomtom",
+                            "distance_km": round(summary.get("lengthInMeters", 0) / 1000, 1),
+                            "travel_time_seconds": summary.get("travelTimeInSeconds", 0),
+                            "departure_time": summary.get("departureTime", ""),
+                            "arrival_time": summary.get("arrivalTime", ""),
+                            "traffic_delay_seconds": summary.get("trafficDelayInSeconds", 0),
+                            "traffic_length_km": round(summary.get("trafficLengthInMeters", 0) / 1000, 1),
+                            "congestion_level": cls._classify_congestion(
+                                summary.get("trafficDelayInSeconds", 0),
+                                summary.get("travelTimeInSeconds", 1)
+                            ),
+                            "waypoints": len(legs[0].get("points", [])) if legs else 0,
+                        }
+        except Exception:
+            pass
         return None
 
     @classmethod

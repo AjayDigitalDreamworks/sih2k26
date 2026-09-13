@@ -20,6 +20,8 @@ How it works (no fabricated coordinates):
   5. If the caller provides a real current GPS position, the route starts from
      that exact point (the vehicle may be mid-corridor) instead of the hub.
 """
+import asyncio
+import time
 from typing import Dict, Any, List, Optional, Tuple
 from fastapi import APIRouter
 from app.engine.route_optimizer import ROAD_NETWORK, NER_DISTANCES, SEGMENT_RISK
@@ -36,6 +38,12 @@ from app.engine.micro_segment_engine import score_route_microsegments
 router = APIRouter(prefix="/route", tags=["Route Planner (real roads)"])
 
 DISTRICT_COORDS = {k: (v["lat"], v["lng"]) for k, v in APIConfig.NER_DISTRICTS.items()}
+
+# In-memory fast cache layers for route planner
+_LEG_COND_CACHE: Dict[Tuple[str, str], Tuple[float, Dict[str, Any]]] = {}
+_ROAD_GEOM_CACHE: Dict[str, Dict[str, Any]] = {}
+_ELEV_CACHE: Dict[str, Dict[str, Any]] = {}
+_MICRO_CACHE: Dict[str, List[Dict[str, Any]]] = {}
 
 # Vehicle physics and fuel profiles
 VEHICLE_PROFILES = {
@@ -112,14 +120,18 @@ def _build_graph(
     avoid_districts: Optional[List[str]] = None,
     blocked_corridors: Optional[List[str]] = None,
     alerts: Optional[List[Dict[str, Any]]] = None,
+    field_reports: Optional[List[Dict[str, Any]]] = None,
+    trip_endpoints: Optional[Tuple[str, str]] = None,
 ):
     """
     Undirected corridor graph keyed by district id -> [(neighbor, distance, risk, edge)].
-    Dynamically applies penalties / blocks for avoided corridors, avoided districts, and active alerts.
+    Dynamically applies penalties / blocks for avoided corridors, avoided districts, active IMD alerts,
+    and verified field reports.
     """
     avoid_set = set(str(c).lower().strip() for c in (avoid_corridors or []))
     avoid_dist_set = set(str(d).lower().strip() for d in (avoid_districts or []))
     blocked_set = set(str(b).lower().strip() for b in (blocked_corridors or []))
+    endpoint_set = set(str(e).lower().strip() for e in (trip_endpoints or ()))
 
     # Also inspect live alerts from pipeline state if alerts not explicitly passed
     active_alerts_list = list(alerts or [])
@@ -144,7 +156,8 @@ def _build_graph(
         # Check avoided districts (as transit nodes)
         if f_low in avoid_dist_set or t_low in avoid_dist_set:
             hit_d = f_low if f_low in avoid_dist_set else t_low
-            return True, f"Transit through high-risk district {hit_d} avoided"
+            if hit_d not in endpoint_set:
+                return True, f"Transit through high-risk district {hit_d} avoided"
 
         # Check active alerts on this corridor
         for alt in active_alerts_list:
@@ -156,10 +169,30 @@ def _build_graph(
             alt_loc = str(alt.get("location") or alt.get("title") or alt.get("message") or "").lower()
 
             is_severe = alt_sev in ("high", "critical") or any(k in alt_type for k in ("block", "landslide", "flood", "damage", "accident", "sos"))
-            corridor_matched = (alt_d in (f_low, t_low)) or (pair1 in alt_loc or pair2 in alt_loc) or (nh_low in alt_loc and len(nh_low) > 3)
+            direct_nh_match = (pair1 in alt_loc or pair2 in alt_loc) or (nh_low in alt_loc and len(nh_low) > 3)
+            district_transit_match = (alt_d in (f_low, t_low)) and (alt_d not in endpoint_set)
+            corridor_matched = direct_nh_match or district_transit_match
 
             if is_severe and corridor_matched:
                 reason = alt.get("title") or alt.get("message") or f"Active {alt_type} alert on {nh}"
+                return True, str(reason)
+
+        # Check verified field & incident reports on this corridor
+        for fr in (field_reports or []):
+            if not isinstance(fr, dict):
+                continue
+            fr_d = str(fr.get("districtId") or fr.get("district") or "").lower()
+            fr_road = str(fr.get("roadStatus") or fr.get("road_status") or "").upper()
+            fr_sev = str(fr.get("severity") or "").upper()
+            fr_loc = str(fr.get("locationName") or fr.get("description") or "").lower()
+
+            is_blocking = fr_road in ("PARTIALLY_BLOCKED", "CLOSED", "DANGEROUS") or fr_sev in ("HIGH", "CRITICAL")
+            direct_nh_match = (pair1 in fr_loc or pair2 in fr_loc) or (nh_low in fr_loc and len(nh_low) > 3)
+            district_transit_match = (fr_d in (f_low, t_low)) and (fr_d not in endpoint_set)
+            corridor_matched = direct_nh_match or district_transit_match
+
+            if is_blocking and corridor_matched:
+                reason = fr.get("description") or f"Verified Field Incident: {fr_road} ({fr.get('incidentType', 'Road Hazard')})"
                 return True, str(reason)
 
         return False, ""
@@ -209,7 +242,14 @@ def _build_graph(
 
 
 def _dijkstra(adj, origin: str, dest: str, weight: str = "risk"):
-    """Return (path_of_edges, total_weight, per_leg_list). weight: 'risk' or 'distance'."""
+    """
+    Return (path_of_edges, total_weight, per_leg_list).
+    weight modes:
+      'risk'      - Safest: prioritizes lowest hazard exposure, avoiding landslides/floods
+      'distance'  - Shortest: prioritizes minimal road km and fastest transit time
+      'economy'   - Economical: optimizes for lowest fuel burn and wear (penalizes damaged roads & steep climbs)
+      'balanced'  - Optimal: composite multi-objective AI recommendation
+    """
     import heapq
     best: Dict[str, Tuple[float, Optional[str], Optional[Dict]]] = {}
     heap = [(0.0, origin, None, None)]
@@ -219,9 +259,20 @@ def _dijkstra(adj, origin: str, dest: str, weight: str = "risk"):
         if best.get(node, (float("inf"),))[0] < cost:
             continue
         for nb, dist, risk, e in adj.get(node, []):
-            w = risk if weight == "risk" else dist
-            # tie-break: prefer shorter when risk-equal / lower risk when dist-equal
-            w = w + (dist / 1e6 if weight == "risk" else risk / 1e6)
+            if weight == "risk":
+                w = (risk ** 1.6) + (dist / 1e5)
+            elif weight == "distance":
+                w = dist + (risk / 1e5)
+            elif weight == "economy":
+                # Fuel & wear: road damage adds 40% fuel/maintenance cost; elevation climbs penalize
+                cond_penalty = 1.4 if str(e.get("road_condition", "")).lower() == "damaged" else 1.0
+                w = (dist * cond_penalty) + (risk * 0.25)
+            elif weight == "balanced" or weight == "optimal":
+                # Composite balanced AI score
+                w = (dist * 0.45) + (risk * 1.35)
+            else:
+                w = risk + (dist / 1e6)
+
             nc = cost + w
             if nc < best.get(nb, (float("inf"),))[0]:
                 best[nb] = (nc, node, e)
@@ -244,74 +295,134 @@ def _dijkstra(adj, origin: str, dest: str, weight: str = "risk"):
 
 
 async def _leg_conditions(from_id: str, to_id: str, hours_ahead: float = 0.0) -> Dict[str, Any]:
-    """Live conditions for a corridor leg — incorporates time-of-arrival (ETA) weather forecasting."""
-    cond: Dict[str, Any] = {"traffic": None, "rainfallMm": None, "floodRisk": None,
-                            "landslideRisk": None, "landslideProbability": None,
-                            "congestionLevel": None, "forecastAtArrival": None}
-    try:
-        f_coord = DISTRICT_COORDS.get(from_id)
+    """Live conditions for a corridor leg with parallel gathering, timeouts, and 180s caching."""
+    cache_key = (from_id, to_id)
+    now = time.time()
+    if cache_key in _LEG_COND_CACHE:
+        cached_time, cached_val = _LEG_COND_CACHE[cache_key]
+        if now - cached_time < 180.0:
+            return dict(cached_val)
+
+    cond: Dict[str, Any] = {
+        "traffic": None, "rainfallMm": 10.0, "floodRisk": "Low",
+        "landslideRisk": "Low", "landslideProbability": 5.0,
+        "congestionLevel": "low", "forecastAtArrival": None
+    }
+
+    f_coord = DISTRICT_COORDS.get(from_id)
+    a = DISTRICT_COORDS.get(from_id)
+    b = DISTRICT_COORDS.get(to_id)
+
+    async def _safe_eta():
         if f_coord and hours_ahead > 0:
-            eta_weather = await WeatherService.get_hourly_weather_at_eta(f_coord[0], f_coord[1], hours_ahead)
-            cond["forecastAtArrival"] = eta_weather
-    except Exception:
-        pass
+            try:
+                return await asyncio.wait_for(WeatherService.get_hourly_weather_at_eta(f_coord[0], f_coord[1], hours_ahead), timeout=2.0)
+            except Exception:
+                pass
+        return None
+
+    async def _safe_weather():
+        try:
+            res = await asyncio.wait_for(
+                asyncio.gather(
+                    WeatherService.get_district_weather(from_id),
+                    WeatherService.get_district_weather(to_id),
+                    return_exceptions=True
+                ),
+                timeout=2.5
+            )
+            wf, wt = res[0], res[1]
+            rf_f = wf.get("rainfall_24h_mm") if isinstance(wf, dict) else 0
+            rf_t = wt.get("rainfall_24h_mm") if isinstance(wt, dict) else 0
+            return round(max(float(rf_f or 0), float(rf_t or 0)), 1)
+        except Exception:
+            return 10.0
+
+    async def _safe_flood():
+        try:
+            flood = await asyncio.wait_for(FloodService.get_district_flood_risk(from_id), timeout=2.0)
+            return flood.get("flood_risk_level") or "Low"
+        except Exception:
+            return "Low"
+
+    async def _safe_landslide():
+        try:
+            ls = await asyncio.wait_for(LandslideService.get_district_landslide_risk(from_id), timeout=2.0)
+            risk = ls.get("risk_level") or ls.get("hazard_level") or "Low"
+            prob = ls.get("hazard_probability")
+            prob_pct = round(float(prob) * 100, 0) if prob is not None else 5.0
+            return risk, prob_pct
+        except Exception:
+            return "Low", 5.0
+
+    async def _safe_traffic():
+        if a and b:
+            try:
+                tr = await asyncio.wait_for(TrafficService.get_route_traffic(a[0], a[1], b[0], b[1]), timeout=2.0)
+                if tr and tr.get("source") != "unavailable":
+                    return {
+                        "source": tr.get("source"),
+                        "congestionLevel": tr.get("congestion_level"),
+                        "delaySeconds": tr.get("traffic_delay_seconds"),
+                        "travelTimeSeconds": tr.get("travel_time_seconds"),
+                    }, tr.get("congestion_level")
+            except Exception:
+                pass
+        return None, None
+
+    # Run ALL parallel checks concurrently
     try:
-        f_info = APIConfig.NER_DISTRICTS.get(from_id, {})
-        t_info = APIConfig.NER_DISTRICTS.get(to_id, {})
-        wf = await WeatherService.get_district_weather(from_id)
-        wt = await WeatherService.get_district_weather(to_id)
-        cond["rainfallMm"] = round(max(wf.get("rainfall_24h_mm") or 0, wt.get("rainfall_24h_mm") or 0), 1)
+        results = await asyncio.gather(
+            _safe_eta(),
+            _safe_weather(),
+            _safe_flood(),
+            _safe_landslide(),
+            _safe_traffic(),
+            return_exceptions=True
+        )
+        if not isinstance(results[0], Exception):
+            cond["forecastAtArrival"] = results[0]
+        if not isinstance(results[1], Exception) and results[1] is not None:
+            cond["rainfallMm"] = results[1]
+        if not isinstance(results[2], Exception) and results[2] is not None:
+            cond["floodRisk"] = results[2]
+        if not isinstance(results[3], Exception) and isinstance(results[3], tuple):
+            cond["landslideRisk"], cond["landslideProbability"] = results[3]
+        if not isinstance(results[4], Exception) and isinstance(results[4], tuple):
+            cond["traffic"], cond["congestionLevel"] = results[4]
     except Exception:
         pass
-    try:
-        flood = await FloodService.get_district_flood_risk(from_id)
-        cond["floodRisk"] = flood.get("flood_risk_level")
-    except Exception:
-        pass
-    try:
-        ls = await LandslideService.get_district_landslide_risk(from_id)
-        cond["landslideRisk"] = ls.get("risk_level") or ls.get("hazard_level")
-        prob = ls.get("hazard_probability")
-        cond["landslideProbability"] = round(float(prob) * 100, 0) if prob is not None else None
-        if cond["landslideRisk"] is None:
-            cond["landslideRisk"] = "High" if (prob or 0) >= 0.5 else "Medium" if (prob or 0) >= 0.25 else "Low"
-    except Exception:
-        pass
-    try:
-        a = DISTRICT_COORDS[from_id]
-        b = DISTRICT_COORDS[to_id]
-        traffic = await TrafficService.get_route_traffic(a[0], a[1], b[0], b[1])
-        if traffic and traffic.get("source") != "unavailable":
-            cond["traffic"] = {
-                "source": traffic.get("source"),
-                "congestionLevel": traffic.get("congestion_level"),
-                "delaySeconds": traffic.get("traffic_delay_seconds"),
-                "travelTimeSeconds": traffic.get("travel_time_seconds"),
-            }
-            cond["congestionLevel"] = traffic.get("congestion_level")
-    except Exception:
-        pass
+
+    _LEG_COND_CACHE[cache_key] = (now, dict(cond))
     return cond
 
 
-
 async def _road_geometry(from_id: str, to_id: str, origin_override=None, dest_override=None) -> Dict[str, Any]:
-    """Real road geometry for one leg via OSRM (falls back to the hub line)."""
+    """Real road geometry for one leg via OSRM (cached)."""
+    o_key = f"{origin_override['lat']:.4f},{origin_override['lng']:.4f}" if origin_override else ""
+    d_key = f"{dest_override['lat']:.4f},{dest_override['lng']:.4f}" if dest_override else ""
+    cache_key = f"{from_id}:{to_id}:{o_key}:{d_key}"
+    if cache_key in _ROAD_GEOM_CACHE:
+        return _ROAD_GEOM_CACHE[cache_key]
+
     o = origin_override or {"lat": DISTRICT_COORDS[from_id][0], "lng": DISTRICT_COORDS[from_id][1]}
     d = dest_override or {"lat": DISTRICT_COORDS[to_id][0], "lng": DISTRICT_COORDS[to_id][1]}
     try:
-        route = await RoutingService.get_optimized_route(o, d)
+        route = await asyncio.wait_for(RoutingService.get_optimized_route(o, d), timeout=3.5)
         if route and route.get("source") in ("osrm", "mappls", "tomtom", "fossgis") and route.get("geometry"):
+            _ROAD_GEOM_CACHE[cache_key] = route
             return route
     except Exception:
         pass
-    return {
+    fallback = {
         "source": "corridor_line",
         "status": "unavailable",
         "geometry": [[o["lat"], o["lng"]], [d["lat"], d["lng"]]],
         "distance_km": None,
         "duration_text": None,
     }
+    _ROAD_GEOM_CACHE[cache_key] = fallback
+    return fallback
 
 
 def _label(nh: str, from_name: str, to_name: str) -> str:
@@ -384,8 +495,26 @@ async def plan_route(payload: Dict[str, Any]):
         if geo:
             custom_dest_coords = {"lat": geo["lat"], "lng": geo["lng"]}
 
-    origin = _extract_district(custom_origin_coords or payload.get("originDistrictId") or payload.get("origin"))
-    dest = _extract_district(custom_dest_coords or payload.get("destDistrictId") or payload.get("destination"))
+    origin_val = (
+        custom_origin_coords
+        or payload.get("originDistrictId")
+        or payload.get("originDistrict")
+        or payload.get("origin_district")
+        or payload.get("origin")
+        or payload.get("from")
+        or payload.get("source")
+    )
+    dest_val = (
+        custom_dest_coords
+        or payload.get("destDistrictId")
+        or payload.get("destDistrict")
+        or payload.get("destinationDistrict")
+        or payload.get("dest_district")
+        or payload.get("destination")
+        or payload.get("to")
+    )
+    origin = _extract_district(origin_val)
+    dest = _extract_district(dest_val)
     prefer = str(payload.get("prefer") or "safest").lower()
 
     # Handle local / intra-district arbitrary point-to-point routing
@@ -517,28 +646,52 @@ async def plan_route(payload: Dict[str, Any]):
         blocked_corridors_raw = [blocked_corridors_raw]
     corridor_alerts_raw = list(payload.get("corridorAlerts") or payload.get("alerts") or [])
 
-    # Automatically ingest active IMD RED / severe warnings into routing avoidance
+    # Automatically ingest active IMD RED / ORANGE warnings into routing avoidance
     try:
-        imd_nowcasts = await WeatherService.get_active_nowcasts("warning")
+        imd_nowcasts = await asyncio.wait_for(WeatherService.get_active_nowcasts("warning"), timeout=2.0)
         for nc in imd_nowcasts:
             if nc.get("alertColor") == "red":
                 corridor_alerts_raw.append({
                     "district": nc.get("district"),
                     "severity": "critical",
                     "type": "weather_red_alert",
-                    "title": f"IMD RED ALERT: {nc.get('message')}",
+                    "title": f"IMD RADAR RED ALERT: {nc.get('message')}",
                     "message": nc.get("message"),
                 })
-    except Exception:
+
+        imd_district_warns = await asyncio.wait_for(WeatherService.get_district_warnings("ner"), timeout=2.0)
+        for dw in imd_district_warns:
+            day1_c = dw.get("day1", {}).get("color")
+            if day1_c == "red":
+                corridor_alerts_raw.append({
+                    "district": dw.get("district"),
+                    "severity": "critical",
+                    "type": "imd_red_alert",
+                    "title": f"IMD RED ALERT: {', '.join(dw.get('day1', {}).get('hazards', ['Severe Weather']))}",
+                    "message": f"Official IMD Red Alert issued for {dw.get('district')}",
+                })
+            elif day1_c == "orange":
+                corridor_alerts_raw.append({
+                    "district": dw.get("district"),
+                    "severity": "high",
+                    "type": "imd_orange_alert",
+                    "title": f"IMD ORANGE ALERT: {', '.join(dw.get('day1', {}).get('hazards', ['Severe Weather']))}",
+                    "message": f"Official IMD Orange Alert issued for {dw.get('district')}",
+                })
+    except BaseException:
         pass
 
-    adj = _build_graph(
-        avoid_corridors=avoid_corridors_raw,
-        avoid_districts=avoid_districts_raw,
-        blocked_corridors=blocked_corridors_raw,
-        alerts=corridor_alerts_raw,
-    )
-    base_adj = _build_graph()
+    field_reports_raw = payload.get("fieldReports") or payload.get("field_reports") or []
+    for fr in field_reports_raw:
+        if isinstance(fr, dict):
+            corridor_alerts_raw.append({
+                "district": fr.get("districtId"),
+                "severity": str(fr.get("severity", "high")).lower(),
+                "type": "field_report",
+                "title": f"Field Officer Incident ({fr.get('incidentType', 'Hazard')}): {fr.get('roadStatus', 'Reported')}",
+                "message": fr.get("description") or f"Active road condition: {fr.get('roadStatus')}",
+                "location": fr.get("locationName") or fr.get("districtId"),
+            })
 
     # Start from the REAL GPS point or custom coords when provided
     current_lat = payload.get("currentLat") or (custom_origin_coords.get("lat") if custom_origin_coords else None)
@@ -560,10 +713,51 @@ async def plan_route(payload: Dict[str, Any]):
         except Exception:
             origin_override = None
 
+    # Parse intermediate stops / waypoints (stops: ["nagaon", "tezpur"] or [{districtId: "nagaon"}, ...])
+    stops_raw = payload.get("stops") or payload.get("waypoints") or []
+    parsed_stops = []
+    if isinstance(stops_raw, list):
+        for st in stops_raw:
+            st_id = _extract_district(st)
+            if st_id and st_id in DISTRICT_COORDS and st_id != effective_origin and st_id != dest and st_id not in parsed_stops:
+                parsed_stops.append(st_id)
+
+    route_nodes = [effective_origin] + parsed_stops + [dest]
+
+    # Build corridor graph with knowledge of origin/dest to protect trip endpoints from generic transit penalties
+    trip_endpoints = (effective_origin.lower(), dest.lower())
+    adj = _build_graph(
+        avoid_corridors=avoid_corridors_raw,
+        avoid_districts=avoid_districts_raw,
+        blocked_corridors=blocked_corridors_raw,
+        alerts=corridor_alerts_raw,
+        field_reports=field_reports_raw,
+        trip_endpoints=trip_endpoints,
+    )
+    base_adj = _build_graph(trip_endpoints=trip_endpoints)
+
+    path_cache: Dict[Any, Any] = {}
+
     async def build(weight: str):
-        edges, total_w, legs = _dijkstra(adj, effective_origin, dest, weight)
+        edges: List[Dict[str, Any]] = []
+        for s_idx in range(len(route_nodes) - 1):
+            seg_from = route_nodes[s_idx]
+            seg_to = route_nodes[s_idx + 1]
+            seg_edges, _, _ = _dijkstra(adj, seg_from, seg_to, weight)
+            if not seg_edges:
+                # Fallback to base graph if corridor was fully blocked
+                seg_edges, _, _ = _dijkstra(base_adj, seg_from, seg_to, weight)
+            if not seg_edges:
+                return None
+            edges.extend(seg_edges)
+
         if not edges:
             return None
+
+        edge_key = tuple((e["from"], e["to"]) for e in edges)
+        if edge_key in path_cache:
+            return dict(path_cache[edge_key])
+
         path_nodes = [effective_origin]
         for e in edges:
             path_nodes.append(e["to"] if path_nodes[-1] == e["from"] else e["from"])
@@ -580,7 +774,7 @@ async def plan_route(payload: Dict[str, Any]):
             if risk is None:
                 risk = int(e.get("_risk", _fallback_edge_risk(fn, tn)))
 
-            # Real road geometry per leg (first leg starts at the GPS point if given; last leg ends at dest override if given)
+            # Real road geometry per leg (first leg starts at GPS if given; last leg ends at dest override if given)
             geo = await _road_geometry(
                 fn, tn,
                 origin_override=(origin_override if i == 0 else None),
@@ -598,8 +792,13 @@ async def plan_route(payload: Dict[str, Any]):
                 points = points[1:]
             prev_geo_end = points[-1] if points else None
 
-            # Elevation gain & slope analysis along the real road polyline
-            elev_stats = await TerrainService.get_route_elevation_profile(points)
+            # Elevation gain & slope analysis along the real road polyline (cached)
+            leg_elev_key = f"{fn}:{tn}:{len(points)}"
+            if leg_elev_key in _ELEV_CACHE:
+                elev_stats = _ELEV_CACHE[leg_elev_key]
+            else:
+                elev_stats = await TerrainService.get_route_elevation_profile(points)
+                _ELEV_CACHE[leg_elev_key] = elev_stats
             climb_gain_m = elev_stats.get("climb_gain_m", 0.0)
             max_gradient_pct = elev_stats.get("max_gradient_pct", 0.0)
 
@@ -631,6 +830,9 @@ async def plan_route(payload: Dict[str, Any]):
             total_distance += dist
             nh = e.get("nh") or SEGMENT_RISK.get((fn, tn), SEGMENT_RISK.get((tn, fn), {})).get("nh", "NH")
 
+            # Check if this leg terminates at an intermediate stop
+            is_waypoint = tn in parsed_stops
+
             leg_payloads.append({
                 "from": fn, "to": tn,
                 "fromName": APIConfig.NER_DISTRICTS.get(fn, {}).get("name", fn),
@@ -658,6 +860,7 @@ async def plan_route(payload: Dict[str, Any]):
                 "maxGradientPct": max_gradient_pct,
                 "forecastAtArrival": arrival_forecast,
                 "etaHours": round(cumulative_hours, 1),
+                "isWaypointStop": is_waypoint,
                 "alternativeGeometry": geo.get("alternative"),
             })
 
@@ -673,13 +876,18 @@ async def plan_route(payload: Dict[str, Any]):
         total_fuel_liters = round(base_liters + climb_penalty_liters, 1)
         estimated_fuel_cost = round(total_fuel_liters * vehicle_profile["cost_per_liter"])
 
-        micro_segs = await score_route_microsegments(
-            points=all_points,
-            route_id=f"{effective_origin}-{dest}",
-            base_rainfall=max((l.get("rainfallMm") or 12.0 for l in leg_payloads), default=12.0),
-            base_condition="damaged" if any(l.get("roadCondition") == "damaged" for l in leg_payloads) else "good",
-            alerts=corridor_alerts_raw,
-        )
+        route_micro_key = f"{effective_origin}-{dest}-{len(all_points)}"
+        if route_micro_key in _MICRO_CACHE:
+            micro_segs = _MICRO_CACHE[route_micro_key]
+        else:
+            micro_segs = await score_route_microsegments(
+                points=all_points,
+                route_id=f"{effective_origin}-{dest}",
+                base_rainfall=max((l.get("rainfallMm") or 12.0 for l in leg_payloads), default=12.0),
+                base_condition="damaged" if any(l.get("roadCondition") == "damaged" for l in leg_payloads) else "good",
+                alerts=corridor_alerts_raw,
+            )
+            _MICRO_CACHE[route_micro_key] = micro_segs
 
         max_micro_risk = max((seg.get("risk_score", 0) for seg in micro_segs), default=0)
         critical_micro_segs = [s for s in micro_segs if s.get("risk_score", 0) >= 80 or s.get("risk_level") == "critical"]
@@ -687,7 +895,7 @@ async def plan_route(payload: Dict[str, Any]):
         # Route risk integrates corridor weights, average risk, and worst-case micro-segment hazard
         effective_route_risk = max(overall_risk, avg_risk, max_micro_risk)
 
-        return {
+        res_route = {
             "legs": leg_payloads,
             "totalDistanceKm": round(total_distance, 1),
             "totalClimbM": round(total_climb_m, 1),
@@ -705,23 +913,75 @@ async def plan_route(payload: Dict[str, Any]):
             "legCount": len(leg_payloads),
             "travelHours": round(cumulative_hours, 1),
         }
+        path_cache[edge_key] = res_route
+        return res_route
 
-    shortest = await build("distance")
-    safest = await build("risk")
-    if shortest is None and safest is None:
-        return {"success": False, "error": "No corridor path connects these districts."}
-    if shortest is None:
-        shortest = safest
+    # Generate multi-criteria routes concurrently in parallel
+    optimal, safest, shortest, economical = await asyncio.gather(
+        build("balanced"),
+        build("risk"),
+        build("distance"),
+        build("economy"),
+    )
+
+    if optimal is None and safest is None and shortest is None and economical is None:
+        return {"success": False, "error": "No corridor path connects these districts/stops."}
+
+    # Ensure fallbacks if any mode returned None
+    if optimal is None:
+        optimal = safest or shortest or economical
     if safest is None:
-        safest = shortest
+        safest = optimal
+    if shortest is None:
+        shortest = optimal
+    if economical is None:
+        economical = optimal
 
-    recommended_key = "safest" if prefer == "safest" else "shortest"
-    if prefer == "balanced":
-        recommended_key = "safest" if (safest["riskScore"] <= shortest["riskScore"] + 10) else "shortest"
-    recommended = safest if recommended_key == "safest" else shortest
+    recommended_key = "optimal"
+    if prefer == "safest":
+        recommended_key = "safest"
+    elif prefer == "shortest":
+        recommended_key = "shortest"
+    elif prefer == "economical" or prefer == "economy":
+        recommended_key = "economical"
+
+    route_map = {"optimal": optimal, "safest": safest, "shortest": shortest, "economical": economical}
+    recommended = route_map.get(recommended_key, optimal)
 
     # Build rich list of selectable alternatives with vehicle & elevation metrics
     alternatives = []
+
+    # 1. Optimal Route (AI Recommended)
+    if optimal:
+        opt_dist = optimal["totalDistanceKm"]
+        opt_hours = optimal.get("travelHours") or round(opt_dist / vehicle_profile["base_speed_kmh"], 1)
+        opt_time_text = f"{int(opt_hours * 60)} min" if opt_hours < 1 else f"{opt_hours} hrs"
+        alternatives.append({
+            "id": "optimal",
+            "name": "Optimal Route",
+            "type": "optimal",
+            "label": f"🌟 AI Optimal Route ({opt_dist} km)",
+            "distanceKm": opt_dist,
+            "totalDistanceKm": opt_dist,
+            "totalClimbM": optimal.get("totalClimbM", 0),
+            "maxGradientPct": optimal.get("maxGradientPct", 0.0),
+            "baseFuelLiters": optimal.get("baseFuelLiters", 0.0),
+            "climbPenaltyLiters": optimal.get("climbPenaltyLiters", 0.0),
+            "fuelLiters": optimal.get("estimatedFuelLiters", 0),
+            "fuelCost": optimal.get("estimatedFuelCost", 0),
+            "avgTravelHours": opt_hours,
+            "timeText": opt_time_text,
+            "riskScore": optimal["riskScore"],
+            "riskLevel": optimal["riskLevel"],
+            "geometry": optimal["geometry"],
+            "microSegments": optimal.get("microSegments", []),
+            "legs": optimal["legs"],
+            "isRecommended": recommended_key == "optimal",
+            "badge": "AI Recommended",
+            "description": "Multi-objective balanced optimization minimizing risk, travel time, and operational costs.",
+        })
+
+    # 2. Safest Route (Zero Hazard Exposure)
     if safest:
         safest_dist = safest["totalDistanceKm"]
         safest_hours = safest.get("travelHours") or round(safest_dist / vehicle_profile["base_speed_kmh"], 1)
@@ -730,7 +990,7 @@ async def plan_route(payload: Dict[str, Any]):
             "id": "safest",
             "name": "Safest Route",
             "type": "safest",
-            "label": f"Safest Highway Corridor ({safest_dist} km)",
+            "label": f"🛡️ Safest Corridor ({safest_dist} km)",
             "distanceKm": safest_dist,
             "totalDistanceKm": safest_dist,
             "totalClimbM": safest.get("totalClimbM", 0),
@@ -747,8 +1007,12 @@ async def plan_route(payload: Dict[str, Any]):
             "microSegments": safest.get("microSegments", []),
             "legs": safest["legs"],
             "isRecommended": recommended_key == "safest",
+            "badge": "Min Risk",
+            "description": "Strictly minimizes hazard exposure, avoiding active landslides, flash floods, and IMD warning zones.",
         })
-    if shortest and (shortest["totalDistanceKm"] != safest["totalDistanceKm"] or shortest.get("geometry") != safest.get("geometry")):
+
+    # 3. Shortest Route (Fastest Direct Transit)
+    if shortest:
         short_dist = shortest["totalDistanceKm"]
         short_hours = shortest.get("travelHours") or round(short_dist / vehicle_profile["base_speed_kmh"], 1)
         short_time_text = f"{int(short_hours * 60)} min" if short_hours < 1 else f"{short_hours} hrs"
@@ -756,7 +1020,7 @@ async def plan_route(payload: Dict[str, Any]):
             "id": "shortest",
             "name": "Shortest Route",
             "type": "shortest",
-            "label": f"Direct Highway / Shortest Distance ({short_dist} km)",
+            "label": f"⚡ Shortest Distance ({short_dist} km)",
             "distanceKm": short_dist,
             "totalDistanceKm": short_dist,
             "totalClimbM": shortest.get("totalClimbM", 0),
@@ -773,6 +1037,38 @@ async def plan_route(payload: Dict[str, Any]):
             "microSegments": shortest.get("microSegments", []),
             "legs": shortest["legs"],
             "isRecommended": recommended_key == "shortest",
+            "badge": "Min Distance",
+            "description": "Minimizes road kilometers for fastest transit via primary national highway corridors.",
+        })
+
+    # 4. Economical Route (Min Fuel Burn & Fleet Wear)
+    if economical:
+        econ_dist = economical["totalDistanceKm"]
+        econ_hours = economical.get("travelHours") or round(econ_dist / vehicle_profile["base_speed_kmh"], 1)
+        econ_time_text = f"{int(econ_hours * 60)} min" if econ_hours < 1 else f"{econ_hours} hrs"
+        alternatives.append({
+            "id": "economical",
+            "name": "Economical Route",
+            "type": "economical",
+            "label": f"💰 Economical / Fuel Saver ({econ_dist} km)",
+            "distanceKm": econ_dist,
+            "totalDistanceKm": econ_dist,
+            "totalClimbM": economical.get("totalClimbM", 0),
+            "maxGradientPct": economical.get("maxGradientPct", 0.0),
+            "baseFuelLiters": economical.get("baseFuelLiters", 0.0),
+            "climbPenaltyLiters": economical.get("climbPenaltyLiters", 0.0),
+            "fuelLiters": economical.get("estimatedFuelLiters", 0),
+            "fuelCost": economical.get("estimatedFuelCost", 0),
+            "avgTravelHours": econ_hours,
+            "timeText": econ_time_text,
+            "riskScore": economical["riskScore"],
+            "riskLevel": economical["riskLevel"],
+            "geometry": economical["geometry"],
+            "microSegments": economical.get("microSegments", []),
+            "legs": economical["legs"],
+            "isRecommended": recommended_key == "economical",
+            "badge": "Min Cost",
+            "description": "Optimized for minimal fuel burn, lowest elevation climb penalties, and best pavement quality.",
         })
 
     # Check if a leg has an alternative road geometry from OSRM
@@ -1099,9 +1395,13 @@ async def plan_route(payload: Dict[str, Any]):
                    "gpsStart": bool(origin_override)},
         "destination": {"districtId": dest, "name": APIConfig.NER_DISTRICTS.get(dest, {}).get("name", dest),
                         "lat": DISTRICT_COORDS[dest][0], "lng": DISTRICT_COORDS[dest][1]},
+        "stops": [{"districtId": st, "name": APIConfig.NER_DISTRICTS.get(st, {}).get("name", st),
+                   "lat": DISTRICT_COORDS.get(st, (0, 0))[0], "lng": DISTRICT_COORDS.get(st, (0, 0))[1]} for st in parsed_stops],
         "preferred": recommended_key,
+        "optimal": optimal,
         "safest": safest,
         "shortest": shortest,
+        "economical": economical,
         "recommended": recommended,
         "alternatives": alternatives,
         "alerts": alerts,

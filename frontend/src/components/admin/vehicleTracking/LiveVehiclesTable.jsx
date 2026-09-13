@@ -1,7 +1,7 @@
 import React from 'react';
 import { useApp } from '@/contexts/AppContext';
 
-export const LiveVehiclesTable = ({ selectedVehicleId, onSelectVehicle }) => {
+export const LiveVehiclesTable = ({ selectedVehicleId, onSelectVehicle, onEmergencyReroute }) => {
   const { vehicles } = useApp();
   const [filterTab, setFilterTab] = React.useState('all');
   const vehicleList = vehicles || [];
@@ -86,11 +86,12 @@ export const LiveVehiclesTable = ({ selectedVehicleId, onSelectVehicle }) => {
               <th style={{ padding: '8px 10px' }}>Driver</th>
               <th style={{ padding: '8px 10px' }}>Status</th>
               <th style={{ padding: '8px 10px' }}>Speed</th>
+              <th style={{ padding: '8px 10px', textAlign: 'right' }}>Actions</th>
             </tr>
           </thead>
           <tbody>
             {filteredList.length === 0 ? (
-              <tr><td colSpan={5} style={{ textAlign: 'center', padding: '16px', color: 'var(--text-muted)' }}>No vehicles in this category.</td></tr>
+              <tr><td colSpan={6} style={{ textAlign: 'center', padding: '16px', color: 'var(--text-muted)' }}>No vehicles in this category.</td></tr>
             ) : filteredList.map((v, i) => (
               <tr
                 key={i}
@@ -114,6 +115,33 @@ export const LiveVehiclesTable = ({ selectedVehicleId, onSelectVehicle }) => {
                   )}
                 </td>
                 <td style={{ padding: '8px 10px' }}>{v.speed}</td>
+                <td style={{ padding: '8px 10px', textAlign: 'right' }}>
+                  {onEmergencyReroute && (
+                    <button
+                      type="button"
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        onEmergencyReroute(v);
+                      }}
+                      title="Trigger emergency detour routing for this vehicle"
+                      style={{
+                        padding: '3px 8px',
+                        background: '#DC2626',
+                        color: '#FFFFFF',
+                        border: 'none',
+                        borderRadius: '4px',
+                        fontSize: '11px',
+                        fontWeight: 700,
+                        cursor: 'pointer',
+                        display: 'inline-flex',
+                        alignItems: 'center',
+                        gap: '3px',
+                      }}
+                    >
+                      🚨 Re-Route
+                    </button>
+                  )}
+                </td>
               </tr>
             ))}
           </tbody>

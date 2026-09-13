@@ -68,6 +68,15 @@ function parseGeometry(geom: string, fallbackPoint?: [number, number]): any {
 router.get('/districts', async (req: Request, res: Response) => {
   try {
     const { state, bbox } = req.query;
+    const cacheKey = `gis:districts:${state || 'all'}`;
+    try {
+      const cached = await redisClient.get(cacheKey);
+      if (cached) {
+        const parsed = typeof cached === 'string' ? JSON.parse(cached) : cached;
+        return sendSuccess(res, parsed, 'Districts retrieved (cached)');
+      }
+    } catch {}
+
     const where: any = {};
     if (state) where.state = state;
 
@@ -87,7 +96,12 @@ router.get('/districts', async (req: Request, res: Response) => {
       },
     }));
 
-    return sendSuccess(res, { type: 'FeatureCollection', features }, 'Districts retrieved');
+    const result = { type: 'FeatureCollection', features };
+    try {
+      await redisClient.set(cacheKey, JSON.stringify(result), 120);
+    } catch {}
+
+    return sendSuccess(res, result, 'Districts retrieved');
   } catch (err: any) {
     return sendError(res, err.message);
   }
@@ -100,11 +114,24 @@ router.get('/districts', async (req: Request, res: Response) => {
 router.get('/roads', async (req: Request, res: Response) => {
   try {
     const { district_id, condition } = req.query;
+    const cacheKey = `gis:roads:${district_id || 'all'}:${condition || 'all'}`;
+    try {
+      const cached = await redisClient.get(cacheKey);
+      if (cached) {
+        const parsed = typeof cached === 'string' ? JSON.parse(cached) : cached;
+        return sendSuccess(res, parsed, 'Roads retrieved (cached)');
+      }
+    } catch {}
+
     const where: any = {};
     if (district_id) where.district_id = district_id;
     if (condition) where.condition = condition;
 
     const roads = await Road.findAll({ where, raw: true });
+    try {
+      await redisClient.set(cacheKey, JSON.stringify(roads), 120);
+    } catch {}
+
     return sendSuccess(res, roads, 'Roads retrieved');
   } catch (err: any) {
     return sendError(res, err.message);
@@ -510,6 +537,15 @@ router.get('/pois', async (req: Request, res: Response) => {
       { id: 'rail-3', name: 'Dimapur Railway Station', type: 'railway', lat: 25.9100, lng: 93.7300, district: 'dimapur' },
     ];
 
+    const cacheKey = `gis:pois:${type || 'all'}`;
+    try {
+      const cached = await redisClient.get(cacheKey);
+      if (cached) {
+        const parsed = typeof cached === 'string' ? JSON.parse(cached) : cached;
+        return sendSuccess(res, parsed, 'POIs retrieved (cached)');
+      }
+    } catch {}
+
     const filtered = type === 'all' ? pois : pois.filter(p => p.type === type);
 
     const features = filtered.map(p => ({
@@ -518,7 +554,12 @@ router.get('/pois', async (req: Request, res: Response) => {
       properties: { ...p },
     }));
 
-    return sendSuccess(res, { type: 'FeatureCollection', features }, 'POIs retrieved');
+    const result = { type: 'FeatureCollection', features };
+    try {
+      await redisClient.set(cacheKey, JSON.stringify(result), 300);
+    } catch {}
+
+    return sendSuccess(res, result, 'POIs retrieved');
   } catch (err: any) {
     return sendError(res, err.message);
   }

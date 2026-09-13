@@ -1,5 +1,5 @@
-import React from 'react';
-import { useNavigate } from 'react-router-dom';
+import React, { useEffect } from 'react';
+import { useNavigate, useLocation } from 'react-router-dom';
 import { useAuth } from '@/contexts/AuthContext';
 import ApiClient from '@/lib/api';
 import { getTokenRole } from '@/lib/jwt';
@@ -24,6 +24,51 @@ import { UsersPage } from './UsersPage';
 
 function AdminContent() {
   const { currentPage, emergencySos, clearEmergencySos, setCurrentPage } = useApp();
+  const location = useLocation();
+  const navigate = useNavigate();
+
+  // 1. Sync from URL path to state (e.g. browser back/forward, direct deep-link)
+  useEffect(() => {
+    const rawPath = location.pathname.replace(/^\/admin\/?/, '').split('/')[0] || 'dashboard';
+    const validPages = [
+      'dashboard',
+      'live-map',
+      'ai-predictions',
+      'route-optimization',
+      'vehicle-tracking',
+      'alerts',
+      'field-reports',
+      'analytics',
+      'users',
+      'emergency',
+      'settings',
+    ];
+    if (validPages.includes(rawPath) && rawPath !== currentPage) {
+      setCurrentPage(rawPath);
+    }
+  }, [location.pathname]); // ONLY run when location.pathname changes, never on currentPage change!
+
+  // 2. Sync from state to URL when currentPage changes
+  useEffect(() => {
+    const currentUrlPath = location.pathname.replace(/^\/admin\/?/, '').split('/')[0] || 'dashboard';
+    if (currentPage && currentPage !== currentUrlPath) {
+      const targetUrl = currentPage === 'dashboard' ? '/admin' : `/admin/${currentPage}`;
+      navigate(targetUrl, { replace: false });
+    }
+  }, [currentPage, navigate]);
+
+  // Global listener for cross-component navigation dispatch
+  useEffect(() => {
+    const handleNav = (e) => {
+      if (e.detail?.page) {
+        setCurrentPage(e.detail.page);
+        const targetUrl = e.detail.page === 'dashboard' ? '/admin' : `/admin/${e.detail.page}`;
+        navigate(targetUrl);
+      }
+    };
+    window.addEventListener('raahi:navigate', handleNav);
+    return () => window.removeEventListener('raahi:navigate', handleNav);
+  }, [setCurrentPage, navigate]);
 
   const renderActivePage = () => {
     switch (currentPage) {

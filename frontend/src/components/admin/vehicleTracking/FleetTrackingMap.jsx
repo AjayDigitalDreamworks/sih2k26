@@ -172,7 +172,7 @@ const floodDisplay = (fr) => {
   return null;
 };
 
-export const FleetTrackingMap = ({ selectedVehicleId, onSelectVehicle }) => {
+export const FleetTrackingMap = ({ selectedVehicleId, onSelectVehicle, onEmergencyReroute }) => {
   const { vehicles, allDistrictsSummary } = useApp();
   const socket = getSocket();
   const { positions, trails } = useVehicleTracking(socket);
@@ -472,14 +472,92 @@ export const FleetTrackingMap = ({ selectedVehicleId, onSelectVehicle }) => {
                 </span>
               </Tooltip>
             </Polyline>
-            {liveRoute?.destination && liveRoute.destination.lat != null && liveRoute.destination.lng != null && (
-              <Marker
-                position={[liveRoute.destination.lat, liveRoute.destination.lng]}
-                icon={L.divIcon({ className: '', html: '<div style="width:20px;height:20px;border-radius:50%;background:#DC2626;border:3px solid #fff;box-shadow:0 2px 6px rgba(0,0,0,.4)"></div>', iconSize: [20, 20], iconAnchor: [10, 10] })}
-              >
+            {/* Origin Starting Point Pin */}
+            {(() => {
+              const startCoord = (liveRoute?.origin && liveRoute.origin.lat != null && liveRoute.origin.lng != null)
+                ? [liveRoute.origin.lat, liveRoute.origin.lng]
+                : (liveRouteGeom && liveRouteGeom.length > 0 ? liveRouteGeom[0] : null);
+              if (!startCoord || !Number.isFinite(startCoord[0]) || !Number.isFinite(startCoord[1])) return null;
+              const originTitle = liveRoute?.origin?.name || liveRoute?.trip?.origin || 'Origin Terminal';
+              return (
+                <Marker
+                  position={startCoord}
+                  zIndexOffset={895}
+                  icon={L.divIcon({
+                    className: 'raahi-startpoint-pin',
+                    html: `
+                      <div style="position:relative;width:42px;height:48px;display:flex;flex-direction:column;align-items:center;pointer-events:auto;">
+                        <div style="position:absolute;bottom:0;left:50%;transform:translateX(-50%);width:28px;height:12px;border-radius:50%;background:rgba(16,185,129,0.35);animation:pulse 1.8s infinite;"></div>
+                        <div style="width:34px;height:34px;background:linear-gradient(135deg, #10B981 0%, #047857 100%);border-radius:50% 50% 50% 0;transform:rotate(-45deg);border:2.5px solid #FFFFFF;box-shadow:0 4px 14px rgba(16,185,129,0.55);display:flex;align-items:center;justify-content:center;z-index:2;">
+                          <div style="transform:rotate(45deg);display:flex;align-items:center;justify-content:center;color:#fff;">
+                            <svg width="17" height="17" viewBox="0 0 24 24" fill="currentColor"><path d="M4 2v20M4 4h13l-2.5 5 2.5 5H4V4z"/></svg>
+                          </div>
+                        </div>
+                        <div style="position:absolute;top:-20px;white-space:nowrap;background:#0F172A;color:#F8FAFC;font-family:'Roboto',sans-serif;font-size:10px;font-weight:800;padding:2px 8px;border-radius:6px;box-shadow:0 3px 8px rgba(0,0,0,0.4);border:1px solid #334155;letter-spacing:0.3px;">
+                          ${originTitle}
+                        </div>
+                      </div>
+                    `,
+                    iconSize: [42, 48],
+                    iconAnchor: [21, 44],
+                    popupAnchor: [0, -44],
+                  })}
+                >
+                  <Popup>
+                    <div style={{ fontFamily: "'Roboto', sans-serif", minWidth: 200, fontSize: 11 }}>
+                      <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+                        <span style={{ fontSize: 13 }}>🚩</span>
+                        <strong style={{ fontSize: 12, color: '#0F172A' }}>{originTitle}</strong>
+                      </div>
+                      <div style={{ color: '#6B7280', marginTop: 2 }}>
+                        Trip {liveRoute?.trip?.id || ''} · {liveRoute?.trip?.status || 'In Transit'}
+                      </div>
+                      <div style={{ marginTop: 6, borderTop: '1px solid #E2E8F0', paddingTop: 6 }}>
+                        <div>Vehicle: <strong style={{ color: '#1E293B' }}>{selectedVehicleId || liveRoute?.trip?.vehicleId}</strong></div>
+                        <div>Departure Coordinates: <span style={{ color: '#64748B', fontFamily: 'monospace' }}>{startCoord[0].toFixed(4)}, {startCoord[1].toFixed(4)}</span></div>
+                        <div style={{ marginTop: 4, color: '#059669', fontWeight: 700, fontSize: 10 }}>
+                          ✓ Route Departure Terminal · Active Corridor
+                        </div>
+                      </div>
+                    </div>
+                  </Popup>
+                </Marker>
+              );
+            })()}
+            {/* Destination End Point Pin */}
+            {(() => {
+              const endCoord = (liveRoute?.destination && liveRoute.destination.lat != null && liveRoute.destination.lng != null)
+                ? [liveRoute.destination.lat, liveRoute.destination.lng]
+                : (liveRouteGeom && liveRouteGeom.length > 0 ? liveRouteGeom[liveRouteGeom.length - 1] : null);
+              if (!endCoord || !Number.isFinite(endCoord[0]) || !Number.isFinite(endCoord[1])) return null;
+              const destTitle = liveRoute?.destination?.name || liveRoute?.trip?.destination || 'Destination Terminal';
+              return (
+                <Marker
+                  position={endCoord}
+                  zIndexOffset={900}
+                  icon={L.divIcon({
+                    className: 'raahi-endpoint-pin',
+                    html: `
+                      <div style="position:relative;width:42px;height:48px;display:flex;flex-direction:column;align-items:center;pointer-events:auto;">
+                        <div style="position:absolute;bottom:0;left:50%;transform:translateX(-50%);width:28px;height:12px;border-radius:50%;background:rgba(220,38,38,0.35);animation:pulse 1.8s infinite;"></div>
+                        <div style="width:34px;height:34px;background:linear-gradient(135deg, #DC2626 0%, #991B1B 100%);border-radius:50% 50% 50% 0;transform:rotate(-45deg);border:2.5px solid #FFFFFF;box-shadow:0 4px 14px rgba(220,38,38,0.55);display:flex;align-items:center;justify-content:center;z-index:2;">
+                          <div style="transform:rotate(45deg);display:flex;align-items:center;justify-content:center;font-size:15px;color:#fff;">
+                            🏁
+                          </div>
+                        </div>
+                        <div style="position:absolute;top:-20px;white-space:nowrap;background:#0F172A;color:#F8FAFC;font-family:'Roboto',sans-serif;font-size:10px;font-weight:800;padding:2px 8px;border-radius:6px;box-shadow:0 3px 8px rgba(0,0,0,0.4);border:1px solid #334155;letter-spacing:0.3px;">
+                          ${destTitle}
+                        </div>
+                      </div>
+                    `,
+                    iconSize: [42, 48],
+                    iconAnchor: [21, 44],
+                    popupAnchor: [0, -44],
+                  })}
+                >
                 <Popup>
                   <div style={{ fontFamily: "'Roboto', sans-serif", minWidth: 200, fontSize: 11 }}>
-                    <strong>{liveRoute.destination.name || 'Destination'}</strong>
+                    <strong>{liveRoute?.destination?.name || liveRoute?.trip?.destination || 'Destination'}</strong>
                     <div style={{ color: '#6B7280', marginTop: 2 }}>
                       Trip {liveRoute?.trip?.id || ''} · {liveRoute?.trip?.status || ''}
                     </div>
@@ -548,9 +626,10 @@ export const FleetTrackingMap = ({ selectedVehicleId, onSelectVehicle }) => {
                   </div>
                 </Popup>
               </Marker>
-            )}
-          </>
-        )}
+            );
+          })()}
+        </>
+      )}
 
         {/* Vehicle Markers with Smooth Gliding, Live Rotation & Tactical Telemetry HUD */}
         {vehicleList.filter(v => (vehiclePositions[v.id]?.lat || v.lat) && (vehiclePositions[v.id]?.lng || v.lng)).map(v => {
@@ -645,13 +724,71 @@ export const FleetTrackingMap = ({ selectedVehicleId, onSelectVehicle }) => {
                   <span>{a.title}</span>
                 </div>
               ))}
+              {onEmergencyReroute && (
+                <button
+                  type="button"
+                  onClick={() => {
+                    const v = vehicleList.find((item) => item.id === selectedVehicleId);
+                    if (v) onEmergencyReroute(v);
+                  }}
+                  style={{
+                    marginTop: '8px',
+                    width: '100%',
+                    padding: '6px 10px',
+                    background: '#DC2626',
+                    color: '#FFFFFF',
+                    border: 'none',
+                    borderRadius: '6px',
+                    fontSize: '11px',
+                    fontWeight: 700,
+                    cursor: 'pointer',
+                    display: 'flex',
+                    alignItems: 'center',
+                    justifyContent: 'center',
+                    gap: '5px',
+                    boxShadow: '0 1px 3px rgba(220,38,38,0.3)',
+                  }}
+                  title="Plan safest all-weather detour bypassing corridor hazards"
+                >
+                  🚨 Emergency Re-Route & Optimize
+                </button>
+              )}
             </div>
           ) : (
-            <span style={{ color: '#6B7280' }}>
-              {liveRoute?.reason === 'NO_ACTIVE_TRIP'
-                ? 'No active trip for this vehicle - route will appear once a trip is in transit.'
-                : 'No road route available for this vehicle right now.'}
-            </span>
+            <div>
+              <span style={{ color: '#6B7280' }}>
+                {liveRoute?.reason === 'NO_ACTIVE_TRIP'
+                  ? 'No active trip for this vehicle - route will appear once a trip is in transit.'
+                  : 'No road route available for this vehicle right now.'}
+              </span>
+              {onEmergencyReroute && (
+                <button
+                  type="button"
+                  onClick={() => {
+                    const v = vehicleList.find((item) => item.id === selectedVehicleId);
+                    if (v) onEmergencyReroute(v);
+                  }}
+                  style={{
+                    marginTop: '8px',
+                    width: '100%',
+                    padding: '6px 10px',
+                    background: '#DC2626',
+                    color: '#FFFFFF',
+                    border: 'none',
+                    borderRadius: '6px',
+                    fontSize: '11px',
+                    fontWeight: 700,
+                    cursor: 'pointer',
+                    display: 'flex',
+                    alignItems: 'center',
+                    justifyContent: 'center',
+                    gap: '5px',
+                  }}
+                >
+                  🚨 Plan Custom Detour from GPS
+                </button>
+              )}
+            </div>
           )}
         </div>
       )}

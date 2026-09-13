@@ -347,7 +347,7 @@ export default function RoutePlanningPage() {
         setRoadPlan(roadRes.value.data);
       }
 
-      if (tripRes.status === 'fulfilled' && tripRes.value?.success) {
+      if (tripRes.status === 'fulfilled' && tripRes.value?.success && tripRes.value.data) {
         setPlan(tripRes.value.data);
         const preferredId = tripRes.value.data?.primary?.id || tripRes.value.data?.alternatives?.[0]?.id || 'safest';
         setActiveRouteId(preferredId);
@@ -355,9 +355,27 @@ export default function RoutePlanningPage() {
           ? ' · Dynamic safe bypass applied around active blockage!'
           : '';
         triggerToast(`Evaluated corridor options (${preferMode.toUpperCase()}). Recommended: ${tripRes.value.data?.primary?.name || 'Safest route'}${detourMsg}`);
-      } else if (roadRes.status === 'fulfilled' && roadRes.value?.success) {
-        const preferredId = roadRes.value.data?.preferred || roadRes.value.data?.alternatives?.[0]?.id || 'safest';
+      } else if (roadRes.status === 'fulfilled' && roadRes.value?.success && roadRes.value.data) {
+        const roadData = roadRes.value.data;
+        const preferredId = roadData?.preferred || roadData?.alternatives?.[0]?.id || 'safest';
         setActiveRouteId(preferredId);
+        const primaryRoute = roadData?.recommended || (roadData?.alternatives || []).find((a) => a.id === preferredId) || (roadData?.alternatives || [])[0] || {
+          id: 'safest',
+          name: `${originD?.label || originId} → ${destD?.label || destId}`,
+          distanceKm: roadData?.recommended?.totalDistanceKm || 290,
+          estimatedHours: 6.5,
+          riskScore: 20,
+          geometry: roadData?.recommended?.geometry || [],
+          legs: roadData?.recommended?.legs || [],
+        };
+        setPlan({
+          success: true,
+          routeId: roadData?.routeId || 'RT-CORRIDOR',
+          origin: { id: originId, name: originD?.label || originId },
+          destination: { id: destId, name: destD?.label || destId },
+          primary: primaryRoute,
+          alternatives: roadData?.alternatives?.length > 0 ? roadData.alternatives : [primaryRoute],
+        });
         triggerToast('Evaluated corridor geometry and risk options.');
       } else {
         setPlanError(tripRes.status === 'fulfilled' ? tripRes.value?.message : 'Could not plan this route.');
@@ -371,8 +389,16 @@ export default function RoutePlanningPage() {
     }
   };
 
+  const autoPlanRef = useRef(false);
+  useEffect(() => {
+    if (!autoPlanRef.current && originId && destId && originId !== destId) {
+      autoPlanRef.current = true;
+      handlePlanRoute();
+    }
+  }, [originId, destId]);
+
   const handleStartTrip = async (startImmediately = false) => {
-    const targetRoute = currentSelectedRoute || plan?.primary;
+    const targetRoute = currentSelectedRoute || plan?.primary || roadPlan?.recommended;
     if (!targetRoute) {
       setPlanError('Please evaluate and select a route corridor first.');
       return;
@@ -1202,16 +1228,76 @@ export default function RoutePlanningPage() {
                         </Popup>
                       </Polyline>
                     )}
-                    {originD && (
-                      <Marker position={[originD.lat, originD.lng]} icon={dotIcon('#059669')}>
-                        <Popup><div className="text-xs font-bold">{originD.label}<p className="text-[10px] text-slate-500">Origin</p></div></Popup>
-                      </Marker>
-                    )}
-                    {destD && (
-                      <Marker position={[destD.lat, destD.lng]} icon={dotIcon('#EF4444')}>
-                        <Popup><div className="text-xs font-bold">{destD.label}<p className="text-[10px] text-slate-500">Destination</p></div></Popup>
-                      </Marker>
-                    )}
+                    {/* Origin Start Point Pin */}
+                    {(() => {
+                      const originPos = (roadPoints && roadPoints.length > 0)
+                        ? roadPoints[0]
+                        : (originD ? [originD.lat, originD.lng] : null);
+                      if (!originPos) return null;
+                      const title = originD?.label || currentSelectedRoute?.name?.split('→')?.[0]?.trim() || 'Origin Terminal';
+                      return (
+                        <Marker
+                          position={originPos}
+                          zIndexOffset={895}
+                          icon={L.divIcon({
+                            className: 'raahi-startpoint-pin',
+                            html: `
+                              <div style="position:relative;width:40px;height:46px;display:flex;flex-direction:column;align-items:center;pointer-events:auto;">
+                                <div style="position:absolute;bottom:0;left:50%;transform:translateX(-50%);width:26px;height:12px;border-radius:50%;background:rgba(16,185,129,0.35);animation:pulse 1.8s infinite;"></div>
+                                <div style="width:32px;height:32px;background:linear-gradient(135deg, #10B981 0%, #047857 100%);border-radius:50% 50% 50% 0;transform:rotate(-45deg);border:2.5px solid #FFFFFF;box-shadow:0 4px 14px rgba(16,185,129,0.55);display:flex;align-items:center;justify-content:center;z-index:2;">
+                                  <div style="transform:rotate(45deg);display:flex;align-items:center;justify-content:center;color:#fff;">
+                                    <svg width="15" height="15" viewBox="0 0 24 24" fill="currentColor"><path d="M4 2v20M4 4h13l-2.5 5 2.5 5H4V4z"/></svg>
+                                  </div>
+                                </div>
+                                <div style="position:absolute;top:-20px;white-space:nowrap;background:#0F172A;color:#F8FAFC;font-family:'Roboto',sans-serif;font-size:10px;font-weight:800;padding:2px 8px;border-radius:6px;box-shadow:0 3px 8px rgba(0,0,0,0.4);border:1px solid #334155;letter-spacing:0.3px;">
+                                  ${title}
+                                </div>
+                              </div>
+                            `,
+                            iconSize: [40, 46],
+                            iconAnchor: [20, 42],
+                            popupAnchor: [0, -42],
+                          })}
+                        >
+                          <Popup><div className="text-xs font-bold">{title}<p className="text-[10px] text-slate-500">Origin Terminal</p></div></Popup>
+                        </Marker>
+                      );
+                    })()}
+                    {/* Destination End Point Pin */}
+                    {(() => {
+                      const destPos = (roadPoints && roadPoints.length > 0)
+                        ? roadPoints[roadPoints.length - 1]
+                        : (destD ? [destD.lat, destD.lng] : null);
+                      if (!destPos) return null;
+                      const title = destD?.label || currentSelectedRoute?.name?.split('→')?.[1]?.trim() || 'Destination';
+                      return (
+                        <Marker
+                          position={destPos}
+                          zIndexOffset={900}
+                          icon={L.divIcon({
+                            className: 'raahi-endpoint-pin',
+                            html: `
+                              <div style="position:relative;width:40px;height:46px;display:flex;flex-direction:column;align-items:center;pointer-events:auto;">
+                                <div style="position:absolute;bottom:0;left:50%;transform:translateX(-50%);width:26px;height:12px;border-radius:50%;background:rgba(220,38,38,0.35);animation:pulse 1.8s infinite;"></div>
+                                <div style="width:32px;height:32px;background:linear-gradient(135deg, #DC2626 0%, #991B1B 100%);border-radius:50% 50% 50% 0;transform:rotate(-45deg);border:2.5px solid #FFFFFF;box-shadow:0 4px 14px rgba(220,38,38,0.55);display:flex;align-items:center;justify-content:center;z-index:2;">
+                                  <div style="transform:rotate(45deg);display:flex;align-items:center;justify-content:center;font-size:14px;color:#fff;">
+                                    🏁
+                                  </div>
+                                </div>
+                                <div style="position:absolute;top:-20px;white-space:nowrap;background:#0F172A;color:#F8FAFC;font-family:'Roboto',sans-serif;font-size:10px;font-weight:800;padding:2px 8px;border-radius:6px;box-shadow:0 3px 8px rgba(0,0,0,0.4);border:1px solid #334155;letter-spacing:0.3px;">
+                                  ${title}
+                                </div>
+                              </div>
+                            `,
+                            iconSize: [40, 46],
+                            iconAnchor: [20, 42],
+                            popupAnchor: [0, -42],
+                          })}
+                        >
+                          <Popup><div className="text-xs font-bold">{title}<p className="text-[10px] text-slate-500">Destination Terminal</p></div></Popup>
+                        </Marker>
+                      );
+                    })()}
                   </MapContainer>
                 </div>
                 {roadLoading && roadPoints.length === 0 && (

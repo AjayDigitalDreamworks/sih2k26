@@ -65,6 +65,17 @@ export const AlternativeRoutesTable = ({ routes, plan, activeRouteId = 'safest',
             const dist = alt.totalDistanceKm || alt.distanceKm || '--';
             const time = alt.timeText || (alt.avgTravelHours ? `${alt.avgTravelHours} hrs` : '--');
             const isSafe = (alt.riskScore || 0) <= 30;
+            const profileIcon = alt.id === 'optimal' || alt.type === 'optimal' 
+              ? '🌟' 
+              : alt.id === 'safest' || alt.type === 'safest' 
+              ? '🛡️' 
+              : alt.id === 'shortest' || alt.type === 'shortest' 
+              ? '⚡' 
+              : alt.id === 'economical' || alt.type === 'economical' 
+              ? '💰' 
+              : '🔀';
+
+            const badgeText = alt.badge || (alt.id === 'optimal' ? 'AI Recommended' : alt.id === 'safest' ? 'Min Risk' : alt.id === 'shortest' ? 'Min Distance' : alt.id === 'economical' ? 'Min Cost' : null);
 
             return (
               <div
@@ -85,12 +96,21 @@ export const AlternativeRoutesTable = ({ routes, plan, activeRouteId = 'safest',
               >
                 <div>
                   <div style={{ display: 'flex', alignItems: 'center', gap: '8px', flexWrap: 'wrap' }}>
-                    <span style={{ fontSize: '13px', fontWeight: 700, color: isActive ? '#065F46' : 'var(--text-primary)' }}>
-                      {alt.name}
+                    <span style={{ fontSize: '13px', fontWeight: 700, color: isActive ? '#065F46' : 'var(--text-primary)', display: 'inline-flex', alignItems: 'center', gap: '4px' }}>
+                      <span>{profileIcon}</span> {alt.name}
                     </span>
-                    {alt.isRecommended && (
-                      <span style={{ fontSize: '10px', fontWeight: 700, padding: '2px 6px', borderRadius: '4px', background: '#DBEAFE', color: '#1E40AF' }}>
-                        Recommended
+                    {badgeText && (
+                      <span style={{
+                        fontSize: '10px',
+                        fontWeight: 800,
+                        padding: '2px 7px',
+                        borderRadius: '4px',
+                        background: alt.id === 'optimal' ? '#DBEAFE' : alt.id === 'safest' ? '#DCFCE7' : alt.id === 'shortest' ? '#FEF3C7' : '#F3E8FF',
+                        color: alt.id === 'optimal' ? '#1E40AF' : alt.id === 'safest' ? '#166534' : alt.id === 'shortest' ? '#92400E' : '#6B21A8',
+                        textTransform: 'uppercase',
+                        letterSpacing: '0.04em'
+                      }}>
+                        {badgeText}
                       </span>
                     )}
                     {alt.isMultiModal && (
@@ -110,7 +130,30 @@ export const AlternativeRoutesTable = ({ routes, plan, activeRouteId = 'safest',
                       {isSafe ? <ShieldCheck size={12} /> : <ShieldAlert size={12} />}
                       Risk: {alt.riskScore}/100 ({alt.riskLevel})
                     </span>
+                    {alt.fuelLiters > 0 && (
+                      <>
+                        <span>•</span>
+                        <span style={{ color: '#059669', fontWeight: 600 }}>⛽ {alt.fuelLiters} L</span>
+                      </>
+                    )}
+                    {alt.fuelCost > 0 && (
+                      <>
+                        <span>•</span>
+                        <span style={{ color: '#166534', fontWeight: 700 }}>₹{alt.fuelCost}</span>
+                      </>
+                    )}
+                    {alt.totalClimbM > 0 && (
+                      <>
+                        <span>•</span>
+                        <span style={{ color: '#D97706' }}>⛰️ +{Math.round(alt.totalClimbM)}m</span>
+                      </>
+                    )}
                   </div>
+                  {alt.description && (
+                    <div style={{ fontSize: '11px', color: '#64748B', marginTop: '3px' }}>
+                      {alt.description}
+                    </div>
+                  )}
                   {alt.waterCrossing && (
                     <div style={{ fontSize: '11px', color: '#0369A1', marginTop: '4px', fontWeight: 500 }}>
                       Vessel: <strong>{alt.waterCrossing.vesselName}</strong> • Bypasses steep mountain grades • Saves ~90 min transit time ({alt.waterCrossing.carbonSavedKg || 42} kg CO₂ ESG)
@@ -172,9 +215,13 @@ export const AlternativeRoutesTable = ({ routes, plan, activeRouteId = 'safest',
         <h2 className="card-title" style={{ margin: 0 }}>Alternative Routes</h2>
       </div>
       {loading ? (
-        <div style={{ textAlign: 'center', color: 'var(--text-muted)', padding: '20px' }}>Loading routes from database...</div>
+        <div style={{ textAlign: 'center', color: 'var(--text-muted)', padding: '24px 16px', fontSize: '12px' }}>
+          Loading corridor options...
+        </div>
       ) : dbAlternates.length === 0 ? (
-        <div style={{ textAlign: 'center', color: 'var(--text-muted)', padding: '20px' }}>No route data available</div>
+        <div style={{ textAlign: 'center', color: 'var(--text-muted)', padding: '28px 16px', fontSize: '12px' }}>
+          Select an origin & destination to evaluate alternative corridors and risk levels.
+        </div>
       ) : (
         <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
           {dbAlternates.map((r, i) => (

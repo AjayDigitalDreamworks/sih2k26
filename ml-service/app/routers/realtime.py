@@ -33,9 +33,12 @@ async def get_district_weather(district_id: str):
 # --- IMD National Weather Intelligence Endpoints ---
 
 @router.get("/imd/stations")
-async def get_imd_stations(state: Optional[str] = None):
-    """Get geocoded IMD stations with current weather and warning colors for GIS Map."""
-    return await WeatherService.get_imd_stations(state_filter=state)
+async def get_imd_stations(
+    state: Optional[str] = None,
+    region: str = Query("ner", description="Filter by 'ner' or 'all'")
+):
+    """Get geocoded IMD stations with current weather and warning colors for GIS Map (NER filtered by default)."""
+    return await WeatherService.get_imd_stations(state_filter=state, region=region)
 
 
 @router.get("/imd/nowcasts")
@@ -67,6 +70,36 @@ async def check_corridor_weather(body: Dict[str, Any]):
 async def get_imd_health():
     """Get live telemetry, circuit breaker metrics, and cache stats."""
     return WeatherService.get_health_status()
+
+
+@router.get("/imd/district-warnings")
+async def get_imd_district_warnings(region: str = Query("ner", description="Filter by 'ner' or 'all'")):
+    """Get official 5-day IMD district warnings with hazard codes and severity colors."""
+    return await WeatherService.get_district_warnings(region=region)
+
+
+@router.get("/imd/district-rainfall")
+async def get_imd_district_rainfall(region: str = Query("ner", description="Filter by 'ner' or 'all'")):
+    """Get official IMD district rainfall: actual vs normal, departure %, and categories (LE/E/N/D/LD)."""
+    return await WeatherService.get_district_rainfall(region=region)
+
+
+@router.get("/imd/station-nowcasts")
+async def get_imd_station_nowcasts(region: str = Query("ner", description="Filter by 'ner' or 'all'")):
+    """Get 3-hour observatory/station-level nowcasts across India or NER."""
+    return await WeatherService.get_station_nowcasts(region=region)
+
+
+@router.get("/imd/state-rainfall")
+async def get_imd_state_rainfall(region: str = Query("ner", description="Filter by 'ner' or 'all'")):
+    """Get official IMD state-level rainfall departure trends."""
+    return await WeatherService.get_state_rainfall(region=region)
+
+
+@router.get("/imd/ner-intelligence")
+async def get_imd_ner_intelligence():
+    """Get consolidated North East Region meteorological intelligence and highway corridor safety status."""
+    return await WeatherService.get_ner_meteorological_intelligence()
 
 
 # --- Flood Endpoints ---
