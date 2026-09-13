@@ -49,6 +49,7 @@ router.get('/vehicle', DriverController.vehicle);
 router.get('/trips/active', DriverController.activeTrip);
 router.get('/trips/history', DriverController.tripHistory);
 router.get('/trips/:tripId/summary', DriverController.tripSummary);
+router.get('/alerts', DriverController.alerts);
 router.get('/incident-types', DriverController.incidentTypes);
 router.post('/media/upload', upload.single('file'), DriverController.uploadMedia);
 router.post('/incidents', upload.single('file'), DriverController.reportIncident);

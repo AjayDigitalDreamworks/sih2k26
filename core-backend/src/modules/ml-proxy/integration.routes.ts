@@ -83,7 +83,7 @@ async function proxyToML(endpoint: string, method: 'GET' | 'POST' = 'GET', body?
 
 // --- Weather ---
 router.get('/weather/:districtId', async (req: Request, res: Response) => {
-  const distId = req.params.districtId;
+  const distId = String(req.params.districtId || '');
   try {
     const data = await proxyToML(`/realtime/weather/${distId}`, 'GET', undefined, 60000);
     return sendSuccess(res, data, 'Weather data retrieved');
@@ -93,7 +93,7 @@ router.get('/weather/:districtId', async (req: Request, res: Response) => {
       source: 'Regional Weather Observatories (Cached)',
       status: 'DEGRADED',
       districtId: distId,
-      city: distId.replace(/_/g, ' ').replace(/\b\w/g, l => l.toUpperCase()),
+      city: distId.replace(/_/g, ' ').replace(/\b\w/g, (l: string) => l.toUpperCase()),
       temp_celsius: 28,
       humidity_percent: 74,
       rainfall_24h_mm: 0,

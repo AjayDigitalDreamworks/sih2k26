@@ -36,8 +36,17 @@ export const initSocketGateway = (httpServer: HttpServer): SocketIOServer => {
       if (user.role === 'admin' || user.role === 'district_officer') {
         socket.join('admin:all');
       }
+      if (user.role === 'field_officer' || user.role === 'field_agent') {
+        socket.join('field_officers');
+        socket.join(`officer:${user.id}`);
+      }
+      if (user.role === 'driver') {
+        socket.join('drivers');
+        socket.join(`driver:${user.id}`);
+      }
       if (user.transporterId) {
         socket.join(`transporter:${user.transporterId}`);
+        socket.join('transporters');
       }
       if (user.districtId) {
         socket.join(`district:${user.districtId}`);
@@ -48,13 +57,27 @@ export const initSocketGateway = (httpServer: HttpServer): SocketIOServer => {
       socket.join('transporter:transporter_01');
     }
 
+    // Support both 'join:room' and 'join' patterns
     socket.on('join:room', (room: string) => {
-      socket.join(room);
-      console.log(`Socket ${socket.id} joined room: ${room}`);
+      if (room) {
+        socket.join(room);
+        console.log(`Socket ${socket.id} joined room: ${room}`);
+      }
+    });
+
+    socket.on('join', (room: string) => {
+      if (room) {
+        socket.join(room);
+        console.log(`Socket ${socket.id} joined room: ${room}`);
+      }
     });
 
     socket.on('leave:room', (room: string) => {
-      socket.leave(room);
+      if (room) socket.leave(room);
+    });
+
+    socket.on('leave', (room: string) => {
+      if (room) socket.leave(room);
     });
 
     socket.on('disconnect', () => {
@@ -110,3 +133,19 @@ export const emitVehicleUtilization = (vehicleId: string, payload: any) => {
   io.to(`vehicle:${vehicleId}`).emit(channel, payload);
   io.emit('utilization:update', payload);
 };
+
+/**
+ * Emit an alert to all listening clients (admin, drivers, field officers, transporters).
+ */
+export const broadcastAlert = (alert: any) => {
+  if (!io) return;
+  io.emit('alert:created', alert);
+  io.emit('alert.created', alert);
+  io.emit('alert:broadcast', alert);
+  io.emit('hazard:alert', alert);
+  io.to('admin:all').emit('alert:broadcast', alert);
+  io.to('drivers').emit('alert:broadcast', alert);
+  io.to('field_officers').emit('alert:broadcast', alert);
+  io.to('transporters').emit('alert:broadcast', alert);
+};
+

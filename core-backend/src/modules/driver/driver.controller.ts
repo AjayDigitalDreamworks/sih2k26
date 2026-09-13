@@ -6,7 +6,7 @@ import { sendSuccess, sendError } from '../../utils/response';
 import { notifyRiskRecalculation } from '../../utils/mlRiskTrigger';
 import { TrackingService } from '../tracking/tracking.service';
 import { uploadImageToCloudinary } from '../../utils/cloudinary';
-import { getSocketServer } from '../../sockets/socket.gateway';
+import { getSocketServer, broadcastAlert } from '../../sockets/socket.gateway';
 import { ContinualLearningService } from '../ml-proxy/continual-learning.service';
 
 // Incident types a driver can raise from the road (maps to FieldReport.type).
@@ -326,11 +326,7 @@ export class DriverController {
             status: 'active',
           });
 
-          const io = getSocketServer();
-          if (io) {
-            io.to('admin:all').emit('alert.created', autoAlert);
-            io.to('admin:all').emit('alert:broadcast', autoAlert);
-          }
+          broadcastAlert(autoAlert);
           TrackingService.evaluateDynamicReroutesForAlert(autoAlert).catch(() => {});
         } catch (alertErr) {
           console.warn('[DRIVER-REPORT] Auto alert creation notice:', alertErr);
@@ -444,11 +440,7 @@ export class DriverController {
             status: 'active',
           });
 
-          const io = getSocketServer();
-          if (io) {
-            io.to('admin:all').emit('alert.created', autoAlert);
-            io.to('admin:all').emit('alert:broadcast', autoAlert);
-          }
+          broadcastAlert(autoAlert);
           TrackingService.evaluateDynamicReroutesForAlert(autoAlert).catch(() => {});
         } catch (alertErr) {
           console.warn('[DRIVER-ROAD] Auto alert creation notice:', alertErr);
@@ -458,6 +450,27 @@ export class DriverController {
       notifyRiskRecalculation(`road report created: ${report.id}`);
       ContinualLearningService.mineFieldReportIncident(report).catch(() => {});
       return sendSuccess(res, report, 'Road issue reported for the GIS damage pipeline', 201);
+    } catch (err: any) {
+      return sendError(res, err.message);
+    }
+  }
+
+  // GET /api/driver/alerts — active alerts formatted for driver consumption
+  static async alerts(_req: Request, res: Response) {
+    try {
+      const mongoAlerts = await Alert.find({ status: 'active' }).sort({ createdAt: -1 }).limit(30).lean();
+      const formatted = (mongoAlerts || []).map((a: any) => {
+        const sev = (a.severity || 'Medium').toLowerCase();
+        return {
+          id: a.id || String(a._id),
+          title: a.title || 'Regional Alert',
+          message: a.message || a.description || 'Hazard alert on highway corridor',
+          severity: sev === 'high' || sev === 'critical' ? 'critical' : sev === 'low' ? 'info' : 'warning',
+          timestamp: a.time || 'Recently',
+          route: a.location || a.districtId || 'Active Corridor',
+        };
+      });
+      return sendSuccess(res, formatted, 'Active driver alerts');
     } catch (err: any) {
       return sendError(res, err.message);
     }
