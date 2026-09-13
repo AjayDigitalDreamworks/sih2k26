@@ -1,4 +1,5 @@
 import React, { useState, useEffect } from 'react';
+import { useNavigate } from 'react-router-dom';
 import {
   LayoutDashboard,
   MapPin,
@@ -24,6 +25,7 @@ import { useApp } from '@/contexts/AppContext';
 import { useLang } from '@/contexts/LanguageContext';
 
 export const Sidebar = () => {
+  const navigate = useNavigate();
   const { currentPage, setCurrentPage, sidebarCollapsed, openModal, alerts } = useApp();
   const { t } = useLang();
   const [isOnline, setIsOnline] = useState(typeof navigator !== 'undefined' ? navigator.onLine : true);
@@ -139,7 +141,10 @@ export const Sidebar = () => {
                 return (
                   <button
                     key={item.id}
-                    onClick={() => setCurrentPage(item.id)}
+                    onClick={() => {
+                      setCurrentPage(item.id);
+                      navigate(item.id === 'dashboard' ? '/admin' : `/admin/${item.id}`);
+                    }}
                     className={`nav-item ${isActive ? 'active' : ''} ${item.isEmergency ? 'emergency' : ''}`}
                     title={sidebarCollapsed ? `${translatedLabel}${item.badge ? ` (${item.badge})` : ''}` : undefined}
                   >

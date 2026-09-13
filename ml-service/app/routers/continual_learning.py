@@ -17,13 +17,12 @@ import httpx
 from fastapi import APIRouter, HTTPException, BackgroundTasks, Query, Body
 from pydantic import BaseModel, Field
 
-from app.engine.train import retrain_risk_model_with_feedback, MODELS_DIR
-from app.engine.ml_inference import MLModels, get_model_status
+from app.engine.ml_inference import MLModels, get_model_status, MODELS_DIR
 
 logger = logging.getLogger("continual_learning")
 router = APIRouter(prefix="/continual-learning", tags=["Continual Learning"])
 
-CORE_BACKEND_URL = os.environ.get("CORE_BACKEND_URL", "http://localhost:5000")
+CORE_BACKEND_URL = os.environ.get("CORE_BACKEND_URL", "http://127.0.0.1:5000")
 INTERNAL_KEY = os.environ.get("CORE_BACKEND_INTERNAL_KEY", "raahi_internal_secret_key_2026")
 
 
@@ -164,8 +163,9 @@ async def trigger_continual_retraining(payload: Optional[RetrainRequest] = Body(
             "incorporated_count": 0,
         }
 
-    # Execute continual retraining
+    # Execute continual retraining (lazy-imported to avoid startup penalty)
     try:
+        from app.engine.train import retrain_risk_model_with_feedback
         metrics = retrain_risk_model_with_feedback(samples_to_train)
     except Exception as e:
         logger.error(f"Continual retraining failed: {e}")

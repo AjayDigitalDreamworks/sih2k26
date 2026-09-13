@@ -1,4 +1,4 @@
-import React from 'react';
+import React, { useState, useCallback } from 'react';
 import { Route, Calendar, CloudSun } from 'lucide-react';
 import { RoutePlannerMap } from '@/components/admin/routeOptimization/RoutePlannerMap';
 import { RouteSequenceTimeline } from '@/components/admin/routeOptimization/RouteSequenceTimeline';
@@ -7,14 +7,17 @@ import { CostBreakdownChart } from '@/components/admin/routeOptimization/CostBre
 import { RouteEfficiencyGauge } from '@/components/admin/routeOptimization/RouteEfficiencyGauge';
 import { AlternativeRoutesTable } from '@/components/admin/routeOptimization/AlternativeRoutesTable';
 import { RouteInsightsCard } from '@/components/admin/routeOptimization/RouteInsightsCard';
+import { CorridorsRequiringReroute } from '@/components/admin/routeOptimization/CorridorsRequiringReroute';
+import { SafeBypassModal } from '@/components/admin/modals/SafeBypassModal';
 import { useApp } from '@/contexts/AppContext';
 
 export const RouteOptimizationPage = ({ onExport }) => {
-  const { weather } = useApp();
-  const [currentPlan, setCurrentPlan] = React.useState(null);
-  const [activeRouteId, setActiveRouteId] = React.useState('safest');
+  const { weather, setRoutePlannerInitialState } = useApp();
+  const [currentPlan, setCurrentPlan] = useState(null);
+  const [activeRouteId, setActiveRouteId] = useState('safest');
+  const [selectedBypassCorridor, setSelectedBypassCorridor] = useState(null);
 
-  const handlePlanChange = React.useCallback((plan) => {
+  const handlePlanChange = useCallback((plan) => {
     setCurrentPlan(plan);
     if (plan?.preferred) {
       setActiveRouteId(plan.preferred);
@@ -22,6 +25,25 @@ export const RouteOptimizationPage = ({ onExport }) => {
       setActiveRouteId(plan.alternatives[0].id);
     }
   }, []);
+
+  const handleLoadCorridor = useCallback((corridor) => {
+    if (!corridor || !setRoutePlannerInitialState) return;
+    const parts = (corridor.name || '').split(/→|->/);
+    const origin = parts[0]?.trim() || '';
+    const dest = parts[1]?.trim() || '';
+
+    setRoutePlannerInitialState({
+      fromDistrictId: corridor.origin_district_id,
+      toDistrictId: corridor.dest_district_id,
+      originName: origin,
+      destName: dest,
+      corridorName: corridor.name,
+      prefer: 'safest',
+    });
+
+    // Smooth scroll down to Route Planner Map
+    window.scrollTo({ top: 400, behavior: 'smooth' });
+  }, [setRoutePlannerInitialState]);
 
   return (
     <div className="route-optimization-page">
@@ -53,6 +75,12 @@ export const RouteOptimizationPage = ({ onExport }) => {
           </div>
         </div>
       </div>
+
+      {/* Prominent Action Panel: Corridors & Convoys Requiring Reroute */}
+      <CorridorsRequiringReroute
+        onLoadCorridor={handleLoadCorridor}
+        onOpenSafeBypass={setSelectedBypassCorridor}
+      />
 
       {/* 3-Step Guided Workflow Banner */}
       <div style={{
@@ -127,6 +155,13 @@ export const RouteOptimizationPage = ({ onExport }) => {
           onExport={onExport}
         />
       </div>
+
+      {/* Safe Bypass & Fleet Dispatch Modal */}
+      <SafeBypassModal
+        isOpen={Boolean(selectedBypassCorridor)}
+        onClose={() => setSelectedBypassCorridor(null)}
+        corridor={selectedBypassCorridor}
+      />
     </div>
   );
 };

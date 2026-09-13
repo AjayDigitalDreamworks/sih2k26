@@ -213,6 +213,24 @@ router.get('/vehicles/:vehicleId/trip-summary', authenticateJwt, async (req: Req
   }
 });
 
+// --- Fleet Multi-Vehicle Simulation Routes ---
+import { FleetSimulationService } from './fleet-simulation.service';
+
+router.get('/simulation/status', async (_req: Request, res: Response) => {
+  return sendSuccess(res, FleetSimulationService.getStatus(), 'Fleet simulation status retrieved');
+});
+
+router.post('/simulation/start', async (req: Request, res: Response) => {
+  const interval = req.body?.intervalMs || 3500;
+  await FleetSimulationService.start(interval);
+  return sendSuccess(res, FleetSimulationService.getStatus(), 'Fleet multi-vehicle simulation started');
+});
+
+router.post('/simulation/stop', async (_req: Request, res: Response) => {
+  FleetSimulationService.stop();
+  return sendSuccess(res, FleetSimulationService.getStatus(), 'Fleet multi-vehicle simulation stopped');
+});
+
 /** GET /api/tracking/vehicles/:vehicleId/status — live/current/legacy */
 router.get('/:vehicleId/status', authenticateJwt, async (req: Request, res: Response) => {
   try {

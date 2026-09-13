@@ -61,7 +61,9 @@ export const DistanceComparisonChart = ({ plan, activeRouteId = 'safest' }) => {
         <h2 className="card-title" style={{ margin: 0 }}>District Connectivity Comparison</h2>
       </div>
       {data.length === 0 ? (
-        <div style={{ textAlign: 'center', color: 'var(--text-muted)', padding: '20px' }}>Loading...</div>
+        <div style={{ textAlign: 'center', color: 'var(--text-muted)', padding: '28px 16px', fontSize: '12px' }}>
+          Evaluate a corridor above to compare distance across routes.
+        </div>
       ) : (
         <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
           {data.map((d, i) => (

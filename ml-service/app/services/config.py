@@ -50,11 +50,10 @@ _load_dotenv_files()
 
 class APIConfig:
     # --- Core Backend (service-to-service, internal key) ---
-    CORE_BACKEND_URL = os.getenv("CORE_BACKEND_URL", "http://localhost:5000")
+    CORE_BACKEND_URL = os.getenv("CORE_BACKEND_URL", "http://127.0.0.1:5000")
     CORE_BACKEND_INTERNAL_KEY = os.getenv("CORE_BACKEND_INTERNAL_KEY", "")
 
-    # --- IMD (India Meteorological Department) ---
-    IMD_BASE_URL = os.getenv("IMD_API_URL", "https://api.imd.gov.in/api/v1")
+    IMD_BASE_URL = os.getenv("IMD_BASE_URL") or os.getenv("IMD_API_URL") or "https://api.imd.gov.in/api/v1"
     IMD_API_KEY = os.getenv("IMD_API_KEY", "")
     IMD_JWT_TOKEN = os.getenv("IMD_JWT_TOKEN", "")
     IMD_INTEGRATION_ENABLED = os.getenv("IMD_INTEGRATION_ENABLED", "true").lower() in ("true", "1", "yes")
@@ -86,6 +85,26 @@ class APIConfig:
 
     # --- Open-Meteo (free fallback weather API) ---
     OPEN_METEO_URL = "https://api.open-meteo.com/v1"
+
+    # --- NER Regional Boundary Definitions ---
+    NER_STATES = {
+        "assam",
+        "meghalaya",
+        "arunachal pradesh",
+        "nagaland",
+        "manipur",
+        "mizoram",
+        "tripura",
+        "sikkim",
+    }
+    NER_GATEWAY_DISTRICTS = {
+        "darjeeling",
+        "jalpaiguri",
+        "alipurduar",
+        "cooch behar",
+        "kalimpong",
+        "siliguri",
+    }
 
     # --- NER District Coordinates (for API lookups) ---
     NER_DISTRICTS = {

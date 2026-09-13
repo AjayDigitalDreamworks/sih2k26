@@ -23,36 +23,71 @@ import {
 } from 'lucide-react';
 import { ApiClient } from '@/lib/api';
 
+// Helper to ensure any response data is converted safely to an Array
+const ensureArray = (val) => {
+  if (!val) return [];
+  if (Array.isArray(val)) return val;
+  if (Array.isArray(val.data)) return val.data;
+  if (Array.isArray(val.nowcasts)) return val.nowcasts;
+  if (Array.isArray(val.warnings)) return val.warnings;
+  if (Array.isArray(val.rainfall)) return val.rainfall;
+  if (Array.isArray(val.stations)) return val.stations;
+  if (Array.isArray(val.items)) return val.items;
+  if (Array.isArray(val.records)) return val.records;
+  return [];
+};
+
 export const ImdWeatherIntelligenceModal = ({ isOpen, onClose, initialDistrict = 'kamrup' }) => {
-  const [activeTab, setActiveTab] = useState('nowcast'); // 'nowcast' | 'forecast' | 'rainfall'
+  const [activeTab, setActiveTab] = useState('warnings5d'); // 'warnings5d' | 'nowcast' | 'rainfallStats' | 'stationNowcast' | 'forecast' | 'rainfall'
+  const [regionMode, setRegionMode] = useState('ner'); // 'ner' | 'all'
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
 
   const [nationalSummary, setNationalSummary] = useState(null);
+  const [nerIntelligence, setNerIntelligence] = useState(null);
   const [nowcasts, setNowcasts] = useState([]);
+  const [districtWarnings, setDistrictWarnings] = useState([]);
+  const [districtRainfall, setDistrictRainfall] = useState([]);
+  const [stationNowcasts, setStationNowcasts] = useState([]);
   const [selectedDistrict, setSelectedDistrict] = useState(initialDistrict);
   const [districtReport, setDistrictReport] = useState(null);
   const [reportLoading, setReportLoading] = useState(false);
 
-  // Search filter for nowcasts
-  const [nowcastSearch, setNowcastSearch] = useState('');
+  // Search filter for nowcasts & warnings
+  const [searchTerm, setSearchTerm] = useState('');
   const [severityFilter, setSeverityFilter] = useState('all'); // 'all' | 'warning' | 'red'
 
-  // Load National Summary and Nowcasts
-  const loadInitialData = async () => {
+  // Load telemetry from unified IMD client
+  const loadInitialData = async (targetRegion = 'ner') => {
     setLoading(true);
     setError(null);
     try {
-      const [sumRes, nowRes] = await Promise.allSettled([
+      const [sumRes, nowRes, warnRes, rainRes, stnRes, intelRes] = await Promise.allSettled([
         ApiClient.getImdNationalSummary(),
-        ApiClient.getImdNowcasts('all'),
+        ApiClient.getImdNowcasts(targetRegion === 'ner' ? 'ner' : 'all'),
+        ApiClient.getImdDistrictWarnings(targetRegion),
+        ApiClient.getImdDistrictRainfall(targetRegion),
+        ApiClient.getImdStationNowcasts(targetRegion),
+        ApiClient.getImdNerIntelligence(),
       ]);
 
       if (sumRes.status === 'fulfilled' && sumRes.value?.success) {
         setNationalSummary(sumRes.value.data);
       }
-      if (nowRes.status === 'fulfilled' && nowRes.value?.success) {
-        setNowcasts(nowRes.value.data || []);
+      if (nowRes.status === 'fulfilled') {
+        setNowcasts(ensureArray(nowRes.value?.data));
+      }
+      if (warnRes.status === 'fulfilled') {
+        setDistrictWarnings(ensureArray(warnRes.value?.data));
+      }
+      if (rainRes.status === 'fulfilled') {
+        setDistrictRainfall(ensureArray(rainRes.value?.data));
+      }
+      if (stnRes.status === 'fulfilled') {
+        setStationNowcasts(ensureArray(stnRes.value?.data));
+      }
+      if (intelRes.status === 'fulfilled' && intelRes.value?.success) {
+        setNerIntelligence(intelRes.value.data);
       }
     } catch (err) {
       setError(err?.message || 'Failed to sync with IMD telemetry');
@@ -78,10 +113,10 @@ export const ImdWeatherIntelligenceModal = ({ isOpen, onClose, initialDistrict =
 
   useEffect(() => {
     if (isOpen) {
-      loadInitialData();
+      loadInitialData(regionMode);
       loadDistrictReport(selectedDistrict);
     }
-  }, [isOpen]);
+  }, [isOpen, regionMode]);
 
   useEffect(() => {
     if (isOpen && selectedDistrict) {
@@ -91,11 +126,13 @@ export const ImdWeatherIntelligenceModal = ({ isOpen, onClose, initialDistrict =
 
   // Filtered nowcasts
   const filteredNowcasts = useMemo(() => {
-    return nowcasts.filter((item) => {
+    const list = Array.isArray(nowcasts) ? nowcasts : [];
+    return list.filter((item) => {
+      if (!item) return false;
       const matchSearch =
-        !nowcastSearch ||
-        item.district?.toLowerCase().includes(nowcastSearch.toLowerCase()) ||
-        item.message?.toLowerCase().includes(nowcastSearch.toLowerCase());
+        !searchTerm ||
+        item.district?.toLowerCase().includes(searchTerm.toLowerCase()) ||
+        item.message?.toLowerCase().includes(searchTerm.toLowerCase());
 
       const matchSeverity =
         severityFilter === 'all'
@@ -106,7 +143,57 @@ export const ImdWeatherIntelligenceModal = ({ isOpen, onClose, initialDistrict =
 
       return matchSearch && matchSeverity;
     });
-  }, [nowcasts, nowcastSearch, severityFilter]);
+  }, [nowcasts, searchTerm, severityFilter]);
+
+  // Filtered 5-day district warnings
+  const filteredWarnings = useMemo(() => {
+    const list = Array.isArray(districtWarnings) ? districtWarnings : [];
+    return list.filter((item) => {
+      if (!item) return false;
+      const matchSearch =
+        !searchTerm ||
+        item.district?.toLowerCase().includes(searchTerm.toLowerCase()) ||
+        item.state?.toLowerCase().includes(searchTerm.toLowerCase()) ||
+        (Array.isArray(item.day1?.hazards) && item.day1.hazards.some((h) => String(h).toLowerCase().includes(searchTerm.toLowerCase())));
+
+      const matchSeverity =
+        severityFilter === 'all'
+          ? true
+          : severityFilter === 'red'
+          ? item.maxSeverityColor === 'red'
+          : item.maxSeverityColor === 'red' || item.maxSeverityColor === 'orange' || item.maxSeverityColor === 'yellow';
+
+      return matchSearch && matchSeverity;
+    });
+  }, [districtWarnings, searchTerm, severityFilter]);
+
+  // Filtered rainfall records
+  const filteredRainfall = useMemo(() => {
+    const list = Array.isArray(districtRainfall) ? districtRainfall : [];
+    return list.filter((item) => {
+      if (!item) return false;
+      return (
+        !searchTerm ||
+        item.district?.toLowerCase().includes(searchTerm.toLowerCase()) ||
+        item.state?.toLowerCase().includes(searchTerm.toLowerCase()) ||
+        item.daily?.category?.toLowerCase().includes(searchTerm.toLowerCase())
+      );
+    });
+  }, [districtRainfall, searchTerm]);
+
+  // Filtered station nowcasts
+  const filteredStations = useMemo(() => {
+    const list = Array.isArray(stationNowcasts) ? stationNowcasts : [];
+    return list.filter((item) => {
+      if (!item) return false;
+      return (
+        !searchTerm ||
+        item.station?.toLowerCase().includes(searchTerm.toLowerCase()) ||
+        item.message?.toLowerCase().includes(searchTerm.toLowerCase()) ||
+        (Array.isArray(item.hazards) && item.hazards.some((h) => String(h).toLowerCase().includes(searchTerm.toLowerCase())))
+      );
+    });
+  }, [stationNowcasts, searchTerm]);
 
   if (!isOpen) return null;
 
@@ -201,39 +288,108 @@ export const ImdWeatherIntelligenceModal = ({ isOpen, onClose, initialDistrict =
           </div>
         </div>
 
-        {/* National Alert Summary Strip */}
+        {/* National / Regional Alert Summary Strip */}
         <div className="bg-slate-50 border-b border-slate-200 px-6 py-2.5 flex items-center justify-between flex-wrap gap-3 text-xs">
           <div className="flex items-center gap-2 flex-wrap">
             <span className="font-bold text-slate-500 uppercase tracking-wider text-[10px]">
-              National Weather Status ({nationalSummary?.lastSyncIst || 'Live IST'}):
+              {regionMode === 'ner' ? 'North East Regional Weather Status' : 'National Weather Status'} ({nationalSummary?.lastSyncIst || 'Live IST'}):
             </span>
-            <div className="flex items-center gap-2">
+            <div className="flex items-center gap-2 flex-wrap">
               <span className="inline-flex items-center gap-1 font-bold text-rose-700 bg-rose-100/70 px-2 py-0.5 rounded-md">
                 <span className="w-1.5 h-1.5 rounded-full bg-rose-600" />
-                {nationalSummary?.counts?.red || 0} Red Alerts
+                {regionMode === 'ner' ? (nerIntelligence?.counts?.redWarningsDay1 || 0) : (nationalSummary?.counts?.red || 0)} Red Alerts
               </span>
               <span className="inline-flex items-center gap-1 font-bold text-amber-700 bg-amber-100/70 px-2 py-0.5 rounded-md">
                 <span className="w-1.5 h-1.5 rounded-full bg-amber-600" />
-                {nationalSummary?.counts?.orange || 0} Orange Alerts
+                {regionMode === 'ner' ? (nerIntelligence?.counts?.orangeWarningsDay1 || 0) : (nationalSummary?.counts?.orange || 0)} Orange Alerts
               </span>
               <span className="inline-flex items-center gap-1 font-bold text-yellow-800 bg-yellow-100/70 px-2 py-0.5 rounded-md">
                 <span className="w-1.5 h-1.5 rounded-full bg-yellow-500" />
-                {nationalSummary?.counts?.yellow || 0} Yellow Watches
+                {regionMode === 'ner' ? (nerIntelligence?.counts?.yellowWarningsDay1 || 0) : (nationalSummary?.counts?.yellow || 0)} Yellow Watches
               </span>
+              {regionMode === 'ner' && (
+                <span className="inline-flex items-center gap-1 font-bold text-blue-800 bg-blue-100/70 px-2 py-0.5 rounded-md">
+                  <Droplets className="w-3 h-3 text-blue-600" />
+                  {nerIntelligence?.counts?.excessRainfallDistricts || 0} Excess Rainfall
+                </span>
+              )}
             </div>
           </div>
 
-          <div className="text-[11px] text-slate-500 font-semibold flex items-center gap-1">
-            <Clock className="w-3.5 h-3.5 text-slate-400" />
-            <span>Timezone: IST (Indian Standard Time, UTC+5:30)</span>
+          <div className="flex items-center gap-3">
+            {/* Region Mode Toggle */}
+            <div className="inline-flex p-0.5 rounded-xl bg-slate-200 border border-slate-300">
+              <button
+                onClick={() => setRegionMode('ner')}
+                className={`px-2.5 py-1 rounded-lg text-xs font-black transition-all cursor-pointer ${
+                  regionMode === 'ner' ? 'bg-emerald-700 text-white shadow-xs' : 'text-slate-600 hover:text-slate-900'
+                }`}
+              >
+                🏔️ NER Focus
+              </button>
+              <button
+                onClick={() => setRegionMode('all')}
+                className={`px-2.5 py-1 rounded-lg text-xs font-black transition-all cursor-pointer ${
+                  regionMode === 'all' ? 'bg-slate-800 text-white shadow-xs' : 'text-slate-600 hover:text-slate-900'
+                }`}
+              >
+                🇮🇳 All India
+              </button>
+            </div>
+
+            <div className="text-[11px] text-slate-500 font-semibold flex items-center gap-1">
+              <Clock className="w-3.5 h-3.5 text-slate-400" />
+              <span>IST (UTC+5:30)</span>
+            </div>
           </div>
         </div>
 
+        {/* NER Strategic Highway Corridors Status Bar */}
+        {regionMode === 'ner' && nerIntelligence?.corridorStatus && (
+          <div className="bg-emerald-950/10 border-b border-emerald-900/10 px-6 py-2 flex items-center gap-3 overflow-x-auto text-[11px]">
+            <span className="font-extrabold text-slate-700 uppercase tracking-wider text-[10px] shrink-0">
+              Transit Corridors:
+            </span>
+            <div className="flex items-center gap-2">
+              {Object.entries(nerIntelligence.corridorStatus).map(([cName, cData]) => (
+                <div
+                  key={cName}
+                  className={`inline-flex items-center gap-1.5 px-2 py-0.5 rounded-md border text-[10px] font-bold ${
+                    cData.safe
+                      ? 'bg-emerald-50 text-emerald-800 border-emerald-200'
+                      : 'bg-amber-50 text-amber-800 border-amber-200'
+                  }`}
+                  title={cData.hazards?.join('; ') || 'Normal transit conditions'}
+                >
+                  <span className={`w-1.5 h-1.5 rounded-full ${cData.safe ? 'bg-emerald-600' : 'bg-amber-500 animate-ping'}`} />
+                  <span>{cName.split(' ')[0]}</span>
+                  <span className="text-[9px] uppercase font-black">{cData.status}</span>
+                </div>
+              ))}
+            </div>
+          </div>
+        )}
+
         {/* Tab Navigation */}
-        <div className="flex items-center border-b border-slate-200 px-6 bg-white shrink-0">
+        <div className="flex items-center border-b border-slate-200 px-6 bg-white shrink-0 overflow-x-auto">
+          <button
+            onClick={() => setActiveTab('warnings5d')}
+            className={`py-3.5 px-3.5 font-black text-xs transition-all border-b-2 cursor-pointer flex items-center gap-1.5 shrink-0 ${
+              activeTab === 'warnings5d'
+                ? 'border-emerald-600 text-emerald-800 bg-emerald-50/50'
+                : 'border-transparent text-slate-500 hover:text-slate-800'
+            }`}
+          >
+            <ShieldAlert className="w-4 h-4" />
+            <span>5-Day District Warnings</span>
+            <span className="px-1.5 py-0.5 rounded-full bg-slate-100 text-[10px] font-bold text-slate-600">
+              {Array.isArray(districtWarnings) ? districtWarnings.length : 0}
+            </span>
+          </button>
+
           <button
             onClick={() => setActiveTab('nowcast')}
-            className={`py-3.5 px-4 font-black text-xs transition-all border-b-2 cursor-pointer flex items-center gap-2 ${
+            className={`py-3.5 px-3.5 font-black text-xs transition-all border-b-2 cursor-pointer flex items-center gap-1.5 shrink-0 ${
               activeTab === 'nowcast'
                 ? 'border-emerald-600 text-emerald-800 bg-emerald-50/50'
                 : 'border-transparent text-slate-500 hover:text-slate-800'
@@ -242,25 +398,55 @@ export const ImdWeatherIntelligenceModal = ({ isOpen, onClose, initialDistrict =
             <CloudLightning className="w-4 h-4" />
             <span>3-Hour Radar Nowcasts</span>
             <span className="px-1.5 py-0.5 rounded-full bg-slate-100 text-[10px] font-bold text-slate-600">
-              {nowcasts.length}
+              {Array.isArray(nowcasts) ? nowcasts.length : 0}
+            </span>
+          </button>
+
+          <button
+            onClick={() => setActiveTab('rainfallStats')}
+            className={`py-3.5 px-3.5 font-black text-xs transition-all border-b-2 cursor-pointer flex items-center gap-1.5 shrink-0 ${
+              activeTab === 'rainfallStats'
+                ? 'border-emerald-600 text-emerald-800 bg-emerald-50/50'
+                : 'border-transparent text-slate-500 hover:text-slate-800'
+            }`}
+          >
+            <Droplets className="w-4 h-4" />
+            <span>District Rainfall Analytics</span>
+            <span className="px-1.5 py-0.5 rounded-full bg-slate-100 text-[10px] font-bold text-slate-600">
+              {Array.isArray(districtRainfall) ? districtRainfall.length : 0}
+            </span>
+          </button>
+
+          <button
+            onClick={() => setActiveTab('stationNowcast')}
+            className={`py-3.5 px-3.5 font-black text-xs transition-all border-b-2 cursor-pointer flex items-center gap-1.5 shrink-0 ${
+              activeTab === 'stationNowcast'
+                ? 'border-emerald-600 text-emerald-800 bg-emerald-50/50'
+                : 'border-transparent text-slate-500 hover:text-slate-800'
+            }`}
+          >
+            <Radio className="w-4 h-4" />
+            <span>Station Observatories</span>
+            <span className="px-1.5 py-0.5 rounded-full bg-slate-100 text-[10px] font-bold text-slate-600">
+              {Array.isArray(stationNowcasts) ? stationNowcasts.length : 0}
             </span>
           </button>
 
           <button
             onClick={() => setActiveTab('forecast')}
-            className={`py-3.5 px-4 font-black text-xs transition-all border-b-2 cursor-pointer flex items-center gap-2 ${
+            className={`py-3.5 px-3.5 font-black text-xs transition-all border-b-2 cursor-pointer flex items-center gap-1.5 shrink-0 ${
               activeTab === 'forecast'
                 ? 'border-emerald-600 text-emerald-800 bg-emerald-50/50'
                 : 'border-transparent text-slate-500 hover:text-slate-800'
             }`}
           >
             <Calendar className="w-4 h-4" />
-            <span>7-Day Synoptic City Forecast & Warnings</span>
+            <span>7-Day Synoptic City Forecast</span>
           </button>
 
           <button
             onClick={() => setActiveTab('rainfall')}
-            className={`py-3.5 px-4 font-black text-xs transition-all border-b-2 cursor-pointer flex items-center gap-2 ${
+            className={`py-3.5 px-3.5 font-black text-xs transition-all border-b-2 cursor-pointer flex items-center gap-1.5 shrink-0 ${
               activeTab === 'rainfall'
                 ? 'border-emerald-600 text-emerald-800 bg-emerald-50/50'
                 : 'border-transparent text-slate-500 hover:text-slate-800'
@@ -286,18 +472,17 @@ export const ImdWeatherIntelligenceModal = ({ isOpen, onClose, initialDistrict =
             </div>
           )}
 
-          {/* TAB 1: 3-Hour Radar Nowcasts */}
-          {activeTab === 'nowcast' && (
+          {/* TAB 1: 5-Day District Warnings Matrix */}
+          {activeTab === 'warnings5d' && (
             <div className="space-y-4">
-              {/* Filter controls */}
               <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
                 <div className="relative flex-1">
                   <Search className="w-4 h-4 absolute left-3 top-3 text-slate-400" />
                   <input
                     type="text"
-                    value={nowcastSearch}
-                    onChange={(e) => setNowcastSearch(e.target.value)}
-                    placeholder="Search district or weather alert keywords (e.g. Guwahati, Thunderstorm, Hail)..."
+                    value={searchTerm}
+                    onChange={(e) => setSearchTerm(e.target.value)}
+                    placeholder="Search district, state or hazard (e.g. Morigaon, Very Heavy Rain, Squall)..."
                     className="w-full pl-9 pr-3.5 py-2.5 rounded-xl border border-slate-200 text-xs font-semibold focus:outline-none focus:border-emerald-500 bg-white"
                   />
                 </div>
@@ -311,7 +496,7 @@ export const ImdWeatherIntelligenceModal = ({ isOpen, onClose, initialDistrict =
                         : 'bg-slate-100 text-slate-600 hover:bg-slate-200'
                     }`}
                   >
-                    All ({nowcasts.length})
+                    All ({Array.isArray(districtWarnings) ? districtWarnings.length : 0})
                   </button>
                   <button
                     onClick={() => setSeverityFilter('warning')}
@@ -336,7 +521,137 @@ export const ImdWeatherIntelligenceModal = ({ isOpen, onClose, initialDistrict =
                 </div>
               </div>
 
-              {/* Nowcast Cards List */}
+              {loading ? (
+                <div className="space-y-3">
+                  {[1, 2, 3].map((n) => (
+                    <div key={n} className="p-4 rounded-2xl bg-slate-100 animate-pulse h-24" />
+                  ))}
+                </div>
+              ) : filteredWarnings.length === 0 ? (
+                <div className="p-8 text-center text-slate-500 bg-slate-50 rounded-2xl border border-slate-100">
+                  <CheckCircle2 className="w-8 h-8 mx-auto mb-2 text-emerald-500" />
+                  <p className="font-black text-slate-700 text-sm">No matching district warnings</p>
+                  <p className="text-xs text-slate-400 mt-1">All filtered districts operate under normal parameters.</p>
+                </div>
+              ) : (
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-3.5">
+                  {filteredWarnings.slice(0, 40).map((w, idx) => (
+                    <div
+                      key={`${w.district}-${idx}`}
+                      className="p-4 rounded-2xl border border-slate-200/80 bg-white hover:border-slate-300 shadow-xs space-y-3 transition-all"
+                    >
+                      <div className="flex items-start justify-between gap-2">
+                        <div>
+                          <div className="flex items-center gap-2">
+                            <span className="text-sm font-black text-slate-900">{w.district}</span>
+                            <span className="text-[10px] font-bold px-1.5 py-0.5 rounded bg-slate-100 text-slate-600 uppercase">
+                              {w.state}
+                            </span>
+                          </div>
+                          <span className="text-[10px] font-bold text-slate-400">
+                            Issued: {w.dateIssued || 'Today'}
+                          </span>
+                        </div>
+                        {renderWarningBadge(w.day1?.color, w.day1?.severityLabel)}
+                      </div>
+
+                      {/* Day 1 - Day 5 Warning Matrix Pills */}
+                      <div className="grid grid-cols-5 gap-1.5 pt-1">
+                        {[w.day1, w.day2, w.day3, w.day4, w.day5].map((d, dIdx) => (
+                          <div
+                            key={dIdx}
+                            className="p-1.5 rounded-lg border text-center space-y-0.5"
+                            style={{
+                              backgroundColor: `${d?.hex}15`,
+                              borderColor: `${d?.hex}40`,
+                            }}
+                          >
+                            <span className="text-[9px] font-black text-slate-500 block uppercase">
+                              {dIdx === 0 ? 'Today' : `D+${dIdx}`}
+                            </span>
+                            <span
+                              className="w-2 h-2 rounded-full mx-auto block"
+                              style={{ backgroundColor: d?.hex || '#7CFC00' }}
+                            />
+                            <span
+                              className="text-[8px] font-black uppercase block truncate"
+                              style={{ color: d?.hex }}
+                            >
+                              {d?.color || 'GREEN'}
+                            </span>
+                          </div>
+                        ))}
+                      </div>
+
+                      {/* Active Hazards */}
+                      {w.day1?.hazards && w.day1.hazards.length > 0 && (
+                        <div className="flex items-center gap-1.5 flex-wrap pt-1">
+                          {w.day1.hazards.map((h, hIdx) => (
+                            <span
+                              key={hIdx}
+                              className="px-2 py-0.5 rounded-md bg-slate-100 text-slate-800 text-[10px] font-extrabold"
+                            >
+                              ⚠️ {h}
+                            </span>
+                          ))}
+                        </div>
+                      )}
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
+          )}
+
+          {/* TAB 2: 3-Hour Radar Nowcasts */}
+          {activeTab === 'nowcast' && (
+            <div className="space-y-4">
+              <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+                <div className="relative flex-1">
+                  <Search className="w-4 h-4 absolute left-3 top-3 text-slate-400" />
+                  <input
+                    type="text"
+                    value={searchTerm}
+                    onChange={(e) => setSearchTerm(e.target.value)}
+                    placeholder="Search district or weather alert keywords (e.g. Guwahati, Thunderstorm, Hail)..."
+                    className="w-full pl-9 pr-3.5 py-2.5 rounded-xl border border-slate-200 text-xs font-semibold focus:outline-none focus:border-emerald-500 bg-white"
+                  />
+                </div>
+
+                <div className="flex items-center gap-1.5">
+                  <button
+                    onClick={() => setSeverityFilter('all')}
+                    className={`px-3 py-1.5 rounded-xl text-xs font-bold transition-all cursor-pointer ${
+                      severityFilter === 'all'
+                        ? 'bg-slate-900 text-white'
+                        : 'bg-slate-100 text-slate-600 hover:bg-slate-200'
+                    }`}
+                  >
+                    All ({Array.isArray(nowcasts) ? nowcasts.length : 0})
+                  </button>
+                  <button
+                    onClick={() => setSeverityFilter('warning')}
+                    className={`px-3 py-1.5 rounded-xl text-xs font-bold transition-all cursor-pointer ${
+                      severityFilter === 'warning'
+                        ? 'bg-amber-600 text-white'
+                        : 'bg-amber-50 text-amber-800 hover:bg-amber-100'
+                    }`}
+                  >
+                    Warnings Only
+                  </button>
+                  <button
+                    onClick={() => setSeverityFilter('red')}
+                    className={`px-3 py-1.5 rounded-xl text-xs font-bold transition-all cursor-pointer ${
+                      severityFilter === 'red'
+                        ? 'bg-rose-600 text-white'
+                        : 'bg-rose-50 text-rose-800 hover:bg-rose-100'
+                    }`}
+                  >
+                    Red Alerts
+                  </button>
+                </div>
+              </div>
+
               {loading ? (
                 <div className="space-y-3">
                   {[1, 2, 3].map((n) => (
@@ -391,7 +706,167 @@ export const ImdWeatherIntelligenceModal = ({ isOpen, onClose, initialDistrict =
             </div>
           )}
 
-          {/* TAB 2: 7-Day Synoptic City Forecast & Warnings */}
+          {/* TAB 3: District Rainfall Analytics */}
+          {activeTab === 'rainfallStats' && (
+            <div className="space-y-4">
+              <div className="flex items-center justify-between gap-3">
+                <div className="relative flex-1">
+                  <Search className="w-4 h-4 absolute left-3 top-3 text-slate-400" />
+                  <input
+                    type="text"
+                    value={searchTerm}
+                    onChange={(e) => setSearchTerm(e.target.value)}
+                    placeholder="Search district, state or category (e.g. Kokrajhar, Assam, LE)..."
+                    className="w-full pl-9 pr-3.5 py-2.5 rounded-xl border border-slate-200 text-xs font-semibold focus:outline-none focus:border-emerald-500 bg-white"
+                  />
+                </div>
+              </div>
+
+              {loading ? (
+                <div className="space-y-3">
+                  {[1, 2, 3].map((n) => (
+                    <div key={n} className="p-4 rounded-2xl bg-slate-100 animate-pulse h-24" />
+                  ))}
+                </div>
+              ) : filteredRainfall.length === 0 ? (
+                <div className="p-8 text-center text-slate-500 bg-slate-50 rounded-2xl border border-slate-100">
+                  <p className="font-black text-slate-700 text-sm">No rainfall records found</p>
+                </div>
+              ) : (
+                <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3">
+                  {filteredRainfall.slice(0, 36).map((rf, idx) => {
+                    const cat = rf.daily?.category || 'ND';
+                    const isExcess = cat === 'LE' || cat === 'E';
+                    return (
+                      <div
+                        key={`${rf.district}-${idx}`}
+                        className={`p-3.5 rounded-2xl border transition-all ${
+                          isExcess
+                            ? 'bg-blue-50/70 border-blue-200/90 shadow-2xs'
+                            : 'bg-white border-slate-200/80'
+                        }`}
+                      >
+                        <div className="flex items-start justify-between gap-2">
+                          <div>
+                            <span className="text-xs font-black text-slate-900 block">{rf.district}</span>
+                            <span className="text-[10px] font-bold text-slate-400 uppercase">{rf.state}</span>
+                          </div>
+                          <span
+                            className={`px-2 py-0.5 rounded-md text-[10px] font-black uppercase ${
+                              cat === 'LE'
+                                ? 'bg-blue-600 text-white'
+                                : cat === 'E'
+                                ? 'bg-blue-100 text-blue-800'
+                                : cat === 'N'
+                                ? 'bg-emerald-100 text-emerald-800'
+                                : 'bg-slate-100 text-slate-600'
+                            }`}
+                          >
+                            {cat}
+                          </span>
+                        </div>
+
+                        <div className="grid grid-cols-3 gap-2 pt-2 mt-2 border-t border-slate-100 text-center">
+                          <div>
+                            <span className="text-[9px] font-bold text-slate-400 block uppercase">Actual</span>
+                            <span className="text-xs font-black text-slate-900 block">
+                              {rf.daily?.actualMm != null ? `${rf.daily.actualMm} mm` : '0'}
+                            </span>
+                          </div>
+                          <div>
+                            <span className="text-[9px] font-bold text-slate-400 block uppercase">Normal</span>
+                            <span className="text-xs font-black text-slate-600 block">
+                              {rf.daily?.normalMm != null ? `${rf.daily.normalMm} mm` : '0'}
+                            </span>
+                          </div>
+                          <div>
+                            <span className="text-[9px] font-bold text-slate-400 block uppercase">Departure</span>
+                            <span
+                              className={`text-xs font-black block ${
+                                isExcess ? 'text-blue-600' : 'text-slate-700'
+                              }`}
+                            >
+                              {rf.daily?.departurePer || '0%'}
+                            </span>
+                          </div>
+                        </div>
+
+                        <span className="text-[10px] text-slate-500 font-medium block pt-1.5 truncate">
+                          {rf.daily?.categoryDescription}
+                        </span>
+                      </div>
+                    );
+                  })}
+                </div>
+              )}
+            </div>
+          )}
+
+          {/* TAB 4: Observatory Station Nowcasts */}
+          {activeTab === 'stationNowcast' && (
+            <div className="space-y-4">
+              <div className="relative">
+                <Search className="w-4 h-4 absolute left-3 top-3 text-slate-400" />
+                <input
+                  type="text"
+                  value={searchTerm}
+                  onChange={(e) => setSearchTerm(e.target.value)}
+                  placeholder="Search ground observatory station (e.g. Guwahati, Shillong, Tezpur)..."
+                  className="w-full pl-9 pr-3.5 py-2.5 rounded-xl border border-slate-200 text-xs font-semibold focus:outline-none focus:border-emerald-500 bg-white"
+                />
+              </div>
+
+              {loading ? (
+                <div className="space-y-3">
+                  {[1, 2, 3].map((n) => (
+                    <div key={n} className="p-4 rounded-2xl bg-slate-100 animate-pulse h-24" />
+                  ))}
+                </div>
+              ) : filteredStations.length === 0 ? (
+                <div className="p-8 text-center text-slate-500 bg-slate-50 rounded-2xl border border-slate-100">
+                  <p className="font-black text-slate-700 text-sm">No matching observatory stations</p>
+                </div>
+              ) : (
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+                  {filteredStations.slice(0, 30).map((st, idx) => (
+                    <div
+                      key={`${st.station}-${idx}`}
+                      className="p-3.5 rounded-2xl border border-slate-200/80 bg-white shadow-xs space-y-2"
+                    >
+                      <div className="flex items-start justify-between gap-2">
+                        <div>
+                          <span className="text-xs font-black text-slate-900 block">{st.station}</span>
+                          <span className="text-[10px] font-bold text-slate-400">
+                            Issued: {st.issuedAt} · Valid: {st.validUntil}
+                          </span>
+                        </div>
+                        {renderWarningBadge(st.alertColor)}
+                      </div>
+
+                      <p className="text-xs text-slate-600 font-medium leading-relaxed">
+                        {st.message}
+                      </p>
+
+                      {st.hazards && st.hazards.length > 0 && (
+                        <div className="flex items-center gap-1.5 flex-wrap pt-1">
+                          {st.hazards.map((h, i) => (
+                            <span
+                              key={i}
+                              className="px-2 py-0.5 rounded-md bg-slate-100 text-slate-700 text-[10px] font-extrabold"
+                            >
+                              📡 {h}
+                            </span>
+                          ))}
+                        </div>
+                      )}
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
+          )}
+
+          {/* TAB 5: 7-Day Synoptic City Forecast & Warnings */}
           {activeTab === 'forecast' && (
             <div className="space-y-5">
               {/* District Switcher */}
@@ -406,6 +881,8 @@ export const ImdWeatherIntelligenceModal = ({ isOpen, onClose, initialDistrict =
                   { id: 'dimapur', name: 'Dimapur' },
                   { id: 'imphal_west', name: 'Imphal' },
                   { id: 'aizawl', name: 'Aizawl' },
+                  { id: 'papum_pare', name: 'Itanagar' },
+                  { id: 'west_tripura', name: 'Agartala' },
                   { id: 'ajay_digital_dreamworks', name: 'Faridabad (NCR)' },
                 ].map((d) => (
                   <button
@@ -520,7 +997,7 @@ export const ImdWeatherIntelligenceModal = ({ isOpen, onClose, initialDistrict =
             </div>
           )}
 
-          {/* TAB 3: 5-Day Rainfall Distribution */}
+          {/* TAB 6: 5-Day Rainfall Distribution */}
           {activeTab === 'rainfall' && (
             <div className="space-y-4">
               <div className="p-4 bg-blue-50 border border-blue-200 rounded-2xl text-xs text-blue-900 font-medium space-y-1">

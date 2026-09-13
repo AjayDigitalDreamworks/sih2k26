@@ -9,6 +9,7 @@ import {
   Route,
   Bridge,
   RateConfig,
+  District,
 } from '../../models/postgres';
 import { sequelize } from '../../config/db';
 import { Alert, FieldReport } from '../../models/mongo';
@@ -100,11 +101,11 @@ export class TransporterController {
 
       if (!originDistrictId && origin) {
         const oLow = String(origin).toLowerCase();
-        originDistrictId = oLow.includes('guwahati') ? 'kamrup_metro' : oLow.includes('silchar') ? 'cachar' : oLow.replace(/[^a-z0-9]/g, '_');
+        originDistrictId = oLow.includes('guwahati') ? 'kamrup' : oLow.includes('silchar') ? 'cachar' : oLow.replace(/[^a-z0-9]/g, '_');
       }
       if (!destDistrictId && destination) {
         const dLow = String(destination).toLowerCase();
-        destDistrictId = dLow.includes('silchar') ? 'cachar' : dLow.includes('guwahati') ? 'kamrup_metro' : dLow.replace(/[^a-z0-9]/g, '_');
+        destDistrictId = dLow.includes('silchar') ? 'cachar' : dLow.includes('guwahati') ? 'kamrup' : dLow.replace(/[^a-z0-9]/g, '_');
       }
       if (!weightKg && cargoWeightKg) {
         weightKg = cargoWeightKg;
@@ -140,6 +141,7 @@ export class TransporterController {
             corridorAlerts: activeAlerts || [],
             alerts: activeAlerts || [],
           }),
+          signal: AbortSignal.timeout(4000),
         });
         if (mlRes.ok) {
           const json: any = await mlRes.json();
@@ -149,6 +151,10 @@ export class TransporterController {
         // Best effort ML engine
       }
 
+      // Fetch district details for intelligent coordinates
+      const origDist = await District.findByPk(originDistrictId, { raw: true }).catch(() => null);
+      const destDist = await District.findByPk(destDistrictId, { raw: true }).catch(() => null);
+
       // Find or dynamically create Route in PostgreSQL
       let route = await Route.findOne({
         where: {
@@ -157,9 +163,9 @@ export class TransporterController {
         },
       });
 
-      const originName = mlPlan?.origin?.name || originDistrictId.replace(/_/g, ' ').replace(/\b\w/g, (c: string) => c.toUpperCase());
-      const destName = mlPlan?.destination?.name || destDistrictId.replace(/_/g, ' ').replace(/\b\w/g, (c: string) => c.toUpperCase());
-      const routeDistance = mlPlan?.recommended?.totalDistanceKm || mlPlan?.safest?.totalDistanceKm || 175;
+      const originName = mlPlan?.origin?.name || origDist?.name || originDistrictId.replace(/_/g, ' ').replace(/\b\w/g, (c: string) => c.toUpperCase());
+      const destName = mlPlan?.destination?.name || destDist?.name || destDistrictId.replace(/_/g, ' ').replace(/\b\w/g, (c: string) => c.toUpperCase());
+      const routeDistance = mlPlan?.recommended?.totalDistanceKm || mlPlan?.safest?.totalDistanceKm || 295;
       const routeTravelHours = Math.round((routeDistance / 45) * 10) / 10;
       const routeRisk = mlPlan?.recommended?.riskScore || 25;
 
@@ -173,10 +179,23 @@ export class TransporterController {
         roadPoints = mlPlan.recommended.legs[0].geometry;
       }
 
-      const oLng = mlPlan?.origin?.lng || 77.2878;
-      const oLat = mlPlan?.origin?.lat || 28.3842;
-      const dLng = mlPlan?.destination?.lng || 77.4125;
-      const dLat = mlPlan?.destination?.lat || 28.4006;
+      const oLng = mlPlan?.origin?.lng || origDist?.centroid_lng || 91.7362;
+      const oLat = mlPlan?.origin?.lat || origDist?.centroid_lat || 26.1445;
+      const dLng = mlPlan?.destination?.lng || destDist?.centroid_lng || 92.7985;
+      const dLat = mlPlan?.destination?.lat || destDist?.centroid_lat || 24.8170;
+
+      if (roadPoints.length <= 1) {
+        try {
+          const osrmUrl = `https://router.project-osrm.org/route/v1/driving/${oLng},${oLat};${dLng},${dLat}?overview=full&geometries=geojson`;
+          const osrmRes = await fetch(osrmUrl, { signal: AbortSignal.timeout(5000) });
+          if (osrmRes.ok) {
+            const osrmData: any = await osrmRes.json();
+            if (osrmData.routes?.[0]?.geometry?.coordinates) {
+              roadPoints = osrmData.routes[0].geometry.coordinates.map((c: any) => [c[1], c[0]]);
+            }
+          }
+        } catch {}
+      }
 
       // PostGIS GeoJSON LineString coordinates: [longitude, latitude]
       const geoJsonCoords = roadPoints.length > 1
@@ -328,17 +347,20 @@ export class TransporterController {
       const vehicleGvwTons = Math.round((tareTons + payloadTons) * 10) / 10;
 
       try {
-        const [bridgesFound]: any = await sequelize.query(`
-          SELECT b.id, b.name, b.load_capacity_tons, b.is_bailey_bridge, b.verified_at,
-                 ST_Distance(b.geom, ST_SetSRID(ST_GeomFromGeoJSON(:geom), 4326)) AS proximity
-          FROM bridges b
-          WHERE b.geom IS NOT NULL 
-            AND ST_DWithin(b.geom, ST_SetSRID(ST_GeomFromGeoJSON(:geom), 4326), 0.08)
-          ORDER BY b.load_capacity_tons ASC
-          LIMIT 5;
-        `, {
-          replacements: { geom: routeGeom },
-        });
+        const [bridgesFound]: any = await Promise.race([
+          sequelize.query(`
+            SELECT b.id, b.name, b.load_capacity_tons, b.is_bailey_bridge, b.verified_at,
+                   ST_Distance(b.geom, ST_SetSRID(ST_GeomFromGeoJSON(:geom), 4326)) AS proximity
+            FROM bridges b
+            WHERE b.geom IS NOT NULL 
+              AND ST_DWithin(b.geom, ST_SetSRID(ST_GeomFromGeoJSON(:geom), 4326), 0.08)
+            ORDER BY b.load_capacity_tons ASC
+            LIMIT 5;
+          `, {
+            replacements: { geom: routeGeom },
+          }),
+          new Promise((_, reject) => setTimeout(() => reject(new Error('Bridge query timeout')), 5000)),
+        ]);
 
         if (bridgesFound && bridgesFound.length > 0) {
           const minBridge = bridgesFound[0];
@@ -394,6 +416,7 @@ export class TransporterController {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({ districts: [originDistrictId, destDistrictId] }),
+          signal: AbortSignal.timeout(3000),
         });
         if (mlRes.ok) {
           imdCorridorAdvisory = await mlRes.json();
@@ -1048,8 +1071,8 @@ export class TransporterController {
       const originDistrictId = String(
         req.body.originDistrictId ||
         req.body.origin_district_id ||
-        (req.body.origin && String(req.body.origin).toLowerCase().includes('guwahati') ? 'kamrup_metro' : req.body.origin) ||
-        'kamrup_metro'
+        (req.body.origin && String(req.body.origin).toLowerCase().includes('guwahati') ? 'kamrup' : req.body.origin) ||
+        'kamrup'
       ).trim();
       const destDistrictId = String(
         req.body.destDistrictId ||

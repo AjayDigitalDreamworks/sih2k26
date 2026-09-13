@@ -57,22 +57,36 @@ export const connectPostgres = async () => {
   if (lastErr) throw lastErr;
   try {
     console.log('✅ PostgreSQL (PostGIS) connected successfully.');
-    // Enable PostGIS extension if available
-    try {
-      await sequelize.query('CREATE EXTENSION IF NOT EXISTS postgis;');
-      console.log('✅ PostGIS extension enabled.');
-    } catch (extErr: any) {
-      console.warn('⚠️ PostGIS extension notice:', extErr.message);
-    }
-    
-    await ensureSpatialIndexes();
-    await ensureFoundationsSchema();
-    await ensureTrackingSchema();
-    await ensureFieldOfficerSchema();
-    await ensureMicroSegmentsSchema();
+    // Run schema validations asynchronously in background non-blocking
+    ensureAllSchemasAsync();
   } catch (error: any) {
     console.error('❌ PostgreSQL connection error:', error.message);
     throw error;
+  }
+};
+
+/**
+ * Asynchronously ensure all idempotent schemas concurrently in the background,
+ * without blocking server listen or HTTP traffic.
+ */
+export const ensureAllSchemasAsync = async () => {
+  try {
+    try {
+      await sequelize.query('CREATE EXTENSION IF NOT EXISTS postgis;');
+    } catch (extErr: any) {
+      // Ignored if already enabled or restricted
+    }
+
+    await Promise.allSettled([
+      ensureSpatialIndexes(),
+      ensureFoundationsSchema(),
+      ensureTrackingSchema(),
+      ensureFieldOfficerSchema(),
+      ensureMicroSegmentsSchema(),
+    ]);
+    console.log('✅ All database schemas verified in background.');
+  } catch (err: any) {
+    console.warn('⚠️ Background schema verification notice:', err.message);
   }
 };
 

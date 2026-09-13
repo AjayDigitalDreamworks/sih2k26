@@ -100,7 +100,7 @@ function Route(props) {
   return <Navigation {...props} />;
 }
 
-export const GisLayerManager = ({ activeLayers, onToggleLayer }) => {
+export const GisLayerManager = ({ activeLayers, onToggleLayer, onToggleCategory }) => {
   const [layerStatuses, setLayerStatuses] = useState({});
   const [expandedCategories, setExpandedCategories] = useState(['base', 'infrastructure', 'vehicles', 'weather']);
   const [loading, setLoading] = useState(false);
@@ -138,6 +138,10 @@ export const GisLayerManager = ({ activeLayers, onToggleLayer }) => {
   };
 
   const toggleAllInCategory = (cat, enable) => {
+    if (onToggleCategory) {
+      onToggleCategory(cat.layers, enable);
+      return;
+    }
     cat.layers.forEach(layer => {
       const isActive = activeLayers.includes(layer.id);
       if (enable && !isActive) onToggleLayer(layer.id);
@@ -193,10 +197,24 @@ export const GisLayerManager = ({ activeLayers, onToggleLayer }) => {
                     {cat.name}
                   </span>
                 </div>
-                <span style={{
-                  fontSize: 10, color: '#6B7280', background: '#F3F4F6',
-                  padding: '1px 6px', borderRadius: 8,
-                }}>
+                <span
+                  title={activeCount === cat.layers.length ? 'Click to disable all layers in this category' : 'Click to enable all layers in this category'}
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    toggleAllInCategory(cat, activeCount < cat.layers.length);
+                  }}
+                  style={{
+                    fontSize: 10,
+                    fontWeight: 700,
+                    color: activeCount > 0 ? '#1D4ED8' : '#6B7280',
+                    background: activeCount > 0 ? '#EFF6FF' : '#F3F4F6',
+                    border: `1px solid ${activeCount > 0 ? '#BFDBFE' : '#E5E7EB'}`,
+                    padding: '1px 8px', borderRadius: 8,
+                    cursor: 'pointer',
+                    userSelect: 'none',
+                    transition: 'all 0.15s ease',
+                  }}
+                >
                   {activeCount}/{cat.layers.length}
                 </span>
               </div>

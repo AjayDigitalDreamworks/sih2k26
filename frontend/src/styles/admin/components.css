@@ -444,10 +444,13 @@
 }
 
 .search-input,
-.header-search-input {
+.header-search-input,
+.app-container .search-input,
+.app-container .header-search-input,
+.header-search-container input.header-search-input {
   width: 100%;
-  padding-left: 38px;
-  padding-right: 68px;
+  padding-left: 38px !important;
+  padding-right: 68px !important;
   height: 38px;
   border-radius: var(--radius-md, 8px);
   background-color: var(--bg-card, #ffffff);
@@ -461,6 +464,8 @@
 
 .search-input:focus,
 .header-search-input:focus,
+.app-container .search-input:focus,
+.app-container .header-search-input:focus,
 .header-search-container.focused .header-search-input {
   background-color: var(--bg-card, #ffffff);
   border-color: var(--primary-500, #10b981);

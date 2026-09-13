@@ -5,7 +5,7 @@ import { env } from '../../config/env';
 import { redisClient } from '../../config/redis';
 import { Op } from 'sequelize';
 
-const REFRESH_TOKEN_TTL_SECONDS = 86400; // 1 day (24 * 60 * 60s)
+const REFRESH_TOKEN_TTL_SECONDS = 7 * 86400; // 7 days (7 * 24 * 60 * 60s)
 
 export class AuthService {
   static generateTokens(user: User) {

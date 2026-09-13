@@ -40,6 +40,20 @@ export const LiveMapPage = () => {
     );
   }, []);
 
+  const handleToggleCategory = useCallback((categoryLayers, enable) => {
+    setActivePreset('custom');
+    const layerIds = categoryLayers.map(l => l.id);
+    setActiveLayers(prev => {
+      const next = new Set(prev);
+      if (enable) {
+        layerIds.forEach(id => next.add(id));
+      } else {
+        layerIds.forEach(id => next.delete(id));
+      }
+      return Array.from(next);
+    });
+  }, []);
+
   return (
     <div className="live-map-page" style={{ display: 'flex', flexDirection: 'column', gap: '12px', height: '100%' }}>
       {/* Top Header Bar with 1-Click Smart Presets */}
@@ -176,6 +190,7 @@ export const LiveMapPage = () => {
             <GisLayerManager
               activeLayers={activeLayers}
               onToggleLayer={handleToggleLayer}
+              onToggleCategory={handleToggleCategory}
             />
           </div>
         )}

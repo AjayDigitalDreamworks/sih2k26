@@ -75,6 +75,18 @@ async def get_route_score(payload: RouteScoreRequest):
         route_id=payload.routeId,
     )
 
+    # Enrich with live IMD weather warnings and corridor risk
+    try:
+        imd_impact = await WeatherService.get_corridor_weather_impact([origin, dest])
+        if imd_impact.get("severeWeather"):
+            penalty = imd_impact.get("riskPenalty", 15)
+            result.riskScore = min(100.0, result.riskScore + penalty)
+            result.riskLevel = "CRITICAL" if result.riskScore >= 75 else ("HIGH" if result.riskScore >= 50 else result.riskLevel)
+            result.recommendation = f"[{imd_impact.get('maxSeverity', 'WARNING').upper()} IMD ALERT] {imd_impact.get('justification')} - {result.recommendation}"
+            result.factors["imdAdvisory"] = imd_impact
+    except Exception:
+        pass
+
     return result
 
 
@@ -107,6 +119,19 @@ async def get_live_route_score(
         road_distance_km=ctx.get("real_distance_km", 100),
         route_id=route_id,
     )
+
+    # Inject live IMD weather impact
+    try:
+        imd_impact = await WeatherService.get_corridor_weather_impact([origin, dest])
+        if imd_impact.get("severeWeather"):
+            penalty = imd_impact.get("riskPenalty", 15)
+            result["riskScore"] = min(100.0, result.get("riskScore", 0) + penalty)
+            result["riskLevel"] = "CRITICAL" if result["riskScore"] >= 75 else ("HIGH" if result["riskScore"] >= 50 else result["riskLevel"])
+            result["recommendation"] = f"[{imd_impact.get('maxSeverity', 'WARNING').upper()} IMD ALERT] {imd_impact.get('justification')}"
+        result["imdAdvisory"] = imd_impact
+    except Exception:
+        pass
+
     result["liveData"] = ctx
     return result
 

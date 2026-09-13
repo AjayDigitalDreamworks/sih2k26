@@ -4,6 +4,7 @@ Provides terrain slope, elevation profiles, and incline metrics for NER road net
 """
 import math
 import httpx
+import asyncio
 from typing import Dict, Any, Optional, List, Tuple
 from datetime import datetime
 from app.services.config import APIConfig
@@ -101,7 +102,10 @@ class TerrainService:
                 "avg_gradient_pct": 0.0,
             }
 
-        elevations = await cls._fetch_batch_elevations(coords)
+        try:
+            elevations = await asyncio.wait_for(cls._fetch_batch_elevations(coords), timeout=1.5)
+        except Exception:
+            elevations = [500.0] * len(coords)
 
         profile = []
         climb_gain = 0.0
@@ -205,7 +209,7 @@ class TerrainService:
             lngs_str = ",".join(f"{coords[i][1]:.4f}" for i in missing_indices)
             url = f"https://api.open-meteo.com/v1/elevation?latitude={lats_str}&longitude={lngs_str}"
 
-            async with httpx.AsyncClient(timeout=10) as client:
+            async with httpx.AsyncClient(timeout=3.0) as client:
                 resp = await client.get(url)
                 if resp.status_code == 200:
                     data = resp.json()

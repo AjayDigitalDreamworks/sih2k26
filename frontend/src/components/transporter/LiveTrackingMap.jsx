@@ -490,6 +490,7 @@ export default function LiveTrackingMap({ embedded = false, selectedId, onSelect
         if (d.hasRoute && Array.isArray(d.geometry) && d.geometry.length > 2) {
           const entry = {
             coords: d.geometry,
+            originName: d.origin_district || d.originName || (d.origin && d.origin.name) || (d.routeName ? d.routeName.split('→')[0].trim() : '') || 'Origin Terminal',
             destName: d.destination_district || d.destinationName || (d.destination && d.destination.name) || '',
             routeName: d.routeName || null,
             score: d.riskScore?.score ?? d.score ?? d.riskScore ?? null,
@@ -537,6 +538,7 @@ export default function LiveTrackingMap({ embedded = false, selectedId, onSelect
       if (d.hasRoute && Array.isArray(d.geometry) && d.geometry.length > 1) {
         const entry = {
           coords: d.geometry,
+          originName: d.origin_district || d.originName || (d.origin && d.origin.name) || (d.routeName ? d.routeName.split('→')[0].trim() : '') || 'Origin Terminal',
           destName: d.destination_district || d.destinationName || (d.destination && d.destination.name) || '',
           routeName: d.routeName || null,
           score: d.riskScore?.score ?? d.score ?? d.riskScore ?? null,
@@ -808,6 +810,95 @@ export default function LiveTrackingMap({ embedded = false, selectedId, onSelect
                     </div>
                   </Popup>
                 </Polyline>
+                {/* Origin Start Point Pin Marker */}
+                {Array.isArray(r.coords) && r.coords.length > 0 && (() => {
+                  const startPt = r.coords[0];
+                  if (!startPt || !Number.isFinite(startPt[0]) || !Number.isFinite(startPt[1])) return null;
+                  const startTitle = r.originName || (r.routeName ? r.routeName.split('→')[0].trim() : '') || 'Origin Terminal';
+                  return (
+                    <Marker
+                      position={startPt}
+                      zIndexOffset={895}
+                      icon={L.divIcon({
+                        className: 'raahi-startpoint-pin',
+                        html: `
+                          <div style="position:relative;width:40px;height:46px;display:flex;flex-direction:column;align-items:center;pointer-events:auto;">
+                            <div style="position:absolute;bottom:0;left:50%;transform:translateX(-50%);width:26px;height:12px;border-radius:50%;background:rgba(16,185,129,0.35);animation:pulse 1.8s infinite;"></div>
+                            <div style="width:32px;height:32px;background:linear-gradient(135deg, #10B981 0%, #047857 100%);border-radius:50% 50% 50% 0;transform:rotate(-45deg);border:2.5px solid #FFFFFF;box-shadow:0 4px 14px rgba(16,185,129,0.55);display:flex;align-items:center;justify-content:center;z-index:2;">
+                              <div style="transform:rotate(45deg);display:flex;align-items:center;justify-content:center;color:#fff;">
+                                <svg width="15" height="15" viewBox="0 0 24 24" fill="currentColor"><path d="M4 2v20M4 4h13l-2.5 5 2.5 5H4V4z"/></svg>
+                              </div>
+                            </div>
+                            <div style="position:absolute;top:-20px;white-space:nowrap;background:#0F172A;color:#F8FAFC;font-family:'Roboto',sans-serif;font-size:10px;font-weight:800;padding:2px 8px;border-radius:6px;box-shadow:0 3px 8px rgba(0,0,0,0.4);border:1px solid #334155;letter-spacing:0.3px;">
+                              ${startTitle}
+                            </div>
+                          </div>
+                        `,
+                        iconSize: [40, 46],
+                        iconAnchor: [20, 42],
+                        popupAnchor: [0, -42],
+                      })}
+                    >
+                      <Popup>
+                        <div className="text-xs min-w-[180px]">
+                          <div className="font-black text-slate-900 flex items-center gap-1.5">
+                            <span>🚩</span> <span>{startTitle}</span>
+                          </div>
+                          <p className="text-[10px] text-slate-500 mt-1">
+                            Origin Terminal · {vid}
+                          </p>
+                          <p className="text-[10px] text-emerald-700 font-bold mt-0.5">
+                            Active Corridor Departure
+                          </p>
+                        </div>
+                      </Popup>
+                    </Marker>
+                  );
+                })()}
+                {/* Destination End Point Pin Marker */}
+                {Array.isArray(r.coords) && r.coords.length > 0 && (() => {
+                  const endPt = r.coords[r.coords.length - 1];
+                  if (!endPt || !Number.isFinite(endPt[0]) || !Number.isFinite(endPt[1])) return null;
+                  const title = r.destName || 'Destination Terminal';
+                  return (
+                    <Marker
+                      position={endPt}
+                      zIndexOffset={900}
+                      icon={L.divIcon({
+                        className: 'raahi-endpoint-pin',
+                        html: `
+                          <div style="position:relative;width:40px;height:46px;display:flex;flex-direction:column;align-items:center;pointer-events:auto;">
+                            <div style="position:absolute;bottom:0;left:50%;transform:translateX(-50%);width:26px;height:12px;border-radius:50%;background:rgba(220,38,38,0.35);animation:pulse 1.8s infinite;"></div>
+                            <div style="width:32px;height:32px;background:linear-gradient(135deg, #DC2626 0%, #991B1B 100%);border-radius:50% 50% 50% 0;transform:rotate(-45deg);border:2.5px solid #FFFFFF;box-shadow:0 4px 14px rgba(220,38,38,0.55);display:flex;align-items:center;justify-content:center;z-index:2;">
+                              <div style="transform:rotate(45deg);display:flex;align-items:center;justify-content:center;font-size:14px;color:#fff;">
+                                🏁
+                              </div>
+                            </div>
+                            <div style="position:absolute;top:-20px;white-space:nowrap;background:#0F172A;color:#F8FAFC;font-family:'Roboto',sans-serif;font-size:10px;font-weight:800;padding:2px 8px;border-radius:6px;box-shadow:0 3px 8px rgba(0,0,0,0.4);border:1px solid #334155;letter-spacing:0.3px;">
+                              ${title}
+                            </div>
+                          </div>
+                        `,
+                        iconSize: [40, 46],
+                        iconAnchor: [20, 42],
+                        popupAnchor: [0, -42],
+                      })}
+                    >
+                      <Popup>
+                        <div className="text-xs min-w-[180px]">
+                          <div className="font-black text-slate-900 flex items-center gap-1.5">
+                            <span>🏁</span> <span>{title}</span>
+                          </div>
+                          <p className="text-[10px] text-slate-500 mt-1">
+                            Destination · {vid}
+                          </p>
+                          {r.distanceKm != null && <p className="text-[10px] text-slate-600">Remaining: <b>{Math.round(r.distanceKm)} km</b></p>}
+                          {r.etaLabel && <p className="text-[10px] text-emerald-700 font-bold">ETA: {r.etaLabel}</p>}
+                        </div>
+                      </Popup>
+                    </Marker>
+                  );
+                })()}
                 {traffic?.source === 'tomtom' && (
                   <React.Fragment key={`t-${vid}`}>
                     <Polyline positions={r.coords} pathOptions={{ color: CONGESTION_COLORS[traffic.congestion_level] || '#9CA3AF', weight: 2.5, opacity: 0.85, dashArray: traffic.congestion_level === 'blocked' ? '4, 6' : undefined, lineCap: 'round', lineJoin: 'round' }} />
@@ -822,16 +913,6 @@ export default function LiveTrackingMap({ embedded = false, selectedId, onSelect
                       </Popup>
                     </CircleMarker>
                   </React.Fragment>
-                )}
-                {r.coords.length > 0 && (
-                  <Marker position={r.coords[r.coords.length - 1]} icon={destIcon}>
-                    <Popup>
-                      <div className="text-xs min-w-[150px]">
-                        <div className="font-black text-slate-900">{r.destName || 'Destination'}</div>
-                        <p className="text-[10px] text-slate-500">Trip destination · real road route</p>
-                      </div>
-                    </Popup>
-                  </Marker>
                 )}
               </React.Fragment>
             );

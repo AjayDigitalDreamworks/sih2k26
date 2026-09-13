@@ -98,6 +98,11 @@ export const RouteInsightsCard = ({ routes, plan, activeRouteId = 'safest', onEx
               <Loader2 size={16} className="spin" />
               <span>Loading live corridor status…</span>
             </div>
+          ) : insights.length === 0 ? (
+            <div className="insight-item" style={{ color: 'var(--text-muted)' }}>
+              <CheckCircle2 size={16} color="#10B981" />
+              <span>Corridor intelligence active. Evaluate a route above to generate real-time terrain, weather, and safety insights.</span>
+            </div>
           ) : (
             insights.map((insight, i) => (
               <div key={i} className="insight-item">

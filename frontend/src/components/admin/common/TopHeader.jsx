@@ -39,11 +39,34 @@ export const TopHeader = () => {
     alerts,
     vehicles,
     reports,
+    kpis,
     openModal,
     setCurrentPage,
   } = useApp();
   const { theme, toggleTheme } = useTheme();
   const { lang, setLang, t, LANGUAGES, localizeAlert } = useLang();
+
+  // Dynamic active logistics vehicles count: based on live tracking status, fleet records, or KPI metrics
+  const activeVehiclesCount = React.useMemo(() => {
+    if (Array.isArray(vehicles) && vehicles.length > 0) {
+      const active = vehicles.filter(
+        (v) =>
+          v.trackingActive ||
+          v.statusClass === 'moving' ||
+          v.status?.toLowerCase() === 'moving' ||
+          v.statusClass === 'in_transit' ||
+          v.status?.toLowerCase() === 'in_transit' ||
+          v.status?.toLowerCase() === 'in transit' ||
+          v.statusClass === 'delayed' ||
+          v.status?.toLowerCase() === 'delayed'
+      ).length;
+      return active > 0 ? active : vehicles.length;
+    }
+    if (kpis?.activeVehicles?.value != null) {
+      return kpis.activeVehicles.value;
+    }
+    return 0;
+  }, [vehicles, kpis]);
 
   const [showNotifications, setShowNotifications] = useState(false);
   const [showProfileMenu, setShowProfileMenu] = useState(false);
@@ -158,6 +181,7 @@ export const TopHeader = () => {
             ref={searchInputRef}
             type="text"
             className="header-search-input search-input"
+            style={{ paddingLeft: '38px', paddingRight: '68px' }}
             placeholder={t('header.searchPlaceholder')}
             value={searchQuery}
             onChange={(e) => setSearchQuery(e.target.value)}
@@ -302,11 +326,16 @@ export const TopHeader = () => {
 
       {/* Center Section: Live Status Pill & Emergency Action */}
       <div className="header-center">
-        <div className="corridor-status-pill" title="Real-time connectivity to DoNER logistics gateway">
+        <div
+          className="corridor-status-pill"
+          title="Real-time connectivity to DoNER logistics gateway (Click to view fleet)"
+          onClick={() => setCurrentPage('vehicle-tracking')}
+          style={{ cursor: 'pointer' }}
+        >
           <span className="corridor-pulse-dot" />
           <span className="corridor-text">
             <strong>{t('header.logisticsGrid')}</strong>
-            <span className="corridor-subtext">• 312 {t('header.vehiclesActive')}</span>
+            <span className="corridor-subtext">• {activeVehiclesCount} {t('header.vehiclesActive')}</span>
           </span>
         </div>
 
@@ -406,6 +435,7 @@ export const TopHeader = () => {
                   onClick={() => {
                     setShowNotifications(false);
                     setCurrentPage('alerts');
+                    navigate('/admin/alerts');
                   }}
                 >
                   View All
@@ -422,6 +452,7 @@ export const TopHeader = () => {
                       onClick={() => {
                         setShowNotifications(false);
                         setCurrentPage('alerts');
+                        navigate('/admin/alerts');
                       }}
                     >
                       <div className="notification-item-top">
@@ -445,6 +476,7 @@ export const TopHeader = () => {
                   onClick={() => {
                     setShowNotifications(false);
                     setCurrentPage('alerts');
+                    navigate('/admin/alerts');
                   }}
                 >
                   Go to Incident Command Center

@@ -8,6 +8,7 @@ and executes vectorized XGBoost risk prediction with real-time physical features
 5. Vectorized XGBoost batch inference (< 15ms for 300+ segments)
 """
 
+import asyncio
 import math
 import numpy as np
 from datetime import datetime
@@ -256,7 +257,7 @@ async def score_route_microsegments(
     4. Computes vectorized risk score per chunk.
     5. Returns array of microsegments with coordinates, chainage, slope, risk score, and hazard notes.
     """
-    raw_chunks = slice_polyline_into_500m_chunks(points, target_chunk_km=0.5)
+    raw_chunks = slice_polyline_into_500m_chunks(points, target_chunk_km=1.0)
     if not raw_chunks:
         return []
 
@@ -267,7 +268,7 @@ async def score_route_microsegments(
         coord_pairs_to_fetch.append((c["end_coord"][0], c["end_coord"][1]))
 
     try:
-        elevations = await TerrainService._fetch_batch_elevations(coord_pairs_to_fetch)
+        elevations = await asyncio.wait_for(TerrainService._fetch_batch_elevations(coord_pairs_to_fetch), timeout=2.5)
     except Exception:
         elevations = [350.0] * len(coord_pairs_to_fetch)
 

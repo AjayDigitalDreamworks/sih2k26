@@ -11,11 +11,12 @@
  */
 import React, { useEffect, useRef, useState, useCallback, createContext, useContext } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
-import { AlertTriangle, X, Bell, BellOff, ChevronRight, ShieldAlert, MapPin, Volume2 } from 'lucide-react';
+import { AlertTriangle, X, Bell, BellOff, ChevronRight, ShieldAlert, MapPin, Volume2, Route, Truck, Navigation, ExternalLink } from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
 import useAlertSound from '../../hooks/useAlertSound';
 import useAutomatedAlerts from '../../hooks/useAutomatedAlerts';
 import { useApp } from '../../contexts/AppContext';
+import { useAuth } from '../../contexts/AuthContext';
 
 // ── Context ──────────────────────────────────────────────────────────
 const AlertSoundContext = createContext(null);
@@ -161,8 +162,13 @@ export default function AlertNotificationProvider({ children }) {
   } = soundHook;
 
   const [toastStack, setToastStack] = useState([]);
+  const [selectedAlertForModal, setSelectedAlertForModal] = useState(null);
   const prevAlertCountRef = useRef(0);
   const navigate = useNavigate();
+  const { user } = useAuth();
+  const role = user?.backendRole || user?.role;
+  const isAdmin = role === 'admin' || role === 'district_officer';
+  const isTransporter = role === 'transporter' || role === 'operator';
 
   // Connect to AppContext to receive real-time socket alerts
   const appCtx = useApp();
@@ -283,13 +289,186 @@ export default function AlertNotificationProvider({ children }) {
                 onDismiss={() => dismissToast(t._toastId)}
                 onView={() => {
                   dismissToast(t._toastId);
-                  navigate('/transporter/alerts');
+                  setSelectedAlertForModal(t);
                 }}
               />
             </div>
           ))}
         </AnimatePresence>
       </div>
+
+      {/* Interactive Alert Details Modal */}
+      <AnimatePresence>
+        {selectedAlertForModal && (
+          <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-sm z-[9999] flex items-center justify-center p-4">
+            <motion.div
+              initial={{ opacity: 0, scale: 0.95, y: 12 }}
+              animate={{ opacity: 1, scale: 1, y: 0 }}
+              exit={{ opacity: 0, scale: 0.95, y: 12 }}
+              className="bg-white rounded-2xl shadow-2xl max-w-lg w-full overflow-hidden border border-slate-200"
+            >
+              {/* Header */}
+              <div className="p-5 border-b border-slate-100 flex items-start justify-between bg-slate-50/80">
+                <div className="flex items-center gap-3">
+                  <div className={`w-11 h-11 rounded-xl flex items-center justify-center text-white font-bold ${
+                    selectedAlertForModal.severityType === 'emergency' || selectedAlertForModal.severityType === 'high'
+                      ? 'bg-rose-500 shadow-lg shadow-rose-500/30'
+                      : 'bg-amber-500 shadow-lg shadow-amber-500/30'
+                  }`}>
+                    <AlertTriangle className="w-6 h-6" />
+                  </div>
+                  <div>
+                    <div className="flex items-center gap-2">
+                      <span className={`text-[10px] font-black uppercase tracking-wider px-2 py-0.5 rounded-full ${
+                        selectedAlertForModal.severityType === 'emergency' || selectedAlertForModal.severityType === 'high'
+                          ? 'bg-rose-100 text-rose-700'
+                          : 'bg-amber-100 text-amber-700'
+                      }`}>
+                        {selectedAlertForModal.severity || (selectedAlertForModal.severityType === 'high' ? 'CRITICAL' : 'WARNING')}
+                      </span>
+                      <span className="text-[11px] text-slate-400 font-medium">
+                        {selectedAlertForModal.timestamp || 'Just now'}
+                      </span>
+                    </div>
+                    <h3 className="text-base font-extrabold text-slate-900 mt-1 leading-snug">
+                      {selectedAlertForModal.title}
+                    </h3>
+                  </div>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => setSelectedAlertForModal(null)}
+                  className="p-1.5 rounded-lg text-slate-400 hover:text-slate-600 hover:bg-slate-200/60 transition-colors cursor-pointer"
+                >
+                  <X className="w-5 h-5" />
+                </button>
+              </div>
+
+              {/* Body */}
+              <div className="p-5 space-y-4">
+                {/* Detailed Incident Message */}
+                <div className="bg-slate-50 rounded-xl p-3.5 border border-slate-200/80">
+                  <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider block mb-1">
+                    Verified Incident Observation
+                  </span>
+                  <p className="text-xs font-semibold text-slate-700 leading-relaxed">
+                    {typeof selectedAlertForModal.message === 'string'
+                      ? selectedAlertForModal.message
+                      : (selectedAlertForModal.message?.justification || selectedAlertForModal.message?.warningText || JSON.stringify(selectedAlertForModal.message || ''))}
+                  </p>
+                </div>
+
+                {/* Telemetry & Context Grid */}
+                <div className="grid grid-cols-2 gap-2.5 text-xs">
+                  {selectedAlertForModal.origin && (
+                    <div className="bg-slate-50 p-2.5 rounded-lg border border-slate-100">
+                      <span className="text-[10px] uppercase font-bold text-slate-400 block mb-0.5">Corridor Sector</span>
+                      <span className="font-bold text-slate-800 flex items-center gap-1 truncate">
+                        <MapPin className="w-3.5 h-3.5 text-slate-400 flex-shrink-0" />
+                        {selectedAlertForModal.origin} {selectedAlertForModal.destination ? `→ ${selectedAlertForModal.destination}` : ''}
+                      </span>
+                    </div>
+                  )}
+
+                  {(selectedAlertForModal.vehicleId || selectedAlertForModal.title?.includes('Vehicle')) && (
+                    <div className="bg-slate-50 p-2.5 rounded-lg border border-slate-100">
+                      <span className="text-[10px] uppercase font-bold text-slate-400 block mb-0.5">Target Vehicle</span>
+                      <span className="font-bold text-slate-800 flex items-center gap-1 truncate">
+                        <Truck className="w-3.5 h-3.5 text-slate-400 flex-shrink-0" />
+                        {selectedAlertForModal.vehicleId || (selectedAlertForModal.title.match(/AS-[\w\d-]+/) || ['Active Convoy'])[0]}
+                      </span>
+                    </div>
+                  )}
+
+                  {selectedAlertForModal.category && (
+                    <div className="bg-slate-50 p-2.5 rounded-lg border border-slate-100">
+                      <span className="text-[10px] uppercase font-bold text-slate-400 block mb-0.5">Hazard Category</span>
+                      <span className="font-bold text-slate-800 capitalize">
+                        {selectedAlertForModal.category}
+                      </span>
+                    </div>
+                  )}
+
+                  <div className="bg-slate-50 p-2.5 rounded-lg border border-slate-100">
+                    <span className="text-[10px] uppercase font-bold text-slate-400 block mb-0.5">Dispatch Authority</span>
+                    <span className="font-bold text-slate-800 truncate">
+                      {selectedAlertForModal.reportedBy || 'Raahi Automated Sensor Net'}
+                    </span>
+                  </div>
+                </div>
+
+                {/* Response Actions */}
+                <div className="pt-3 border-t border-slate-100 flex flex-col gap-2.5">
+                  <div className="text-[11px] font-bold text-slate-400 uppercase tracking-wider">
+                    Recommended Operational Actions
+                  </div>
+
+                  <div className="grid grid-cols-2 gap-2">
+                    {/* Plan Safe Detour */}
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setSelectedAlertForModal(null);
+                        const target = isAdmin ? '/admin/route-optimization' : '/transporter/route-optimization';
+                        navigate(target);
+                        if (isAdmin) {
+                          window.dispatchEvent(new CustomEvent('raahi:navigate', { detail: { page: 'route-optimization' } }));
+                        }
+                      }}
+                      className="flex items-center justify-center gap-2 px-3.5 py-2.5 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white font-bold text-xs shadow-md shadow-emerald-600/20 transition-all cursor-pointer"
+                    >
+                      <Route className="w-3.5 h-3.5" />
+                      <span>Plan Safe Detour</span>
+                    </button>
+
+                    {/* Inspect on Map */}
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setSelectedAlertForModal(null);
+                        const target = isAdmin ? '/admin/live-map' : '/transporter/live-tracking';
+                        navigate(target);
+                        if (isAdmin) {
+                          window.dispatchEvent(new CustomEvent('raahi:navigate', { detail: { page: 'live-map' } }));
+                        }
+                      }}
+                      className="flex items-center justify-center gap-2 px-3.5 py-2.5 rounded-xl bg-blue-600 hover:bg-blue-700 text-white font-bold text-xs shadow-md shadow-blue-600/20 transition-all cursor-pointer"
+                    >
+                      <MapPin className="w-3.5 h-3.5" />
+                      <span>Inspect on Live Map</span>
+                    </button>
+                  </div>
+
+                  <div className="flex items-center justify-between gap-2 pt-1">
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setSelectedAlertForModal(null);
+                        const target = isAdmin ? '/admin/alerts' : '/transporter/alerts';
+                        navigate(target);
+                        if (isAdmin) {
+                          window.dispatchEvent(new CustomEvent('raahi:navigate', { detail: { page: 'alerts' } }));
+                        }
+                      }}
+                      className="text-xs font-bold text-slate-600 hover:text-slate-900 transition-colors cursor-pointer py-1"
+                    >
+                      View All Alerts & Dispatches &rarr;
+                    </button>
+
+                    <button
+                      type="button"
+                      onClick={() => setSelectedAlertForModal(null)}
+                      className="text-xs font-semibold text-slate-400 hover:text-slate-600 cursor-pointer py-1"
+                    >
+                      Dismiss
+                    </button>
+                  </div>
+                </div>
+              </div>
+            </motion.div>
+          </div>
+        )}
+      </AnimatePresence>
 
       {/* Mute status floating indicator (bottom-left) */}
       <AnimatePresence>

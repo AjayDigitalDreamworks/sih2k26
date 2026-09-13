@@ -94,6 +94,21 @@ class PipelineState:
         }
         self.event_callbacks: List[Callable] = []
 
+        # Pre-seed baseline predictions for all districts so API returns instantly on cold start
+        from app.services.config import APIConfig
+        for d_id, d_info in APIConfig.NER_DISTRICTS.items():
+            self.disruption_predictions[d_id] = {
+                "districtId": d_id,
+                "districtName": d_info.get("name", d_id),
+                "floodRisk": "Low",
+                "floodProbability": 0.08,
+                "landslideRisk": "Low" if d_info.get("slope_risk", 20) < 35 else "Medium",
+                "landslideProbability": 0.12,
+                "roadBlocked": False,
+                "confidence": 0.85,
+                "lastUpdated": datetime.utcnow().isoformat(),
+            }
+
     def add_event_callback(self, callback: Callable):
         """Register a callback for real-time events."""
         self.event_callbacks.append(callback)
@@ -185,6 +200,64 @@ async def _weather_monitoring_task(state: PipelineState):
                 )
                 state.active_alerts.append(alert)
                 await state.emit_event("alert", alert)
+
+        # Ingest official IMD 5-Day District Warnings (Red / Orange alerts across NER)
+        try:
+            ner_warnings = await WeatherService.get_district_warnings("ner")
+            for dw in ner_warnings:
+                day1_color = dw.get("day1", {}).get("color")
+                d_name = dw.get("district", "NER District")
+                hazards_str = ", ".join(dw.get("day1", {}).get("hazards", ["Severe Atmospheric Disturbance"]))
+
+                if day1_color == "red":
+                    alert = _create_pipeline_alert(
+                        district_id=d_name.lower().replace(" ", "_"),
+                        type="imd_red_warning",
+                        severity="critical",
+                        title=f"IMD RED ALERT: {d_name} ({hazards_str})",
+                        message=f"Official India Meteorological Department RED ALERT issued for {d_name}, {dw.get('state')}. Immediate route suspension and disaster mitigation recommended.",
+                        source="IMD Live Govt API",
+                    )
+                    state.active_alerts.append(alert)
+                    state.alert_history.append(alert)
+                    await state.emit_event("alert", alert)
+
+                elif day1_color == "orange":
+                    alert = _create_pipeline_alert(
+                        district_id=d_name.lower().replace(" ", "_"),
+                        type="imd_orange_warning",
+                        severity="high",
+                        title=f"IMD ORANGE ALERT: {d_name} ({hazards_str})",
+                        message=f"Official IMD Orange Alert in effect for {d_name}. Fleet operators should reduce speed and monitor road status.",
+                        source="IMD Live Govt API",
+                    )
+                    state.active_alerts.append(alert)
+                    state.alert_history.append(alert)
+                    await state.emit_event("alert", alert)
+        except Exception as we_err:
+            print(f"  [WARN] IMD warning alert ingestion notice: {we_err}")
+
+        # Ingest IMD Large Excess Rainfall Anomalies
+        try:
+            ner_rainfall = await WeatherService.get_district_rainfall("ner")
+            for dr in ner_rainfall:
+                daily = dr.get("daily", {})
+                if daily.get("category") == "LE" and (daily.get("actualMm") or 0) >= 30.0:
+                    d_name = dr.get("district", "NER District")
+                    act_mm = daily.get("actualMm")
+                    dep_str = daily.get("departurePer", "+60%")
+                    alert = _create_pipeline_alert(
+                        district_id=d_name.lower().replace(" ", "_"),
+                        type="imd_rainfall_anomaly",
+                        severity="high",
+                        title=f"RAINFALL ANOMALY: {d_name} ({act_mm:.1f}mm, {dep_str})",
+                        message=f"IMD telemetry reports Large Excess rainfall (+{dep_str} above normal) in {d_name}, {dr.get('state')}. Heightened flash flood and soil liquefaction risk.",
+                        source="IMD Live Govt API",
+                    )
+                    state.active_alerts.append(alert)
+                    await state.emit_event("alert", alert)
+        except Exception as re_err:
+            print(f"  [WARN] IMD rainfall anomaly ingestion notice: {re_err}")
 
         state.last_checks["weather_check"] = datetime.utcnow()
         state.stats["total_checks"] += 1
@@ -301,15 +374,13 @@ async def _risk_recalculation_pass(state: PipelineState, force_context_refresh: 
             flood_level = float(summary_from.get("flood_risk_level") or 0)
             landslide_prob = float(summary_from.get("landslide_probability") or 0.1)
 
-            # --- Real-time traffic congestion (cached per route) ---
+            # --- Real-time traffic congestion (read from memory cache to prevent serial HTTP stalls) ---
             try:
                 origin = APIConfig.NER_DISTRICTS.get(from_id, {})
                 dest = APIConfig.NER_DISTRICTS.get(to_id, {})
-                traffic = await TrafficService.get_route_traffic(
-                    origin.get("lat", 26), origin.get("lng", 92),
-                    dest.get("lat", 25), dest.get("lng", 91)
-                )
-                congestion = traffic.get("congestion_level", "low")
+                c_key = f"traffic:{round(origin.get('lat', 26), 2)},{round(origin.get('lng', 92), 2)}:{round(dest.get('lat', 25), 2)},{round(dest.get('lng', 91), 2)}"
+                cached_tf = TrafficService._cache.get(c_key)
+                congestion = cached_tf.get("congestion_level", "low") if cached_tf else "low"
             except Exception:
                 congestion = "low"
 
@@ -505,22 +576,30 @@ async def _risk_recalculation_pass(state: PipelineState, force_context_refresh: 
 
 
 async def _disruption_prediction_task(state: PipelineState):
-    """Predict disruptions for all NER districts."""
+    """Predict disruptions for all NER districts in parallel."""
     try:
         print(f"[{datetime.utcnow().strftime('%H:%M:%S')}] [DISRUPTION] Running disruption predictions...")
 
-        for district_id, district_info in APIConfig.NER_DISTRICTS.items():
+        # Batch fetch all weather in parallel ONCE
+        weather_map = await WeatherService.get_all_districts_weather()
+
+        async def process_district(district_id, district_info):
             try:
-                # Get real-time data
-                weather = await WeatherService.get_district_weather(district_id)
-                flood = await FloodService.get_district_flood_risk(district_id)
-                landslide = await LandslideService.get_district_landslide_risk(district_id)
+                weather = weather_map.get(district_id, {})
+                flood, landslide = await asyncio.gather(
+                    FloodService.get_district_flood_risk(district_id),
+                    LandslideService.get_district_landslide_risk(district_id),
+                    return_exceptions=True
+                )
+                if isinstance(flood, Exception) or not flood:
+                    flood = {}
+                if isinstance(landslide, Exception) or not landslide:
+                    landslide = {}
 
                 rainfall_24h = weather.get("rainfall_24h_mm", 0)
-                rainfall_48h = rainfall_24h * 1.5  # Estimate
-                rainfall_72h = rainfall_48h * 1.2  # Estimate
+                rainfall_48h = rainfall_24h * 1.5
+                rainfall_72h = rainfall_48h * 1.2
 
-                # ML disruption prediction
                 prediction = predict_disruption(
                     elevation_m=district_info.get("elevation_m", 500),
                     slope_risk=district_info.get("slope_risk", 25),
@@ -542,10 +621,8 @@ async def _disruption_prediction_task(state: PipelineState):
                     "lastUpdated": datetime.utcnow().isoformat(),
                 }
 
-                # Emit disruption event
                 await state.emit_event("disruption_prediction", state.disruption_predictions[district_id])
 
-                # Generate alerts for high disruption risk
                 if prediction.get("landslideRisk") == "High":
                     alert = _create_pipeline_alert(
                         district_id=district_id,
@@ -571,9 +648,16 @@ async def _disruption_prediction_task(state: PipelineState):
                     state.active_alerts.append(alert)
                     state.alert_history.append(alert)
                     await state.emit_event("alert", alert)
-
             except Exception as e:
                 print(f"  [WARN]  Disruption prediction failed for {district_id}: {e}")
+
+        await asyncio.gather(*[process_district(d_id, d_info) for d_id, d_info in APIConfig.NER_DISTRICTS.items()])
+        state.last_checks["disruption_prediction"] = datetime.utcnow()
+        state.stats["total_disruption_predictions"] += 1
+        print(f"  [OK] Disruption predictions complete for {len(APIConfig.NER_DISTRICTS)} districts.")
+    except Exception as e:
+        print(f"  [ERROR] Disruption prediction error: {e}")
+        traceback.print_exc()
 
         state.last_checks["disruption_prediction"] = datetime.utcnow()
         state.stats["total_disruption_predictions"] += 1

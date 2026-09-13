@@ -76,7 +76,9 @@ export const CostBreakdownChart = ({ plan, activeRouteId = 'safest' }) => {
         <h2 className="card-title" style={{ margin: 0 }}>Supply Chain by Commodity</h2>
       </div>
       {data.length === 0 ? (
-        <div style={{ textAlign: 'center', color: 'var(--text-muted)', padding: '20px' }}>Loading supply chain data...</div>
+        <div style={{ textAlign: 'center', color: 'var(--text-muted)', padding: '28px 16px', fontSize: '12px' }}>
+          Evaluate a corridor above to view dynamic transit cost and elevation surcharges.
+        </div>
       ) : (
         <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
           {data.map((d, i) => (

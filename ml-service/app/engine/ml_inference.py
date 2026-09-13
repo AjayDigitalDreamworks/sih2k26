@@ -46,74 +46,123 @@ ROUTE_FEATURES = [
 
 
 class MLModels:
-    """Singleton class to load and manage all ML models."""
+    """Singleton class to load and manage all ML models with on-demand lazy loading."""
 
     _instance = None
-    _loaded = False
 
     def __new__(cls):
         if cls._instance is None:
             cls._instance = super().__new__(cls)
+            cls._instance._init_state()
         return cls._instance
 
-    def __init__(self):
-        if not self._loaded:
-            self.load_models()
+    def _init_state(self):
+        self._risk_model = None
+        self._risk_scaler = None
+        self._risk_loaded = False
 
-    def load_models(self):
-        """Load all trained models from disk."""
-        self.risk_model = None
-        self.risk_scaler = None
-        self.disruption_models = {}
-        self.disruption_scaler = None
-        self.route_delay_model = None
-        self.route_safety_model = None
-        self.route_rank_model = None
-        self.route_scaler = None
-        self.commodity_encoder = None
-        self.incident_cnn = None
-        self.incident_classes = []
-        self.model_status = {}
+        self._disruption_models = {}
+        self._disruption_scaler = None
+        self._disruption_loaded = False
 
-        # Load Risk Model
+        self._route_delay_model = None
+        self._route_safety_model = None
+        self._route_rank_model = None
+        self._route_scaler = None
+        self._commodity_encoder = None
+        self._route_loaded = False
+
+        self._incident_cnn = None
+        self._incident_classes = []
+        self._incident_loaded = False
+
+        self._model_status = {}
+
+    def load_risk_model(self):
+        """Lazy load risk scoring model and scaler."""
+        if self._risk_loaded:
+            return
+        self._risk_loaded = True
         try:
             risk_path = os.path.join(MODELS_DIR, "risk_model.joblib")
             risk_scaler_path = os.path.join(MODELS_DIR, "risk_scaler.joblib")
             if os.path.exists(risk_path) and os.path.exists(risk_scaler_path):
-                self.risk_model = joblib.load(risk_path)
-                self.risk_scaler = joblib.load(risk_scaler_path)
-                self.model_status["risk"] = "loaded"
-                print("[OK] Risk model loaded")
+                self._risk_model = joblib.load(risk_path)
+                self._risk_scaler = joblib.load(risk_scaler_path)
+                self._model_status["risk"] = "loaded"
+                print("[OK] Risk model lazy-loaded")
             else:
-                self.model_status["risk"] = "not_found"
+                self._model_status["risk"] = "not_found"
                 print("[WARN] Risk model not found - using rule-based fallback")
         except Exception as e:
-            self.model_status["risk"] = f"error: {e}"
+            self._model_status["risk"] = f"error: {e}"
             print(f"[ERROR] Risk model load failed: {e}")
 
-        # Load Disruption Models
+    @property
+    def risk_model(self):
+        if not self._risk_loaded:
+            self.load_risk_model()
+        return self._risk_model
+
+    @risk_model.setter
+    def risk_model(self, value):
+        self._risk_model = value
+        self._risk_loaded = True
+
+    @property
+    def risk_scaler(self):
+        if not self._risk_loaded:
+            self.load_risk_model()
+        return self._risk_scaler
+
+    @risk_scaler.setter
+    def risk_scaler(self, value):
+        self._risk_scaler = value
+        self._risk_loaded = True
+
+    def load_disruption_models(self):
+        """Lazy load disruption forecasting models and scaler."""
+        if self._disruption_loaded:
+            return
+        self._disruption_loaded = True
         for name in ["landslide", "flood", "road_block", "severity"]:
             try:
                 path = os.path.join(MODELS_DIR, f"disruption_{name}_model.joblib")
                 if os.path.exists(path):
-                    self.disruption_models[name] = joblib.load(path)
-                    self.model_status[f"disruption_{name}"] = "loaded"
+                    self._disruption_models[name] = joblib.load(path)
+                    self._model_status[f"disruption_{name}"] = "loaded"
                 else:
-                    self.model_status[f"disruption_{name}"] = "not_found"
+                    self._model_status[f"disruption_{name}"] = "not_found"
             except Exception as e:
-                self.model_status[f"disruption_{name}"] = f"error: {e}"
+                self._model_status[f"disruption_{name}"] = f"error: {e}"
 
         try:
             scaler_path = os.path.join(MODELS_DIR, "disruption_scaler.joblib")
             if os.path.exists(scaler_path):
-                self.disruption_scaler = joblib.load(scaler_path)
-                print("[OK] Disruption models loaded")
+                self._disruption_scaler = joblib.load(scaler_path)
+                print("[OK] Disruption models lazy-loaded")
             else:
                 print("[WARN] Disruption models not found - using rule-based fallback")
         except Exception as e:
             print(f"[ERROR] Disruption model load failed: {e}")
 
-        # Load Route Optimization Models
+    @property
+    def disruption_models(self):
+        if not self._disruption_loaded:
+            self.load_disruption_models()
+        return self._disruption_models
+
+    @property
+    def disruption_scaler(self):
+        if not self._disruption_loaded:
+            self.load_disruption_models()
+        return self._disruption_scaler
+
+    def load_route_models(self):
+        """Lazy load route optimization models."""
+        if self._route_loaded:
+            return
+        self._route_loaded = True
         try:
             delay_path = os.path.join(MODELS_DIR, "route_delay_model.joblib")
             safety_path = os.path.join(MODELS_DIR, "route_safety_model.joblib")
@@ -122,47 +171,116 @@ class MLModels:
             encoder_path = os.path.join(MODELS_DIR, "commodity_encoder.joblib")
 
             if all(os.path.exists(p) for p in [delay_path, safety_path, rank_path, scaler_path]):
-                self.route_delay_model = joblib.load(delay_path)
-                self.route_safety_model = joblib.load(safety_path)
-                self.route_rank_model = joblib.load(rank_path)
-                self.route_scaler = joblib.load(scaler_path)
+                self._route_delay_model = joblib.load(delay_path)
+                self._route_safety_model = joblib.load(safety_path)
+                self._route_rank_model = joblib.load(rank_path)
+                self._route_scaler = joblib.load(scaler_path)
                 if os.path.exists(encoder_path):
-                    self.commodity_encoder = joblib.load(encoder_path)
-                self.model_status["route"] = "loaded"
-                print("[OK] Route optimization models loaded")
+                    self._commodity_encoder = joblib.load(encoder_path)
+                self._model_status["route"] = "loaded"
+                print("[OK] Route optimization models lazy-loaded")
             else:
-                self.model_status["route"] = "not_found"
+                self._model_status["route"] = "not_found"
                 print("[WARN] Route models not found - using rule-based fallback")
         except Exception as e:
-            self.model_status["route"] = f"error: {e}"
+            self._model_status["route"] = f"error: {e}"
             print(f"[ERROR] Route model load failed: {e}")
 
-        # Load CNN Incident Model
+    @property
+    def route_delay_model(self):
+        if not self._route_loaded:
+            self.load_route_models()
+        return self._route_delay_model
+
+    @property
+    def route_safety_model(self):
+        if not self._route_loaded:
+            self.load_route_models()
+        return self._route_safety_model
+
+    @property
+    def route_rank_model(self):
+        if not self._route_loaded:
+            self.load_route_models()
+        return self._route_rank_model
+
+    @property
+    def route_scaler(self):
+        if not self._route_loaded:
+            self.load_route_models()
+        return self._route_scaler
+
+    @property
+    def commodity_encoder(self):
+        if not self._route_loaded:
+            self.load_route_models()
+        return self._commodity_encoder
+
+    def load_incident_cnn(self):
+        """Lazy load PyTorch CNN incident model only when requested."""
+        if self._incident_loaded:
+            return
+        self._incident_loaded = True
         try:
             cnn_path = os.path.join(MODELS_DIR, "incident_cnn.pth")
             if os.path.exists(cnn_path):
                 try:
                     import torch
                     checkpoint = torch.load(cnn_path, map_location="cpu", weights_only=False)
-                    self.incident_classes = checkpoint.get("classes", [])
-                    self.model_status["incident_cnn"] = "loaded"
-                    print("[OK] CNN Incident model loaded")
+                    self._incident_classes = checkpoint.get("classes", [])
+                    self._incident_cnn = checkpoint
+                    self._model_status["incident_cnn"] = "loaded"
+                    print("[OK] CNN Incident model lazy-loaded")
                 except ImportError:
-                    self.model_status["incident_cnn"] = "torch_not_available"
+                    self._model_status["incident_cnn"] = "torch_not_available"
                     print("[WARN] PyTorch not available - CNN model not loaded")
             else:
-                self.model_status["incident_cnn"] = "not_found"
+                self._model_status["incident_cnn"] = "not_found"
                 print("[WARN] CNN model not found")
         except Exception as e:
-            self.model_status["incident_cnn"] = f"error: {e}"
+            self._model_status["incident_cnn"] = f"error: {e}"
 
-        self._loaded = True
+    @property
+    def incident_cnn(self):
+        if not self._incident_loaded:
+            self.load_incident_cnn()
+        return self._incident_cnn
+
+    @property
+    def incident_classes(self):
+        if not self._incident_loaded:
+            self.load_incident_cnn()
+        return self._incident_classes
+
+    @property
+    def model_status(self):
+        return self._model_status
+
+    def load_all_models(self):
+        """Warm up core ML models on background thread without blocking."""
+        self.load_risk_model()
+        self.load_disruption_models()
+        self.load_route_models()
 
     def get_status(self) -> Dict[str, Any]:
-        """Get model loading status."""
+        """Get model loading status without triggering heavy unpickling."""
+        status = dict(self._model_status)
+        for key, fname in [
+            ("risk", "risk_model.joblib"),
+            ("disruption_landslide", "disruption_landslide_model.joblib"),
+            ("disruption_flood", "disruption_flood_model.joblib"),
+            ("disruption_road_block", "disruption_road_block_model.joblib"),
+            ("disruption_severity", "disruption_severity_model.joblib"),
+            ("route", "route_delay_model.joblib"),
+            ("incident_cnn", "incident_cnn.pth"),
+        ]:
+            if key not in status:
+                fpath = os.path.join(MODELS_DIR, fname)
+                status[key] = "available_on_demand" if os.path.exists(fpath) else "not_found"
+
         return {
-            "models_loaded": self.model_status,
-            "all_loaded": all("loaded" in v for v in self.model_status.values()),
+            "models_loaded": status,
+            "all_loaded": any("loaded" in v or "available" in v for v in status.values()),
         }
 
     def reload_risk_model(self) -> bool:
@@ -171,13 +289,15 @@ class MLModels:
             risk_path = os.path.join(MODELS_DIR, "risk_model.joblib")
             risk_scaler_path = os.path.join(MODELS_DIR, "risk_scaler.joblib")
             if os.path.exists(risk_path) and os.path.exists(risk_scaler_path):
-                self.risk_model = joblib.load(risk_path)
-                self.risk_scaler = joblib.load(risk_scaler_path)
-                self.model_status["risk"] = "loaded"
+                self._risk_model = joblib.load(risk_path)
+                self._risk_scaler = joblib.load(risk_scaler_path)
+                self._risk_loaded = True
+                self._model_status["risk"] = "loaded"
                 print("[CONTINUAL LEARNING] Hot-reloaded risk model and scaler into memory successfully!")
                 return True
         except Exception as e:
             print(f"[CONTINUAL LEARNING] Hot-reload failed: {e}")
+        return False
         return False
 
 

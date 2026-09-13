@@ -11,6 +11,9 @@ import { RecentTripsTable } from "@/components/admin/vehicleTracking/RecentTrips
 import { VehiclePerformanceCard } from "@/components/admin/vehicleTracking/VehiclePerformanceCard";
 import { TripSummaryCard } from "@/components/admin/vehicleTracking/TripSummaryCard";
 import { useApp } from "@/contexts/AppContext";
+import { subscribeToTripUpdates, subscribeToVehiclePositions } from "@/lib/socket";
+
+import { findDistrictMatch } from "@/data/geoMaster";
 
 export const VehicleTrackingPage = () => {
   const { vehicles, weather, alerts, setCurrentPage, setRoutePlannerInitialState } = useApp();
@@ -20,13 +23,29 @@ export const VehicleTrackingPage = () => {
 
   const handleEmergencyReroute = (v) => {
     if (!v) return;
+    const originPart = v.route ? v.route.split('→')[0]?.trim() : (v.originName || null);
+    const destPart = v.route ? v.route.split('→')[1]?.trim() : (v.destName || null);
+    const fromMatch = findDistrictMatch(v.originDistrictId || originPart);
+    const toMatch = findDistrictMatch(v.destDistrictId || destPart);
+
     if (setRoutePlannerInitialState) {
       setRoutePlannerInitialState({
         vehicleId: v.id,
+        plateNumber: v.plateNumber || v.plate_number || v.id,
+        vehicleType: (v.model && v.model.toLowerCase().includes('tanker')) 
+          ? 'hazardous_tanker' 
+          : (v.type || 'heavy_multi_axle'),
+        model: v.model,
         currentLat: v.lat,
         currentLng: v.lng,
+        originDistrictId: fromMatch?.id || 'kamrup',
+        originName: fromMatch?.name || originPart || 'Guwahati',
+        destDistrictId: toMatch?.id || 'cachar',
+        destName: toMatch?.name || destPart || 'Silchar',
         route: v.route,
-        vehicleType: (v.model && v.model.toLowerCase().includes('tanker')) ? 'hazardous_tanker' : 'heavy_multi_axle',
+        cargoWeightKg: v.cargoWeightKg || 14000,
+        emergency: true,
+        rerouteReason: 'Emergency telematics detour: Bypassing active corridor hazard from live GPS fix',
         autoPlan: true,
       });
     }
@@ -49,8 +68,15 @@ export const VehicleTrackingPage = () => {
       }
     };
     load();
-    const iv = setInterval(load, 30000);
-    return () => { alive = false; clearInterval(iv); };
+    const iv = setInterval(load, 5000);
+    const unsubTrip = subscribeToTripUpdates(() => load());
+    const unsubPos = subscribeToVehiclePositions(() => load());
+    return () => {
+      alive = false;
+      clearInterval(iv);
+      if (unsubTrip) unsubTrip();
+      if (unsubPos) unsubPos();
+    };
   }, []);
 
   const deadZoneCount = liveStats?.inDeadZone ?? vList.filter((v) => v.liveStatus === "IN_DEAD_ZONE").length;
@@ -59,8 +85,8 @@ export const VehicleTrackingPage = () => {
   const offlineCount = liveStats?.offline ?? Math.max(0, vList.length - liveCount - staleCount - deadZoneCount);
   const activeTrips = liveStats?.activeTrips ?? vList.filter((v) => v.trackingActive).length;
   const anyLive = liveCount > 0;
-  const totalVehicles = vList.length;
-  const onRoute = vList.filter(v => v.statusClass === "moving").length;
+  const totalVehicles = liveStats?.totalVehicles ?? vList.length;
+  const onRoute = (liveStats?.moving ?? vList.filter(v => v.statusClass === "moving").length);
   const activeAlerts = (alerts || []).length;
   const selectedVehicle = vList.find(v => v.id === selectedVehicleId);
 
@@ -251,12 +277,20 @@ export const VehicleTrackingPage = () => {
 
       {/* Expansive Full-Width Fleet Tracking Map */}
       <div style={{ marginBottom: "24px", width: "100%" }}>
-        <FleetTrackingMap selectedVehicleId={selectedVehicleId} onSelectVehicle={setSelectedVehicleId} />
+        <FleetTrackingMap 
+          selectedVehicleId={selectedVehicleId} 
+          onSelectVehicle={setSelectedVehicleId} 
+          onEmergencyReroute={handleEmergencyReroute}
+        />
       </div>
 
       {/* Live Vehicles Table & Trip Summary side by side */}
       <div style={{ display: "grid", gridTemplateColumns: "1.2fr 1fr", gap: "24px", marginBottom: "24px" }}>
-        <LiveVehiclesTable selectedVehicleId={selectedVehicleId} onSelectVehicle={setSelectedVehicleId} />
+        <LiveVehiclesTable 
+          selectedVehicleId={selectedVehicleId} 
+          onSelectVehicle={setSelectedVehicleId} 
+          onEmergencyReroute={handleEmergencyReroute}
+        />
         <TripSummaryCard vehicleId={selectedVehicleId} />
       </div>
 
