@@ -1,4 +1,6 @@
 import React, { useState, useEffect, useRef } from 'react';
+import { Link } from 'react-router-dom';
+import { ChevronRight } from 'lucide-react';
 import TransporterSidebar from '../../components/transporter/TransporterSidebar';
 import TransporterHeader from '../../components/transporter/TransporterHeader';
 import TransporterOperationsWorkflow from '../../components/transporter/TransporterOperationsWorkflow';
@@ -91,6 +93,7 @@ export default function TransporterDashboard() {
           <section>
             <FleetHealthPulseBar
               vehicles={vehicles}
+              alerts={alerts}
               activeFilter={fleetFilter}
               onSelectFilter={setFleetFilter}
               onQuickDispatch={() => setShowNewModal(true)}
@@ -115,15 +118,40 @@ export default function TransporterDashboard() {
           </section>
 
           {/* Main Dashboard Row: Live Tracking Map + Alerts */}
-          <section className="grid grid-cols-1 lg:grid-cols-12 gap-5 items-stretch">
-            {/* Live Tracking Map (8 cols on lg ~ 68%) */}
-            <div ref={mapSectionRef} className="lg:col-span-8 h-full">
-              <LiveTrackingMap />
+          <section className="space-y-2.5">
+            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 px-1">
+              <div className="flex items-center gap-2">
+                <span className="relative flex h-2.5 w-2.5">
+                  <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-emerald-400 opacity-75" />
+                  <span className="relative inline-flex rounded-full h-2.5 w-2.5 bg-emerald-500" />
+                </span>
+                <h2 className="text-sm sm:text-base font-black text-[#0B1E36] tracking-tight">
+                  Live Fleet GPS & Telematics
+                </h2>
+                <span className="text-[11px] font-bold text-slate-400">
+                  ({vehicles.filter((v) => v.status === 'moving' || v.status === 'in_transit').length} moving on road)
+                </span>
+              </div>
+
+              <Link
+                to="/transporter/vehicle-tracking"
+                className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-white border border-slate-200/90 shadow-2xs hover:bg-emerald-50 hover:border-emerald-300 text-slate-700 hover:text-emerald-700 text-xs font-bold transition-all group cursor-pointer self-start sm:self-auto"
+              >
+                <span>Open Vehicle Tracking Workspace</span>
+                <ChevronRight className="w-3.5 h-3.5 text-slate-400 group-hover:text-emerald-600 group-hover:translate-x-0.5 transition-all" />
+              </Link>
             </div>
 
-            {/* Alerts & Notifications (4 cols on lg ~ 32%) */}
-            <div ref={alertsSectionRef} className="lg:col-span-4 h-full">
-              <AlertsPanel />
+            <div className="grid grid-cols-1 lg:grid-cols-12 gap-5 items-stretch">
+              {/* Live Tracking Map (8 cols on lg ~ 68%) */}
+              <div ref={mapSectionRef} className="lg:col-span-8 h-full">
+                <LiveTrackingMap />
+              </div>
+
+              {/* Alerts & Notifications (4 cols on lg ~ 32%) */}
+              <div ref={alertsSectionRef} className="lg:col-span-4 h-full">
+                <AlertsPanel />
+              </div>
             </div>
           </section>
 

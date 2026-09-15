@@ -35,7 +35,7 @@ export default function AlertsPage() {
   const [activeTab, setActiveTab] = useState('all');
   const [severityFilter, setSeverityFilter] = useState('all');
   const [categoryFilter, setCategoryFilter] = useState('all');
-  const [dateRange, setDateRange] = useState('7d');
+  const [dateRange, setDateRange] = useState('all');
   const [currentPage, setCurrentPage] = useState(1);
   const [toastMessage, setToastMessage] = useState('');
 
@@ -68,7 +68,7 @@ export default function AlertsPage() {
   // Fetch and enrich alerts from authentic API telemetry
   const loadAlerts = useCallback(async () => {
     try {
-      const res = await ApiClient.getTransporterAlerts();
+      const res = await ApiClient.getTransporterAlerts({ limit: 200 });
       if (res?.success && Array.isArray(res.data)) {
         const mapped = res.data.map((a, idx) => {
           const severityNorm = (a.severity || 'Medium').toLowerCase();

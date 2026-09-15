@@ -98,7 +98,7 @@ router.get('/districts', async (req: Request, res: Response) => {
 
     const result = { type: 'FeatureCollection', features };
     try {
-      await redisClient.set(cacheKey, JSON.stringify(result), 120);
+      await redisClient.set(cacheKey, JSON.stringify(result), { ex: 120 });
     } catch {}
 
     return sendSuccess(res, result, 'Districts retrieved');
@@ -129,7 +129,7 @@ router.get('/roads', async (req: Request, res: Response) => {
 
     const roads = await Road.findAll({ where, raw: true });
     try {
-      await redisClient.set(cacheKey, JSON.stringify(roads), 120);
+      await redisClient.set(cacheKey, JSON.stringify(roads), { ex: 120 });
     } catch {}
 
     return sendSuccess(res, roads, 'Roads retrieved');
@@ -556,7 +556,7 @@ router.get('/pois', async (req: Request, res: Response) => {
 
     const result = { type: 'FeatureCollection', features };
     try {
-      await redisClient.set(cacheKey, JSON.stringify(result), 300);
+      await redisClient.set(cacheKey, JSON.stringify(result), { ex: 300 });
     } catch {}
 
     return sendSuccess(res, result, 'POIs retrieved');

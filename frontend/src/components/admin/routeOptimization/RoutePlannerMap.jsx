@@ -4,11 +4,13 @@ import { MapZoomControls } from '@/components/admin/common/MapZoomControls';
 import { ResilientTileLayer } from '@/components/admin/common/ResilientTileLayer';
 import L from 'leaflet';
 import 'leaflet/dist/leaflet.css';
-import { MapPin, Sparkles, Loader2, AlertTriangle, ShieldCheck, Navigation, Gauge, RefreshCw, Route as RouteIcon, Search, Scale, AlertOctagon, Layers, Activity, ArrowLeftRight, Plus, Trash2, Truck, Fuel, Zap, DollarSign, CheckCircle2, Shield } from 'lucide-react';
+import { MapPin, Sparkles, Loader2, AlertTriangle, ShieldCheck, Navigation, Gauge, RefreshCw, Route as RouteIcon, Search, Scale, AlertOctagon, Layers, Activity, ArrowLeftRight, Plus, Trash2, Truck, Fuel, Zap, DollarSign, CheckCircle2, Shield, User, UserPlus } from 'lucide-react';
 import ApiClient from '@/lib/api';
 import { DISTRICTS, districtById, findDistrictMatch } from '@/data/geoMaster';
 import { useApp } from '@/contexts/AppContext';
 import { MicroSegmentHeatmap } from './MicroSegmentHeatmap';
+import AddDriverModal from '@/components/drivers/AddDriverModal';
+import AddVehicleModal from '@/components/vehicles/AddVehicleModal';
 
 const RISK_COLOR = { low: '#10B981', medium: '#F59E0B', high: '#F97316', critical: '#EF4444' };
 
@@ -79,6 +81,12 @@ export const RoutePlannerMap = ({
   onPlanChange,
   activeRouteId: propActiveRouteId,
   onSelectRoute: propOnSelectRoute,
+  selectedDriverId: propSelectedDriverId,
+  onSelectDriver: propOnSelectDriver,
+  drivers: propDrivers,
+  selectedVehicleId: propSelectedVehicleId,
+  onSelectVehicle: propOnSelectVehicle,
+  vehicles: propVehicles,
 }) => {
   const { routePlannerInitialState, setRoutePlannerInitialState } = useApp() || {};
   const [fromId, setFromId] = useState('dabua_chowk');
@@ -92,6 +100,112 @@ export const RoutePlannerMap = ({
   const [customOrigin, setCustomOrigin] = useState('');
   const [customDest, setCustomDest] = useState('');
   const [reroutedBanner, setReroutedBanner] = useState(null);
+
+  // Available Fleet Vehicle State
+  const [vehicles, setVehicles] = useState(propVehicles || []);
+  const [selectedVehicleId, setSelectedVehicleId] = useState(propSelectedVehicleId || '');
+  const [showAddVehicleModal, setShowAddVehicleModal] = useState(false);
+
+  useEffect(() => {
+    if (propVehicles && propVehicles.length > 0) {
+      setVehicles(propVehicles);
+    }
+  }, [propVehicles]);
+
+  useEffect(() => {
+    if (propSelectedVehicleId !== undefined) {
+      setSelectedVehicleId(propSelectedVehicleId);
+    }
+  }, [propSelectedVehicleId]);
+
+  useEffect(() => {
+    if (!propVehicles || propVehicles.length === 0) {
+      const fetcher = typeof ApiClient.getVehicles === 'function'
+        ? ApiClient.getVehicles()
+        : typeof ApiClient.getTransporterVehicles === 'function'
+          ? ApiClient.getTransporterVehicles()
+          : Promise.resolve({ success: false, data: [] });
+
+      fetcher
+        .then((res) => {
+          if (res?.success && Array.isArray(res.data)) {
+            setVehicles(res.data);
+          }
+        })
+        .catch(() => {});
+    }
+  }, [propVehicles]);
+
+  const handleVehicleChange = (val) => {
+    const foundVehicle = vehicles.find((v) => (v.id || v._id) === val);
+    if (foundVehicle) {
+      const vId = foundVehicle.id || foundVehicle._id;
+      setSelectedVehicleId(vId);
+      if (propOnSelectVehicle) propOnSelectVehicle(vId);
+
+      const modelStr = `${foundVehicle.model || ''} ${foundVehicle.type || ''}`.toLowerCase();
+      let mappedType = 'heavy_multi_axle';
+      if (modelStr.includes('tanker') || modelStr.includes('pol') || modelStr.includes('chemical') || modelStr.includes('hazard')) {
+        mappedType = 'hazardous_tanker';
+      } else if (modelStr.includes('ace') || modelStr.includes('pickup') || modelStr.includes('light')) {
+        mappedType = 'light_commercial';
+      } else if (modelStr.includes('407') || modelStr.includes('eicher') || modelStr.includes('medium')) {
+        mappedType = 'medium_commercial';
+      } else {
+        mappedType = 'heavy_multi_axle';
+      }
+      setVehicleType(mappedType);
+      if (foundVehicle.capacity_kg && Number(foundVehicle.capacity_kg) > 0) {
+        setCargoWeightKg(Number(foundVehicle.capacity_kg));
+      }
+      if (searchMode === 'hub') planRoute(fromId, toId, prefer, mappedType);
+    } else {
+      setVehicleType(val);
+      setSelectedVehicleId('');
+      if (propOnSelectVehicle) propOnSelectVehicle('');
+      if (searchMode === 'hub') planRoute(fromId, toId, prefer, val);
+    }
+  };
+
+  // Driver Assignment State
+  const [drivers, setDrivers] = useState(propDrivers || []);
+  const [selectedDriverId, setSelectedDriverId] = useState(propSelectedDriverId || '');
+  const [showAddDriverModal, setShowAddDriverModal] = useState(false);
+
+  useEffect(() => {
+    if (propDrivers && propDrivers.length > 0) {
+      setDrivers(propDrivers);
+    }
+  }, [propDrivers]);
+
+  useEffect(() => {
+    if (propSelectedDriverId !== undefined) {
+      setSelectedDriverId(propSelectedDriverId);
+    }
+  }, [propSelectedDriverId]);
+
+  useEffect(() => {
+    if (!propDrivers || propDrivers.length === 0) {
+      const fetcher = typeof ApiClient.getDrivers === 'function'
+        ? ApiClient.getDrivers()
+        : typeof ApiClient.getTransporterDrivers === 'function'
+          ? ApiClient.getTransporterDrivers()
+          : Promise.resolve({ success: false, data: [] });
+
+      fetcher
+        .then((res) => {
+          if (res?.success && Array.isArray(res.data)) {
+            setDrivers(res.data);
+          }
+        })
+        .catch(() => {});
+    }
+  }, [propDrivers]);
+
+  const handleDriverChange = (val) => {
+    setSelectedDriverId(val);
+    if (propOnSelectDriver) propOnSelectDriver(val);
+  };
 
   const [internalPlan, setInternalPlan] = useState(null);
   const [internalActiveRouteId, setInternalActiveRouteId] = useState('optimal');
@@ -492,8 +606,12 @@ export const RoutePlannerMap = ({
         </div>
       )}
 
-      {/* Query bar - real districts or custom geocoding */}
-      <div className="route-query-card">
+      {/* Side-by-Side Main Container: Controls on Left, Map on Right */}
+      <div className="grid grid-cols-1 lg:grid-cols-12 gap-4.5 items-stretch w-full">
+        {/* Left Column: Route Setup, Profiles, Parameters & Metrics */}
+        <div className="lg:col-span-6 flex flex-col gap-3">
+          {/* Query bar - real districts or custom geocoding */}
+          <div className="route-query-card" style={{ marginBottom: 0 }}>
         {/* Row 1: Endpoints (From, Swap, To) */}
         <div className="route-endpoints-row">
           {searchMode === 'custom' ? (
@@ -631,9 +749,9 @@ export const RoutePlannerMap = ({
           </div>
         )}
 
-        {/* Add Stop Button if fewer than 5 stops */}
-        {stops.length < 5 && (
-          <div style={{ display: 'flex', justifyContent: 'flex-start', margin: '2px 0 4px 0' }}>
+        {/* Add Stop, Add Vehicle, and Add Driver Buttons */}
+        <div style={{ display: 'flex', alignItems: 'center', gap: '8px', margin: '2px 0 4px 0', flexWrap: 'wrap' }}>
+          {stops.length < 5 && (
             <button
               type="button"
               onClick={handleAddStop}
@@ -654,11 +772,53 @@ export const RoutePlannerMap = ({
             >
               <Plus size={13} /> + Add Stop in Between Journey
             </button>
-          </div>
-        )}
+          )}
 
-        {/* Row 2: Optimization Parameters & Action */}
-        <div className="route-params-row">
+          <button
+            type="button"
+            onClick={() => setShowAddVehicleModal(true)}
+            style={{
+              padding: '4px 12px',
+              borderRadius: '6px',
+              fontSize: '11px',
+              fontWeight: 700,
+              background: '#EFF6FF',
+              border: '1px dashed #93C5FD',
+              color: '#1D4ED8',
+              cursor: 'pointer',
+              display: 'inline-flex',
+              alignItems: 'center',
+              gap: '4px',
+              transition: 'all 0.15s ease',
+            }}
+          >
+            <Truck size={13} /> + Add Vehicle
+          </button>
+
+          <button
+            type="button"
+            onClick={() => setShowAddDriverModal(true)}
+            style={{
+              padding: '4px 12px',
+              borderRadius: '6px',
+              fontSize: '11px',
+              fontWeight: 700,
+              background: '#F0FDF4',
+              border: '1px dashed #86EFAC',
+              color: '#15803D',
+              cursor: 'pointer',
+              display: 'inline-flex',
+              alignItems: 'center',
+              gap: '4px',
+              transition: 'all 0.15s ease',
+            }}
+          >
+            <UserPlus size={13} /> + Add Driver
+          </button>
+        </div>
+
+        {/* Row 2: Optimization Parameters & Fleet Assignment */}
+        <div className="route-params-row" style={{ marginBottom: '10px' }}>
           <div className="query-field-group">
             <label className="query-field-label">Routing Profile</label>
             <div className="query-input-wrap">
@@ -679,8 +839,103 @@ export const RoutePlannerMap = ({
             </div>
           </div>
 
+          {/* Dedicated Available Vehicle Selector */}
           <div className="query-field-group">
-            <label className="query-field-label">Vehicle Profile</label>
+            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '4px' }}>
+              <label className="query-field-label" style={{ margin: 0 }}>Available Vehicle</label>
+              <button
+                type="button"
+                onClick={() => setShowAddVehicleModal(true)}
+                style={{
+                  background: 'none',
+                  border: 'none',
+                  color: '#2563EB',
+                  fontSize: '11px',
+                  fontWeight: 600,
+                  cursor: 'pointer',
+                  display: 'inline-flex',
+                  alignItems: 'center',
+                  gap: '3px',
+                  padding: 0
+                }}
+              >
+                <Plus size={11} /> + Add
+              </button>
+            </div>
+            <div className="query-input-wrap">
+              <Truck size={16} color="#2563EB" />
+              <select
+                value={selectedVehicleId}
+                onChange={(e) => {
+                  if (e.target.value === '__add_vehicle__') {
+                    setShowAddVehicleModal(true);
+                  } else {
+                    handleVehicleChange(e.target.value);
+                  }
+                }}
+              >
+                <option value="">-- Assign Available Vehicle (Optional) --</option>
+                {vehicles && vehicles.map((v) => (
+                  <option key={v.id || v._id} value={v.id || v._id}>
+                    {v.registration_number || v.model || v.id} ({v.type || v.model || 'Heavy'}) • {v.available_for_load || v.status === 'idle' ? 'Available' : (v.status || 'Active')}
+                  </option>
+                ))}
+                <option value="__add_vehicle__">➕ + Register New Vehicle...</option>
+              </select>
+            </div>
+          </div>
+
+          {/* Driver Assignment */}
+          <div className="query-field-group">
+            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '4px' }}>
+              <label className="query-field-label" style={{ margin: 0 }}>Driver Profile</label>
+              <button
+                type="button"
+                onClick={() => setShowAddDriverModal(true)}
+                style={{
+                  background: 'none',
+                  border: 'none',
+                  color: '#059669',
+                  fontSize: '11px',
+                  fontWeight: 600,
+                  cursor: 'pointer',
+                  display: 'inline-flex',
+                  alignItems: 'center',
+                  gap: '3px',
+                  padding: 0
+                }}
+              >
+                <UserPlus size={11} /> + Add
+              </button>
+            </div>
+            <div className="query-input-wrap">
+              <User size={16} color="#059669" />
+              <select
+                value={selectedDriverId}
+                onChange={(e) => {
+                  if (e.target.value === '__add_new__') {
+                    setShowAddDriverModal(true);
+                  } else {
+                    handleDriverChange(e.target.value);
+                  }
+                }}
+              >
+                <option value="">-- Assign Driver (Optional) --</option>
+                {drivers && drivers.map((d) => (
+                  <option key={d.id || d._id} value={d.id || d._id}>
+                    {d.name || d.full_name} {d.phone ? `(${d.phone})` : ''} {d.status ? `• ${d.status}` : ''}
+                  </option>
+                ))}
+                <option value="__add_new__">➕ + Register New Driver...</option>
+              </select>
+            </div>
+          </div>
+        </div>
+
+        {/* Row 3: Vehicle Specs, Cargo & Action */}
+        <div className="route-params-row">
+          <div className="query-field-group">
+            <label className="query-field-label">Vehicle Profile (Physics Model)</label>
             <div className="query-input-wrap">
               <Gauge size={16} color="#10B981" />
               <select
@@ -985,19 +1240,21 @@ export const RoutePlannerMap = ({
           {error}
         </div>
       )}
+        </div>
 
-      {/* Map with real road geometry — always visible */}
-      <div className="card" style={{ padding: '12px', position: 'relative' }}>
-        {loading && !plan && (
-          <div style={{ position: 'absolute', top: 14, left: '50%', transform: 'translateX(-50%)', zIndex: 1100, display: 'flex', alignItems: 'center', gap: 8, padding: '7px 14px', borderRadius: 999, background: '#fff', border: '1px solid #E5E7EB', boxShadow: '0 2px 10px rgba(0,0,0,.15)', color: 'var(--text-muted)', fontSize: 12, fontWeight: 600 }}>
-            <Loader2 size={14} className="spin" /> Fetching real road route...
-          </div>
-        )}
-        <MapContainer
-          key={mapKey}
-          center={fromD ? [fromD.lat, fromD.lng] : [28.3842, 77.2878]}
-          zoom={12}
-          style={{ height: '430px', width: '100%', borderRadius: 8 }}
+        {/* Right Column: Interactive Road Network Map */}
+        <div className="lg:col-span-6 flex flex-col h-full">
+          <div className="card" style={{ padding: '12px', position: 'relative', height: '100%', display: 'flex', flexDirection: 'column', justifyContent: 'space-between', minHeight: '560px', borderRadius: '16px', background: '#FFFFFF', border: '1px solid #E2E8F0', boxShadow: '0 1px 3px rgba(0,0,0,0.04)' }}>
+            {loading && !plan && (
+              <div style={{ position: 'absolute', top: 14, left: '50%', transform: 'translateX(-50%)', zIndex: 1100, display: 'flex', alignItems: 'center', gap: 8, padding: '7px 14px', borderRadius: 999, background: '#fff', border: '1px solid #E5E7EB', boxShadow: '0 2px 10px rgba(0,0,0,.15)', color: 'var(--text-muted)', fontSize: 12, fontWeight: 600 }}>
+                <Loader2 size={14} className="spin" /> Fetching real road route...
+              </div>
+            )}
+            <MapContainer
+              key={mapKey}
+              center={fromD ? [fromD.lat, fromD.lng] : [28.3842, 77.2878]}
+              zoom={12}
+              style={{ flex: 1, minHeight: '480px', width: '100%', borderRadius: 10 }}
           attributionControl={false}
           zoomControl={false}
           scrollWheelZoom={false}
@@ -1198,5 +1455,52 @@ export const RoutePlannerMap = ({
         </button>
       </div>
     </div>
-  );
+  </div>
+
+  {/* Add / Register Driver Modal */}
+  <AddDriverModal
+    isOpen={showAddDriverModal}
+    onClose={() => setShowAddDriverModal(false)}
+    onDriverAdded={(newDriver) => {
+      if (newDriver) {
+        const driverId = newDriver.id || newDriver._id;
+        setDrivers((prev) => [newDriver, ...prev.filter((d) => (d.id || d._id) !== driverId)]);
+        if (driverId) {
+          handleDriverChange(driverId);
+        }
+      }
+    }}
+  />
+
+  {/* Add / Register Vehicle Modal */}
+  <AddVehicleModal
+    isOpen={showAddVehicleModal}
+    onClose={() => setShowAddVehicleModal(false)}
+    onVehicleAdded={(msg, newVehicle) => {
+      if (newVehicle && (newVehicle.id || newVehicle._id)) {
+        const vId = newVehicle.id || newVehicle._id;
+        setVehicles((prev) => [newVehicle, ...prev.filter((v) => (v.id || v._id) !== vId)]);
+        handleVehicleChange(vId);
+      } else {
+        const fetcher = typeof ApiClient.getVehicles === 'function'
+          ? ApiClient.getVehicles()
+          : typeof ApiClient.getTransporterVehicles === 'function'
+            ? ApiClient.getTransporterVehicles()
+            : Promise.resolve({ success: false, data: [] });
+
+        fetcher
+          .then((res) => {
+            if (res?.success && Array.isArray(res.data)) {
+              setVehicles(res.data);
+              if (res.data.length > 0) {
+                handleVehicleChange(res.data[0].id);
+              }
+            }
+          })
+          .catch(() => {});
+      }
+    }}
+  />
+</div>
+);
 };

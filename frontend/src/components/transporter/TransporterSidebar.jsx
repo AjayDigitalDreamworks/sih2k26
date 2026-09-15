@@ -81,20 +81,16 @@ export default function TransporterSidebar({ isOpen, onClose }) {
         location.pathname === '/vehicles'
       );
     }
-    if (id === 'tracking') {
-      return (
-        location.pathname === '/transporter/live-tracking' ||
-        location.pathname === '/transporter/tracking' ||
-        location.pathname === '/live-tracking' ||
-        location.pathname === '/tracking'
-      );
-    }
-    if (id === 'fleet-tracking') {
+    if (id === 'tracking' || id === 'fleet-tracking') {
       return (
         location.pathname === '/transporter/vehicle-tracking' ||
         location.pathname === '/transporter/fleet-tracking' ||
+        location.pathname === '/transporter/live-tracking' ||
+        location.pathname === '/transporter/tracking' ||
         location.pathname === '/vehicle-tracking' ||
-        location.pathname === '/fleet-tracking'
+        location.pathname === '/fleet-tracking' ||
+        location.pathname === '/live-tracking' ||
+        location.pathname === '/tracking'
       );
     }
     if (id === 'routes') {

@@ -112,14 +112,18 @@ export const RouteOptimizationPage = ({ onExport }) => {
         </div>
       </div>
 
-      {/* Main Map & Route Sequence Timeline Section */}
-      <div className="grid-2" style={{ gridTemplateColumns: '1.8fr 1.2fr', marginBottom: '24px', alignItems: 'start' }}>
+      {/* Main Route Planner: Controls & Map Lie Side-by-Side */}
+      <div style={{ marginBottom: '20px' }}>
         <RoutePlannerMap
           plan={currentPlan}
           onPlanChange={handlePlanChange}
           activeRouteId={activeRouteId}
           onSelectRoute={setActiveRouteId}
         />
+      </div>
+
+      {/* Horizontal Route Sequence & Waypoints Timeline Bar at Bottom */}
+      <div style={{ marginBottom: '24px' }}>
         <RouteSequenceTimeline
           plan={currentPlan}
           activeRouteId={activeRouteId}

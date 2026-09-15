@@ -4,13 +4,37 @@ import { ShieldCheck, AlertTriangle, ArrowUpRight, Activity } from 'lucide-react
 
 export default function FleetHealthPulseBar({
   vehicles = [],
+  alerts = [],
   activeFilter = 'all',
   onSelectFilter,
   onQuickDispatch,
   onFocusHazard,
 }) {
+  const getVehicleHazard = (v) => {
+    if (!v || !alerts?.length) return null;
+    const vRoute = String(v.current_route || '').toLowerCase();
+    const vId = String(v.id || '').toLowerCase();
+    return alerts.find((a) => {
+      if (a.status === 'resolved') return false;
+      const d = String(a.district || a.districtId || '').toLowerCase();
+      const title = String(a.title || '').toLowerCase();
+      const loc = String(a.location || '').toLowerCase();
+      return (
+        (d && vRoute.includes(d)) ||
+        (loc && vRoute.includes(loc)) ||
+        (title && vRoute.includes(title)) ||
+        (a.vehicleId && String(a.vehicleId).toLowerCase() === vId)
+      );
+    });
+  };
+
   const movingCount = vehicles.filter((v) => v.status === 'moving' || v.status === 'in_transit' || v.trackingActive).length;
-  const delayedCount = vehicles.filter((v) => v.status === 'delayed' || v.risk_score > 60).length;
+  const delayedCount = vehicles.filter((v) => {
+    if (v.status === 'delayed' || v.risk_score > 60 || (v.traffic_delay_minutes && v.traffic_delay_minutes > 10)) {
+      return true;
+    }
+    return (v.status === 'moving' || v.status === 'in_transit') && Boolean(getVehicleHazard(v));
+  }).length;
   const idleCount = vehicles.filter((v) => !v.status || v.status === 'idle' || v.status === 'stopped').length;
   const total = vehicles.length;
 

@@ -118,11 +118,23 @@ export default function AddVehicleModal({ isOpen, onClose, onVehicleAdded, vehic
         if (selectedDriver) {
           message += ` Assigned driver ${selectedDriver.name}.`;
         }
-      } else if (editing && vehicle?.raw?.assigned_driver_id) {
+      } else if (editing && vehicle?.raw?.assigned_driver_id && !formData.driverId) {
         message += ' Driver unassigned.';
       }
 
-      onVehicleAdded(message);
+      const vehicleData = {
+        id: registrationId,
+        registration_number: registrationId,
+        model: formData.model,
+        capacity_kg: capacityKg,
+        status: formData.status,
+        type: formData.model.toLowerCase().includes('tanker') ? 'tanker' : 'truck',
+        driver_id: formData.driverId || null,
+      };
+
+      if (onVehicleAdded) {
+        onVehicleAdded(message, vehicleData);
+      }
       onClose();
     } catch (err) {
       console.error(err);

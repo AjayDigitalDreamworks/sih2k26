@@ -53,11 +53,11 @@ export const ImdWeatherIntelligenceModal = ({ isOpen, onClose, initialDistrict =
   const [districtReport, setDistrictReport] = useState(null);
   const [reportLoading, setReportLoading] = useState(false);
 
-  // Search filter for nowcasts & warnings
+  // Search & filter state
   const [searchTerm, setSearchTerm] = useState('');
   const [severityFilter, setSeverityFilter] = useState('all'); // 'all' | 'warning' | 'red'
 
-  // Load telemetry from unified IMD client
+  // Load telemetry
   const loadInitialData = async (targetRegion = 'ner') => {
     setLoading(true);
     setError(null);
@@ -197,277 +197,247 @@ export const ImdWeatherIntelligenceModal = ({ isOpen, onClose, initialDistrict =
 
   if (!isOpen) return null;
 
-  const renderWarningBadge = (color, text, size = 'sm') => {
+  // Clean, neutral warning badge
+  const renderWarningBadge = (color, customLabel) => {
     const c = String(color || 'green').toLowerCase();
-    const config = {
-      red: {
-        bg: 'bg-rose-50 text-rose-800 border-rose-200',
-        dot: 'bg-rose-500 animate-ping',
-        icon: <TriangleAlert className="w-3.5 h-3.5 text-rose-600 shrink-0" />,
-        label: 'RED ALERT: SEVERE',
-      },
-      orange: {
-        bg: 'bg-amber-50 text-amber-800 border-amber-200',
-        dot: 'bg-amber-500',
-        icon: <ShieldAlert className="w-3.5 h-3.5 text-amber-600 shrink-0" />,
-        label: 'ORANGE ALERT',
-      },
-      yellow: {
-        bg: 'bg-yellow-50 text-yellow-800 border-yellow-200',
-        dot: 'bg-yellow-500',
-        icon: <AlertTriangle className="w-3.5 h-3.5 text-yellow-600 shrink-0" />,
-        label: 'YELLOW WATCH',
-      },
-      green: {
-        bg: 'bg-emerald-50 text-emerald-800 border-emerald-200',
-        dot: 'bg-emerald-500',
-        icon: <CheckCircle2 className="w-3.5 h-3.5 text-emerald-600 shrink-0" />,
-        label: 'GREEN: NORMAL',
-      },
-    }[c] || {
-      bg: 'bg-slate-50 text-slate-700 border-slate-200',
-      dot: 'bg-slate-400',
-      icon: <Info className="w-3.5 h-3.5 text-slate-500 shrink-0" />,
-      label: 'NORMAL',
-    };
 
-    return (
-      <span
-        className={`inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full border text-xs font-black uppercase tracking-wider ${config.bg}`}
-      >
-        <span className="relative flex h-2 w-2">
-          <span className={`absolute inline-flex h-full w-full rounded-full opacity-75 ${config.dot}`} />
-          <span className={`relative inline-flex rounded-full h-2 w-2 ${config.dot.split(' ')[0]}`} />
+    if (c === 'red') {
+      return (
+        <span className="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full text-xs font-medium bg-rose-50 text-rose-800 border border-rose-200 shrink-0">
+          <span className="w-1.5 h-1.5 rounded-full bg-rose-600 shrink-0" />
+          <span>{customLabel || 'Red Alert'}</span>
         </span>
-        {config.icon}
-        <span>{text || config.label}</span>
+      );
+    }
+    if (c === 'orange') {
+      return (
+        <span className="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full text-xs font-medium bg-amber-50 text-amber-800 border border-amber-200 shrink-0">
+          <span className="w-1.5 h-1.5 rounded-full bg-amber-600 shrink-0" />
+          <span>{customLabel || 'Orange Alert'}</span>
+        </span>
+      );
+    }
+    if (c === 'yellow') {
+      return (
+        <span className="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full text-xs font-medium bg-amber-50/80 text-amber-900 border border-amber-200 shrink-0">
+          <span className="w-1.5 h-1.5 rounded-full bg-amber-500 shrink-0" />
+          <span>{customLabel || 'Yellow Watch'}</span>
+        </span>
+      );
+    }
+    return (
+      <span className="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full text-xs font-medium bg-slate-50 text-slate-700 border border-slate-200 shrink-0">
+        <span className="w-1.5 h-1.5 rounded-full bg-emerald-600 shrink-0" />
+        <span>{customLabel || 'Normal'}</span>
       </span>
     );
   };
 
+  const getDayDotClass = (color) => {
+    const c = String(color || 'green').toLowerCase();
+    if (c === 'red') return 'bg-rose-600';
+    if (c === 'orange') return 'bg-amber-600';
+    if (c === 'yellow') return 'bg-amber-500';
+    return 'bg-emerald-600';
+  };
+
+  const getDayTextClass = (color) => {
+    const c = String(color || 'green').toLowerCase();
+    if (c === 'red') return 'text-rose-800';
+    if (c === 'orange') return 'text-amber-800';
+    if (c === 'yellow') return 'text-amber-900';
+    return 'text-slate-700';
+  };
+
+  const getDayLabel = (color) => {
+    const c = String(color || 'green').toLowerCase();
+    if (c === 'red') return 'Red';
+    if (c === 'orange') return 'Orange';
+    if (c === 'yellow') return 'Yellow';
+    return 'Normal';
+  };
+
   return (
-    <div className="fixed inset-0 z-[9999] flex items-center justify-center p-3 sm:p-5 bg-slate-950/70 backdrop-blur-md animate-in fade-in duration-200 font-sans">
-      <div className="bg-white rounded-3xl max-w-4xl w-full max-h-[92vh] flex flex-col shadow-2xl border border-slate-200/90 overflow-hidden">
-        {/* Modal Header */}
-        <div className="px-6 py-4.5 bg-gradient-to-r from-slate-900 via-slate-800 to-[#0A2540] text-white flex items-center justify-between border-b border-slate-700/50">
+    <div className="fixed inset-0 z-[9999] flex items-center justify-center p-3 sm:p-5 bg-slate-900/50 backdrop-blur-xs font-sans">
+      <div className="bg-white rounded-2xl max-w-5xl lg:max-w-6xl w-full max-h-[90vh] flex flex-col shadow-xl border border-slate-200 overflow-hidden text-slate-900">
+        
+        {/* Header */}
+        <div className="px-6 py-4 border-b border-slate-200 bg-white flex items-center justify-between shrink-0">
           <div className="flex items-center gap-3">
-            <div className="w-10 h-10 rounded-2xl bg-white/10 border border-white/20 flex items-center justify-center">
-              <Radio className="w-5 h-5 text-emerald-400 animate-pulse" />
+            <div className="w-9 h-9 rounded-lg bg-slate-100 border border-slate-200 flex items-center justify-center text-slate-700 shrink-0">
+              <CloudSun className="w-5 h-5" />
             </div>
             <div>
-              <div className="flex items-center gap-2">
-                <h3 className="text-base font-black text-white tracking-tight">
-                  IMD National Meteorological Command Center
-                </h3>
-                <span className="px-2 py-0.5 rounded-md bg-emerald-500/20 border border-emerald-400/30 text-emerald-300 text-[10px] font-black uppercase tracking-wider">
-                  Live Govt. API
+              <div className="flex items-center gap-2 flex-wrap">
+                <h2 className="text-base font-semibold text-slate-900 tracking-tight">
+                  IMD Weather Intelligence
+                </h2>
+                <span className="px-2 py-0.5 rounded text-[11px] font-medium bg-emerald-50 text-emerald-700 border border-emerald-200">
+                  Live Feed
                 </span>
               </div>
-              <p className="text-xs text-slate-300 font-medium mt-0.5">
+              <p className="text-xs text-slate-500 mt-0.5">
                 India Meteorological Department · Ministry of Earth Sciences, Govt. of India
               </p>
             </div>
           </div>
 
-          <div className="flex items-center gap-2">
+          <div className="flex items-center gap-1.5 shrink-0">
             <button
-              onClick={loadInitialData}
+              type="button"
+              onClick={() => loadInitialData(regionMode)}
               disabled={loading}
-              className="p-2 rounded-xl bg-white/10 hover:bg-white/20 text-white transition-colors cursor-pointer"
-              title="Refresh IMD Telemetry"
+              className="p-2 rounded-lg text-slate-500 hover:text-slate-800 hover:bg-slate-100 transition-colors cursor-pointer"
+              title="Refresh data"
             >
               <RefreshCw className={`w-4 h-4 ${loading ? 'animate-spin' : ''}`} />
             </button>
             <button
+              type="button"
               onClick={onClose}
-              className="p-2 rounded-xl bg-white/10 hover:bg-white/20 text-white transition-colors cursor-pointer"
-              title="Close modal"
+              className="p-2 rounded-lg text-slate-500 hover:text-slate-800 hover:bg-slate-100 transition-colors cursor-pointer"
+              title="Close"
             >
               <X className="w-4 h-4" />
             </button>
           </div>
         </div>
 
-        {/* National / Regional Alert Summary Strip */}
-        <div className="bg-slate-50 border-b border-slate-200 px-6 py-2.5 flex items-center justify-between flex-wrap gap-3 text-xs">
+        {/* Status Strip */}
+        <div className="bg-slate-50 border-b border-slate-200 px-6 py-2.5 flex items-center justify-between flex-wrap gap-3 text-xs shrink-0">
           <div className="flex items-center gap-2 flex-wrap">
-            <span className="font-bold text-slate-500 uppercase tracking-wider text-[10px]">
-              {regionMode === 'ner' ? 'North East Regional Weather Status' : 'National Weather Status'} ({nationalSummary?.lastSyncIst || 'Live IST'}):
+            <span className="text-slate-500 font-medium shrink-0">
+              {regionMode === 'ner' ? 'Northeast Region' : 'National'} ({nationalSummary?.lastSyncIst || 'Live IST'}):
             </span>
-            <div className="flex items-center gap-2 flex-wrap">
-              <span className="inline-flex items-center gap-1 font-bold text-rose-700 bg-rose-100/70 px-2 py-0.5 rounded-md">
-                <span className="w-1.5 h-1.5 rounded-full bg-rose-600" />
-                {regionMode === 'ner' ? (nerIntelligence?.counts?.redWarningsDay1 || 0) : (nationalSummary?.counts?.red || 0)} Red Alerts
+            <div className="flex items-center gap-1.5 flex-wrap">
+              <span className="inline-flex items-center gap-1.5 px-2 py-0.5 rounded bg-rose-50 text-rose-700 border border-rose-200 font-medium text-xs shrink-0">
+                <span className="w-1.5 h-1.5 rounded-full bg-rose-600 shrink-0" />
+                {regionMode === 'ner' ? (nerIntelligence?.counts?.redWarningsDay1 || 0) : (nationalSummary?.counts?.red || 0)} Red
               </span>
-              <span className="inline-flex items-center gap-1 font-bold text-amber-700 bg-amber-100/70 px-2 py-0.5 rounded-md">
-                <span className="w-1.5 h-1.5 rounded-full bg-amber-600" />
-                {regionMode === 'ner' ? (nerIntelligence?.counts?.orangeWarningsDay1 || 0) : (nationalSummary?.counts?.orange || 0)} Orange Alerts
+              <span className="inline-flex items-center gap-1.5 px-2 py-0.5 rounded bg-amber-50 text-amber-800 border border-amber-200 font-medium text-xs shrink-0">
+                <span className="w-1.5 h-1.5 rounded-full bg-amber-600 shrink-0" />
+                {regionMode === 'ner' ? (nerIntelligence?.counts?.orangeWarningsDay1 || 0) : (nationalSummary?.counts?.orange || 0)} Orange
               </span>
-              <span className="inline-flex items-center gap-1 font-bold text-yellow-800 bg-yellow-100/70 px-2 py-0.5 rounded-md">
-                <span className="w-1.5 h-1.5 rounded-full bg-yellow-500" />
-                {regionMode === 'ner' ? (nerIntelligence?.counts?.yellowWarningsDay1 || 0) : (nationalSummary?.counts?.yellow || 0)} Yellow Watches
+              <span className="inline-flex items-center gap-1.5 px-2 py-0.5 rounded bg-yellow-50 text-yellow-800 border border-yellow-200 font-medium text-xs shrink-0">
+                <span className="w-1.5 h-1.5 rounded-full bg-yellow-500 shrink-0" />
+                {regionMode === 'ner' ? (nerIntelligence?.counts?.yellowWarningsDay1 || 0) : (nationalSummary?.counts?.yellow || 0)} Yellow
               </span>
               {regionMode === 'ner' && (
-                <span className="inline-flex items-center gap-1 font-bold text-blue-800 bg-blue-100/70 px-2 py-0.5 rounded-md">
-                  <Droplets className="w-3 h-3 text-blue-600" />
-                  {nerIntelligence?.counts?.excessRainfallDistricts || 0} Excess Rainfall
+                <span className="inline-flex items-center gap-1.5 px-2 py-0.5 rounded bg-sky-50 text-sky-700 border border-sky-200 font-medium text-xs shrink-0">
+                  <Droplets className="w-3.5 h-3.5 text-sky-600 shrink-0" />
+                  {nerIntelligence?.counts?.excessRainfallDistricts || 0} Excess Rain
                 </span>
               )}
             </div>
           </div>
 
-          <div className="flex items-center gap-3">
+          <div className="flex items-center gap-3 shrink-0">
             {/* Region Mode Toggle */}
-            <div className="inline-flex p-0.5 rounded-xl bg-slate-200 border border-slate-300">
+            <div className="inline-flex rounded-lg p-0.5 bg-slate-200/80 border border-slate-200 text-xs shrink-0">
               <button
+                type="button"
                 onClick={() => setRegionMode('ner')}
-                className={`px-2.5 py-1 rounded-lg text-xs font-black transition-all cursor-pointer ${
-                  regionMode === 'ner' ? 'bg-emerald-700 text-white shadow-xs' : 'text-slate-600 hover:text-slate-900'
+                className={`px-2.5 py-1 rounded-md text-xs font-medium transition-colors cursor-pointer shrink-0 ${
+                  regionMode === 'ner'
+                    ? 'bg-white text-slate-900 shadow-xs'
+                    : 'text-slate-600 hover:text-slate-900'
                 }`}
               >
-                🏔️ NER Focus
+                NER Focus
               </button>
               <button
+                type="button"
                 onClick={() => setRegionMode('all')}
-                className={`px-2.5 py-1 rounded-lg text-xs font-black transition-all cursor-pointer ${
-                  regionMode === 'all' ? 'bg-slate-800 text-white shadow-xs' : 'text-slate-600 hover:text-slate-900'
+                className={`px-2.5 py-1 rounded-md text-xs font-medium transition-colors cursor-pointer shrink-0 ${
+                  regionMode === 'all'
+                    ? 'bg-white text-slate-900 shadow-xs'
+                    : 'text-slate-600 hover:text-slate-900'
                 }`}
               >
-                🇮🇳 All India
+                All India
               </button>
             </div>
 
-            <div className="text-[11px] text-slate-500 font-semibold flex items-center gap-1">
-              <Clock className="w-3.5 h-3.5 text-slate-400" />
-              <span>IST (UTC+5:30)</span>
+            <div className="text-xs text-slate-500 flex items-center gap-1 shrink-0">
+              <Clock className="w-3.5 h-3.5 text-slate-400 shrink-0" />
+              <span>IST</span>
             </div>
           </div>
         </div>
 
-        {/* NER Strategic Highway Corridors Status Bar */}
+        {/* Transit Corridors */}
         {regionMode === 'ner' && nerIntelligence?.corridorStatus && (
-          <div className="bg-emerald-950/10 border-b border-emerald-900/10 px-6 py-2 flex items-center gap-3 overflow-x-auto text-[11px]">
-            <span className="font-extrabold text-slate-700 uppercase tracking-wider text-[10px] shrink-0">
-              Transit Corridors:
-            </span>
-            <div className="flex items-center gap-2">
+          <div className="bg-white border-b border-slate-200 px-6 py-2 flex items-center gap-2.5 overflow-x-auto text-xs shrink-0">
+            <span className="text-slate-500 font-medium shrink-0">Highway Corridors:</span>
+            <div className="flex items-center gap-1.5 shrink-0">
               {Object.entries(nerIntelligence.corridorStatus).map(([cName, cData]) => (
                 <div
                   key={cName}
-                  className={`inline-flex items-center gap-1.5 px-2 py-0.5 rounded-md border text-[10px] font-bold ${
+                  className={`inline-flex items-center gap-1.5 px-2 py-0.5 rounded text-xs font-medium border shrink-0 ${
                     cData.safe
-                      ? 'bg-emerald-50 text-emerald-800 border-emerald-200'
+                      ? 'bg-slate-50 text-slate-700 border-slate-200'
                       : 'bg-amber-50 text-amber-800 border-amber-200'
                   }`}
                   title={cData.hazards?.join('; ') || 'Normal transit conditions'}
                 >
-                  <span className={`w-1.5 h-1.5 rounded-full ${cData.safe ? 'bg-emerald-600' : 'bg-amber-500 animate-ping'}`} />
+                  <span className={`w-1.5 h-1.5 rounded-full shrink-0 ${cData.safe ? 'bg-emerald-600' : 'bg-amber-600'}`} />
                   <span>{cName.split(' ')[0]}</span>
-                  <span className="text-[9px] uppercase font-black">{cData.status}</span>
+                  <span className="text-[10px] uppercase text-slate-400 font-semibold">{cData.status}</span>
                 </div>
               ))}
             </div>
           </div>
         )}
 
-        {/* Tab Navigation */}
-        <div className="flex items-center border-b border-slate-200 px-6 bg-white shrink-0 overflow-x-auto">
-          <button
-            onClick={() => setActiveTab('warnings5d')}
-            className={`py-3.5 px-3.5 font-black text-xs transition-all border-b-2 cursor-pointer flex items-center gap-1.5 shrink-0 ${
-              activeTab === 'warnings5d'
-                ? 'border-emerald-600 text-emerald-800 bg-emerald-50/50'
-                : 'border-transparent text-slate-500 hover:text-slate-800'
-            }`}
-          >
-            <ShieldAlert className="w-4 h-4" />
-            <span>5-Day District Warnings</span>
-            <span className="px-1.5 py-0.5 rounded-full bg-slate-100 text-[10px] font-bold text-slate-600">
-              {Array.isArray(districtWarnings) ? districtWarnings.length : 0}
-            </span>
-          </button>
-
-          <button
-            onClick={() => setActiveTab('nowcast')}
-            className={`py-3.5 px-3.5 font-black text-xs transition-all border-b-2 cursor-pointer flex items-center gap-1.5 shrink-0 ${
-              activeTab === 'nowcast'
-                ? 'border-emerald-600 text-emerald-800 bg-emerald-50/50'
-                : 'border-transparent text-slate-500 hover:text-slate-800'
-            }`}
-          >
-            <CloudLightning className="w-4 h-4" />
-            <span>3-Hour Radar Nowcasts</span>
-            <span className="px-1.5 py-0.5 rounded-full bg-slate-100 text-[10px] font-bold text-slate-600">
-              {Array.isArray(nowcasts) ? nowcasts.length : 0}
-            </span>
-          </button>
-
-          <button
-            onClick={() => setActiveTab('rainfallStats')}
-            className={`py-3.5 px-3.5 font-black text-xs transition-all border-b-2 cursor-pointer flex items-center gap-1.5 shrink-0 ${
-              activeTab === 'rainfallStats'
-                ? 'border-emerald-600 text-emerald-800 bg-emerald-50/50'
-                : 'border-transparent text-slate-500 hover:text-slate-800'
-            }`}
-          >
-            <Droplets className="w-4 h-4" />
-            <span>District Rainfall Analytics</span>
-            <span className="px-1.5 py-0.5 rounded-full bg-slate-100 text-[10px] font-bold text-slate-600">
-              {Array.isArray(districtRainfall) ? districtRainfall.length : 0}
-            </span>
-          </button>
-
-          <button
-            onClick={() => setActiveTab('stationNowcast')}
-            className={`py-3.5 px-3.5 font-black text-xs transition-all border-b-2 cursor-pointer flex items-center gap-1.5 shrink-0 ${
-              activeTab === 'stationNowcast'
-                ? 'border-emerald-600 text-emerald-800 bg-emerald-50/50'
-                : 'border-transparent text-slate-500 hover:text-slate-800'
-            }`}
-          >
-            <Radio className="w-4 h-4" />
-            <span>Station Observatories</span>
-            <span className="px-1.5 py-0.5 rounded-full bg-slate-100 text-[10px] font-bold text-slate-600">
-              {Array.isArray(stationNowcasts) ? stationNowcasts.length : 0}
-            </span>
-          </button>
-
-          <button
-            onClick={() => setActiveTab('forecast')}
-            className={`py-3.5 px-3.5 font-black text-xs transition-all border-b-2 cursor-pointer flex items-center gap-1.5 shrink-0 ${
-              activeTab === 'forecast'
-                ? 'border-emerald-600 text-emerald-800 bg-emerald-50/50'
-                : 'border-transparent text-slate-500 hover:text-slate-800'
-            }`}
-          >
-            <Calendar className="w-4 h-4" />
-            <span>7-Day Synoptic City Forecast</span>
-          </button>
-
-          <button
-            onClick={() => setActiveTab('rainfall')}
-            className={`py-3.5 px-3.5 font-black text-xs transition-all border-b-2 cursor-pointer flex items-center gap-1.5 shrink-0 ${
-              activeTab === 'rainfall'
-                ? 'border-emerald-600 text-emerald-800 bg-emerald-50/50'
-                : 'border-transparent text-slate-500 hover:text-slate-800'
-            }`}
-          >
-            <CloudRain className="w-4 h-4" />
-            <span>5-Day Rainfall Distribution</span>
-          </button>
+        {/* Tab Navigation - Clean Non-Overlapping Segmented Bar */}
+        <div className="px-6 border-b border-slate-200 bg-slate-50/50 flex items-center gap-2 overflow-x-auto shrink-0 py-2">
+          {[
+            { id: 'warnings5d', label: '5-Day Warnings', count: Array.isArray(districtWarnings) ? districtWarnings.length : 0 },
+            { id: 'nowcast', label: '3-Hour Radar Nowcasts', count: Array.isArray(nowcasts) ? nowcasts.length : 0 },
+            { id: 'rainfallStats', label: 'Rainfall Analytics', count: Array.isArray(districtRainfall) ? districtRainfall.length : 0 },
+            { id: 'stationNowcast', label: 'Observatory Stations', count: Array.isArray(stationNowcasts) ? stationNowcasts.length : 0 },
+            { id: 'forecast', label: '7-Day City Forecast' },
+            { id: 'rainfall', label: 'Monsoon Distribution' },
+          ].map((tab) => {
+            const isActive = activeTab === tab.id;
+            return (
+              <button
+                key={tab.id}
+                type="button"
+                onClick={() => setActiveTab(tab.id)}
+                className={`shrink-0 flex items-center gap-2 px-3 py-1.5 rounded-lg text-xs font-medium whitespace-nowrap transition-colors cursor-pointer border ${
+                  isActive
+                    ? 'bg-white text-slate-900 border-slate-300 shadow-xs font-semibold'
+                    : 'bg-transparent text-slate-600 border-transparent hover:text-slate-900 hover:bg-slate-100'
+                }`}
+              >
+                <span>{tab.label}</span>
+                {tab.count !== undefined && (
+                  <span
+                    className={`px-1.5 py-0.5 rounded text-[11px] font-medium leading-none shrink-0 ${
+                      isActive ? 'bg-slate-100 text-slate-800' : 'bg-slate-200/70 text-slate-600'
+                    }`}
+                  >
+                    {tab.count}
+                  </span>
+                )}
+              </button>
+            );
+          })}
         </div>
 
         {/* Modal Body */}
-        <div className="p-6 overflow-y-auto flex-1 space-y-5">
-          {/* Degraded mode banner if stale */}
+        <div className="p-6 overflow-y-auto flex-1 space-y-5 bg-white">
+          
+          {/* Degraded mode fallback notice */}
           {districtReport?.isStale && (
-            <div className="p-3 bg-amber-50 border border-amber-200 rounded-2xl flex items-center justify-between text-xs text-amber-900 font-semibold">
+            <div className="p-3 bg-amber-50 border border-amber-200 rounded-lg flex items-center justify-between text-xs text-amber-900 shrink-0">
               <div className="flex items-center gap-2">
-                <AlertTriangle className="w-4 h-4 text-amber-600 shrink-0" />
-                <span>{districtReport.notice || 'Serving cached IMD radar telemetry. Live feed reconciling.'}</span>
+                <AlertTriangle className="w-4 h-4 text-amber-700 shrink-0" />
+                <span>{districtReport.notice || 'Serving cached telemetry. Upstream feed reconciling.'}</span>
               </div>
-              <span className="text-[10px] uppercase font-bold text-amber-700 bg-amber-100 px-2 py-0.5 rounded-md">
-                Degraded Fallback
+              <span className="text-[11px] font-medium text-amber-800 bg-amber-100 px-2 py-0.5 rounded shrink-0">
+                Cached Mode
               </span>
             </div>
           )}
@@ -475,45 +445,59 @@ export const ImdWeatherIntelligenceModal = ({ isOpen, onClose, initialDistrict =
           {/* TAB 1: 5-Day District Warnings Matrix */}
           {activeTab === 'warnings5d' && (
             <div className="space-y-4">
+              {/* Search & Filter Bar */}
               <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
-                <div className="relative flex-1">
-                  <Search className="w-4 h-4 absolute left-3 top-3 text-slate-400" />
+                <div className="relative flex-1 min-w-[240px]">
+                  <Search className="w-4 h-4 absolute left-3 top-1/2 -translate-y-1/2 text-slate-400 pointer-events-none" />
                   <input
                     type="text"
                     value={searchTerm}
                     onChange={(e) => setSearchTerm(e.target.value)}
-                    placeholder="Search district, state or hazard (e.g. Morigaon, Very Heavy Rain, Squall)..."
-                    className="w-full pl-9 pr-3.5 py-2.5 rounded-xl border border-slate-200 text-xs font-semibold focus:outline-none focus:border-emerald-500 bg-white"
+                    placeholder="Search district, state, or hazard..."
+                    style={{ paddingLeft: '2.5rem', paddingRight: '2rem' }}
+                    className="w-full py-2 rounded-lg border border-slate-200 text-xs text-slate-800 placeholder:text-slate-400 focus:outline-none focus:border-slate-400 bg-white"
                   />
+                  {searchTerm && (
+                    <button
+                      type="button"
+                      onClick={() => setSearchTerm('')}
+                      className="absolute right-2.5 top-1/2 -translate-y-1/2 p-0.5 text-slate-400 hover:text-slate-600 cursor-pointer"
+                    >
+                      <X className="w-3.5 h-3.5" />
+                    </button>
+                  )}
                 </div>
 
-                <div className="flex items-center gap-1.5">
+                <div className="flex items-center gap-1.5 shrink-0">
                   <button
+                    type="button"
                     onClick={() => setSeverityFilter('all')}
-                    className={`px-3 py-1.5 rounded-xl text-xs font-bold transition-all cursor-pointer ${
+                    className={`px-3 py-2 rounded-lg text-xs font-medium border transition-colors cursor-pointer shrink-0 ${
                       severityFilter === 'all'
-                        ? 'bg-slate-900 text-white'
-                        : 'bg-slate-100 text-slate-600 hover:bg-slate-200'
+                        ? 'bg-slate-900 text-white border-slate-900'
+                        : 'bg-white text-slate-600 border-slate-200 hover:bg-slate-50'
                     }`}
                   >
                     All ({Array.isArray(districtWarnings) ? districtWarnings.length : 0})
                   </button>
                   <button
+                    type="button"
                     onClick={() => setSeverityFilter('warning')}
-                    className={`px-3 py-1.5 rounded-xl text-xs font-bold transition-all cursor-pointer ${
+                    className={`px-3 py-2 rounded-lg text-xs font-medium border transition-colors cursor-pointer shrink-0 ${
                       severityFilter === 'warning'
-                        ? 'bg-amber-600 text-white'
-                        : 'bg-amber-50 text-amber-800 hover:bg-amber-100'
+                        ? 'bg-amber-800 text-white border-amber-800'
+                        : 'bg-white text-slate-600 border-slate-200 hover:bg-slate-50'
                     }`}
                   >
                     Warnings Only
                   </button>
                   <button
+                    type="button"
                     onClick={() => setSeverityFilter('red')}
-                    className={`px-3 py-1.5 rounded-xl text-xs font-bold transition-all cursor-pointer ${
+                    className={`px-3 py-2 rounded-lg text-xs font-medium border transition-colors cursor-pointer shrink-0 ${
                       severityFilter === 'red'
-                        ? 'bg-rose-600 text-white'
-                        : 'bg-rose-50 text-rose-800 hover:bg-rose-100'
+                        ? 'bg-rose-800 text-white border-rose-800'
+                        : 'bg-white text-slate-600 border-slate-200 hover:bg-slate-50'
                     }`}
                   >
                     Red Alerts
@@ -524,74 +508,68 @@ export const ImdWeatherIntelligenceModal = ({ isOpen, onClose, initialDistrict =
               {loading ? (
                 <div className="space-y-3">
                   {[1, 2, 3].map((n) => (
-                    <div key={n} className="p-4 rounded-2xl bg-slate-100 animate-pulse h-24" />
+                    <div key={n} className="p-4 rounded-xl bg-slate-50 border border-slate-200 animate-pulse h-28" />
                   ))}
                 </div>
               ) : filteredWarnings.length === 0 ? (
-                <div className="p-8 text-center text-slate-500 bg-slate-50 rounded-2xl border border-slate-100">
-                  <CheckCircle2 className="w-8 h-8 mx-auto mb-2 text-emerald-500" />
-                  <p className="font-black text-slate-700 text-sm">No matching district warnings</p>
-                  <p className="text-xs text-slate-400 mt-1">All filtered districts operate under normal parameters.</p>
+                <div className="p-10 text-center text-slate-500 bg-slate-50 rounded-xl border border-slate-200">
+                  <CheckCircle2 className="w-7 h-7 mx-auto mb-2 text-emerald-600" />
+                  <p className="font-semibold text-slate-800 text-sm">No matching warnings found</p>
+                  <p className="text-xs text-slate-500 mt-1">All selected districts are operating under normal conditions.</p>
                 </div>
               ) : (
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-3.5">
                   {filteredWarnings.slice(0, 40).map((w, idx) => (
                     <div
                       key={`${w.district}-${idx}`}
-                      className="p-4 rounded-2xl border border-slate-200/80 bg-white hover:border-slate-300 shadow-xs space-y-3 transition-all"
+                      className="p-4 rounded-xl border border-slate-200 bg-white hover:border-slate-300 transition-colors space-y-3"
                     >
-                      <div className="flex items-start justify-between gap-2">
-                        <div>
-                          <div className="flex items-center gap-2">
-                            <span className="text-sm font-black text-slate-900">{w.district}</span>
-                            <span className="text-[10px] font-bold px-1.5 py-0.5 rounded bg-slate-100 text-slate-600 uppercase">
+                      <div className="flex items-start justify-between gap-3">
+                        <div className="min-w-0 flex-1">
+                          <div className="flex items-center gap-1.5 flex-wrap">
+                            <span className="text-sm font-semibold text-slate-900 truncate">{w.district}</span>
+                            <span className="text-[10px] font-medium px-1.5 py-0.5 rounded bg-slate-100 text-slate-600 border border-slate-200 uppercase shrink-0">
                               {w.state}
                             </span>
                           </div>
-                          <span className="text-[10px] font-bold text-slate-400">
+                          <span className="text-[11px] text-slate-400 mt-0.5 block">
                             Issued: {w.dateIssued || 'Today'}
                           </span>
                         </div>
-                        {renderWarningBadge(w.day1?.color, w.day1?.severityLabel)}
+                        <div className="shrink-0">
+                          {renderWarningBadge(w.day1?.color, w.day1?.severityLabel)}
+                        </div>
                       </div>
 
-                      {/* Day 1 - Day 5 Warning Matrix Pills */}
+                      {/* Day 1 - Day 5 Forecast Row */}
                       <div className="grid grid-cols-5 gap-1.5 pt-1">
                         {[w.day1, w.day2, w.day3, w.day4, w.day5].map((d, dIdx) => (
                           <div
                             key={dIdx}
-                            className="p-1.5 rounded-lg border text-center space-y-0.5"
-                            style={{
-                              backgroundColor: `${d?.hex}15`,
-                              borderColor: `${d?.hex}40`,
-                            }}
+                            className="p-2 rounded-lg bg-slate-50 border border-slate-200 text-center min-w-0"
                           >
-                            <span className="text-[9px] font-black text-slate-500 block uppercase">
+                            <span className="text-[10px] text-slate-500 font-medium block truncate">
                               {dIdx === 0 ? 'Today' : `D+${dIdx}`}
                             </span>
-                            <span
-                              className="w-2 h-2 rounded-full mx-auto block"
-                              style={{ backgroundColor: d?.hex || '#7CFC00' }}
-                            />
-                            <span
-                              className="text-[8px] font-black uppercase block truncate"
-                              style={{ color: d?.hex }}
-                            >
-                              {d?.color || 'GREEN'}
-                            </span>
+                            <div className="flex items-center justify-center gap-1 mt-1">
+                              <span className={`w-1.5 h-1.5 rounded-full shrink-0 ${getDayDotClass(d?.color)}`} />
+                              <span className={`text-[11px] font-medium truncate ${getDayTextClass(d?.color)}`}>
+                                {getDayLabel(d?.color)}
+                              </span>
+                            </div>
                           </div>
                         ))}
                       </div>
 
                       {/* Active Hazards */}
                       {w.day1?.hazards && w.day1.hazards.length > 0 && (
-                        <div className="flex items-center gap-1.5 flex-wrap pt-1">
+                        <div className="flex items-center gap-1.5 flex-wrap pt-0.5">
                           {w.day1.hazards.map((h, hIdx) => (
                             <span
                               key={hIdx}
-                              className="px-2 py-0.5 rounded-md bg-slate-100 text-slate-800 text-[10px] font-extrabold"
+                              className="px-2 py-0.5 rounded bg-slate-100 text-slate-700 text-[11px] font-medium border border-slate-200 max-w-full truncate"
                             >
-                              ⚠️ {h}
+                              {h}
                             </span>
                           ))}
                         </div>
@@ -607,44 +585,57 @@ export const ImdWeatherIntelligenceModal = ({ isOpen, onClose, initialDistrict =
           {activeTab === 'nowcast' && (
             <div className="space-y-4">
               <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
-                <div className="relative flex-1">
-                  <Search className="w-4 h-4 absolute left-3 top-3 text-slate-400" />
+                <div className="relative flex-1 min-w-[240px]">
+                  <Search className="w-4 h-4 absolute left-3 top-1/2 -translate-y-1/2 text-slate-400 pointer-events-none" />
                   <input
                     type="text"
                     value={searchTerm}
                     onChange={(e) => setSearchTerm(e.target.value)}
-                    placeholder="Search district or weather alert keywords (e.g. Guwahati, Thunderstorm, Hail)..."
-                    className="w-full pl-9 pr-3.5 py-2.5 rounded-xl border border-slate-200 text-xs font-semibold focus:outline-none focus:border-emerald-500 bg-white"
+                    placeholder="Search nowcast messages or districts..."
+                    style={{ paddingLeft: '2.5rem', paddingRight: '2rem' }}
+                    className="w-full py-2 rounded-lg border border-slate-200 text-xs text-slate-800 placeholder:text-slate-400 focus:outline-none focus:border-slate-400 bg-white"
                   />
+                  {searchTerm && (
+                    <button
+                      type="button"
+                      onClick={() => setSearchTerm('')}
+                      className="absolute right-2.5 top-1/2 -translate-y-1/2 p-0.5 text-slate-400 hover:text-slate-600 cursor-pointer"
+                    >
+                      <X className="w-3.5 h-3.5" />
+                    </button>
+                  )}
                 </div>
 
-                <div className="flex items-center gap-1.5">
+                <div className="flex items-center gap-1.5 shrink-0">
                   <button
+                    type="button"
                     onClick={() => setSeverityFilter('all')}
-                    className={`px-3 py-1.5 rounded-xl text-xs font-bold transition-all cursor-pointer ${
+                    className={`px-3 py-2 rounded-lg text-xs font-medium border transition-colors cursor-pointer shrink-0 ${
                       severityFilter === 'all'
-                        ? 'bg-slate-900 text-white'
-                        : 'bg-slate-100 text-slate-600 hover:bg-slate-200'
+                        ? 'bg-slate-900 text-white border-slate-900'
+                        : 'bg-white text-slate-600 border-slate-200 hover:bg-slate-50'
                     }`}
                   >
                     All ({Array.isArray(nowcasts) ? nowcasts.length : 0})
                   </button>
                   <button
+                    type="button"
                     onClick={() => setSeverityFilter('warning')}
-                    className={`px-3 py-1.5 rounded-xl text-xs font-bold transition-all cursor-pointer ${
+                    className={`px-3 py-2 rounded-lg text-xs font-medium border transition-colors cursor-pointer shrink-0 ${
                       severityFilter === 'warning'
-                        ? 'bg-amber-600 text-white'
-                        : 'bg-amber-50 text-amber-800 hover:bg-amber-100'
+                        ? 'bg-amber-800 text-white border-amber-800'
+                        : 'bg-white text-slate-600 border-slate-200 hover:bg-slate-50'
                     }`}
                   >
                     Warnings Only
                   </button>
                   <button
+                    type="button"
                     onClick={() => setSeverityFilter('red')}
-                    className={`px-3 py-1.5 rounded-xl text-xs font-bold transition-all cursor-pointer ${
+                    className={`px-3 py-2 rounded-lg text-xs font-medium border transition-colors cursor-pointer shrink-0 ${
                       severityFilter === 'red'
-                        ? 'bg-rose-600 text-white'
-                        : 'bg-rose-50 text-rose-800 hover:bg-rose-100'
+                        ? 'bg-rose-800 text-white border-rose-800'
+                        : 'bg-white text-slate-600 border-slate-200 hover:bg-slate-50'
                     }`}
                   >
                     Red Alerts
@@ -655,46 +646,46 @@ export const ImdWeatherIntelligenceModal = ({ isOpen, onClose, initialDistrict =
               {loading ? (
                 <div className="space-y-3">
                   {[1, 2, 3].map((n) => (
-                    <div key={n} className="p-4 rounded-2xl bg-slate-100 animate-pulse h-24" />
+                    <div key={n} className="p-4 rounded-xl bg-slate-50 border border-slate-200 animate-pulse h-28" />
                   ))}
                 </div>
               ) : filteredNowcasts.length === 0 ? (
-                <div className="p-8 text-center text-slate-500 bg-slate-50 rounded-2xl border border-slate-100">
-                  <CheckCircle2 className="w-8 h-8 mx-auto mb-2 text-emerald-500" />
-                  <p className="font-black text-slate-700 text-sm">No severe nowcasts in this view</p>
-                  <p className="text-xs text-slate-400 mt-1">
-                    All matching districts are currently operating under normal meteorological parameters.
-                  </p>
+                <div className="p-10 text-center text-slate-500 bg-slate-50 rounded-xl border border-slate-200">
+                  <CheckCircle2 className="w-7 h-7 mx-auto mb-2 text-emerald-600" />
+                  <p className="font-semibold text-slate-800 text-sm">No active nowcast bulletins</p>
+                  <p className="text-xs text-slate-500 mt-1">All monitoring zones report nominal radar conditions.</p>
                 </div>
               ) : (
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-3.5">
                   {filteredNowcasts.slice(0, 30).map((item, idx) => (
                     <div
                       key={`${item.district}-${idx}`}
-                      className="p-4 rounded-2xl border border-slate-200/80 bg-white hover:border-slate-300 shadow-xs space-y-2.5 transition-all"
+                      className="p-4 rounded-xl border border-slate-200 bg-white hover:border-slate-300 transition-colors space-y-2.5"
                     >
-                      <div className="flex items-start justify-between gap-2">
-                        <div>
-                          <span className="text-sm font-black text-slate-900 block">{item.district}</span>
-                          <span className="text-[10px] font-bold text-slate-400">
+                      <div className="flex items-start justify-between gap-3">
+                        <div className="min-w-0 flex-1">
+                          <span className="text-sm font-semibold text-slate-900 block truncate">{item.district}</span>
+                          <span className="text-[11px] text-slate-400 mt-0.5 block">
                             Issued: {item.issuedAt} · Valid until: {item.validUntil}
                           </span>
                         </div>
-                        {renderWarningBadge(item.alertColor)}
+                        <div className="shrink-0">
+                          {renderWarningBadge(item.alertColor)}
+                        </div>
                       </div>
 
-                      <p className="text-xs text-slate-600 leading-relaxed font-medium">
+                      <p className="text-xs text-slate-700 leading-relaxed font-normal bg-slate-50 p-2.5 rounded-lg border border-slate-100">
                         {item.message || 'Advisory in effect for this meteorological zone.'}
                       </p>
 
                       {item.hazards && item.hazards.length > 0 && (
-                        <div className="flex items-center gap-1.5 flex-wrap pt-1">
+                        <div className="flex items-center gap-1.5 flex-wrap pt-0.5">
                           {item.hazards.map((h, i) => (
                             <span
                               key={i}
-                              className="px-2 py-0.5 rounded-md bg-slate-100 text-slate-700 text-[10px] font-extrabold"
+                              className="px-2 py-0.5 rounded bg-slate-100 text-slate-700 text-[11px] font-medium border border-slate-200 max-w-full truncate"
                             >
-                              ⚡ {h}
+                              {h}
                             </span>
                           ))}
                         </div>
@@ -709,89 +700,92 @@ export const ImdWeatherIntelligenceModal = ({ isOpen, onClose, initialDistrict =
           {/* TAB 3: District Rainfall Analytics */}
           {activeTab === 'rainfallStats' && (
             <div className="space-y-4">
-              <div className="flex items-center justify-between gap-3">
-                <div className="relative flex-1">
-                  <Search className="w-4 h-4 absolute left-3 top-3 text-slate-400" />
-                  <input
-                    type="text"
-                    value={searchTerm}
-                    onChange={(e) => setSearchTerm(e.target.value)}
-                    placeholder="Search district, state or category (e.g. Kokrajhar, Assam, LE)..."
-                    className="w-full pl-9 pr-3.5 py-2.5 rounded-xl border border-slate-200 text-xs font-semibold focus:outline-none focus:border-emerald-500 bg-white"
-                  />
-                </div>
+              <div className="relative">
+                <Search className="w-4 h-4 absolute left-3 top-1/2 -translate-y-1/2 text-slate-400 pointer-events-none" />
+                <input
+                  type="text"
+                  value={searchTerm}
+                  onChange={(e) => setSearchTerm(e.target.value)}
+                  placeholder="Search district, state or category..."
+                  style={{ paddingLeft: '2.5rem', paddingRight: '2rem' }}
+                  className="w-full py-2 rounded-lg border border-slate-200 text-xs text-slate-800 placeholder:text-slate-400 focus:outline-none focus:border-slate-400 bg-white"
+                />
+                {searchTerm && (
+                  <button
+                    type="button"
+                    onClick={() => setSearchTerm('')}
+                    className="absolute right-2.5 top-1/2 -translate-y-1/2 p-0.5 text-slate-400 hover:text-slate-600 cursor-pointer"
+                  >
+                    <X className="w-3.5 h-3.5" />
+                  </button>
+                )}
               </div>
 
               {loading ? (
                 <div className="space-y-3">
                   {[1, 2, 3].map((n) => (
-                    <div key={n} className="p-4 rounded-2xl bg-slate-100 animate-pulse h-24" />
+                    <div key={n} className="p-4 rounded-xl bg-slate-50 border border-slate-200 animate-pulse h-28" />
                   ))}
                 </div>
               ) : filteredRainfall.length === 0 ? (
-                <div className="p-8 text-center text-slate-500 bg-slate-50 rounded-2xl border border-slate-100">
-                  <p className="font-black text-slate-700 text-sm">No rainfall records found</p>
+                <div className="p-10 text-center text-slate-500 bg-slate-50 rounded-xl border border-slate-200">
+                  <p className="font-semibold text-slate-800 text-sm">No rainfall records found</p>
                 </div>
               ) : (
                 <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3">
                   {filteredRainfall.slice(0, 36).map((rf, idx) => {
                     const cat = rf.daily?.category || 'ND';
                     const isExcess = cat === 'LE' || cat === 'E';
+
                     return (
                       <div
                         key={`${rf.district}-${idx}`}
-                        className={`p-3.5 rounded-2xl border transition-all ${
-                          isExcess
-                            ? 'bg-blue-50/70 border-blue-200/90 shadow-2xs'
-                            : 'bg-white border-slate-200/80'
+                        className={`p-3.5 rounded-xl border transition-colors ${
+                          isExcess ? 'bg-sky-50/50 border-sky-200' : 'bg-white border-slate-200'
                         }`}
                       >
                         <div className="flex items-start justify-between gap-2">
-                          <div>
-                            <span className="text-xs font-black text-slate-900 block">{rf.district}</span>
-                            <span className="text-[10px] font-bold text-slate-400 uppercase">{rf.state}</span>
+                          <div className="min-w-0 flex-1">
+                            <span className="text-xs font-semibold text-slate-900 block truncate">{rf.district}</span>
+                            <span className="text-[10px] text-slate-500 uppercase">{rf.state}</span>
                           </div>
                           <span
-                            className={`px-2 py-0.5 rounded-md text-[10px] font-black uppercase ${
+                            className={`px-2 py-0.5 rounded text-[10px] font-semibold uppercase shrink-0 ${
                               cat === 'LE'
-                                ? 'bg-blue-600 text-white'
+                                ? 'bg-sky-600 text-white'
                                 : cat === 'E'
-                                ? 'bg-blue-100 text-blue-800'
+                                ? 'bg-sky-100 text-sky-800 border border-sky-200'
                                 : cat === 'N'
-                                ? 'bg-emerald-100 text-emerald-800'
-                                : 'bg-slate-100 text-slate-600'
+                                ? 'bg-emerald-100 text-emerald-800 border border-emerald-200'
+                                : 'bg-slate-100 text-slate-600 border border-slate-200'
                             }`}
                           >
                             {cat}
                           </span>
                         </div>
 
-                        <div className="grid grid-cols-3 gap-2 pt-2 mt-2 border-t border-slate-100 text-center">
+                        <div className="grid grid-cols-3 gap-2 pt-2 mt-2 border-t border-slate-100 text-center text-xs">
                           <div>
-                            <span className="text-[9px] font-bold text-slate-400 block uppercase">Actual</span>
-                            <span className="text-xs font-black text-slate-900 block">
-                              {rf.daily?.actualMm != null ? `${rf.daily.actualMm} mm` : '0'}
+                            <span className="text-[10px] text-slate-400 block uppercase font-medium">Actual</span>
+                            <span className="font-semibold text-slate-900 mt-0.5 block">
+                              {rf.daily?.actualMm != null ? `${rf.daily.actualMm} mm` : '0 mm'}
                             </span>
                           </div>
                           <div>
-                            <span className="text-[9px] font-bold text-slate-400 block uppercase">Normal</span>
-                            <span className="text-xs font-black text-slate-600 block">
-                              {rf.daily?.normalMm != null ? `${rf.daily.normalMm} mm` : '0'}
+                            <span className="text-[10px] text-slate-400 block uppercase font-medium">Normal</span>
+                            <span className="font-medium text-slate-600 mt-0.5 block">
+                              {rf.daily?.normalMm != null ? `${rf.daily.normalMm} mm` : '0 mm'}
                             </span>
                           </div>
                           <div>
-                            <span className="text-[9px] font-bold text-slate-400 block uppercase">Departure</span>
-                            <span
-                              className={`text-xs font-black block ${
-                                isExcess ? 'text-blue-600' : 'text-slate-700'
-                              }`}
-                            >
+                            <span className="text-[10px] text-slate-400 block uppercase font-medium">Departure</span>
+                            <span className={`font-semibold mt-0.5 block ${isExcess ? 'text-sky-700' : 'text-slate-700'}`}>
                               {rf.daily?.departurePer || '0%'}
                             </span>
                           </div>
                         </div>
 
-                        <span className="text-[10px] text-slate-500 font-medium block pt-1.5 truncate">
+                        <span className="text-[11px] text-slate-500 block pt-2 truncate">
                           {rf.daily?.categoryDescription}
                         </span>
                       </div>
@@ -806,55 +800,67 @@ export const ImdWeatherIntelligenceModal = ({ isOpen, onClose, initialDistrict =
           {activeTab === 'stationNowcast' && (
             <div className="space-y-4">
               <div className="relative">
-                <Search className="w-4 h-4 absolute left-3 top-3 text-slate-400" />
+                <Search className="w-4 h-4 absolute left-3 top-1/2 -translate-y-1/2 text-slate-400 pointer-events-none" />
                 <input
                   type="text"
                   value={searchTerm}
                   onChange={(e) => setSearchTerm(e.target.value)}
-                  placeholder="Search ground observatory station (e.g. Guwahati, Shillong, Tezpur)..."
-                  className="w-full pl-9 pr-3.5 py-2.5 rounded-xl border border-slate-200 text-xs font-semibold focus:outline-none focus:border-emerald-500 bg-white"
+                  placeholder="Search ground observatory station..."
+                  style={{ paddingLeft: '2.5rem', paddingRight: '2rem' }}
+                  className="w-full py-2 rounded-lg border border-slate-200 text-xs text-slate-800 placeholder:text-slate-400 focus:outline-none focus:border-slate-400 bg-white"
                 />
+                {searchTerm && (
+                  <button
+                    type="button"
+                    onClick={() => setSearchTerm('')}
+                    className="absolute right-2.5 top-1/2 -translate-y-1/2 p-0.5 text-slate-400 hover:text-slate-600 cursor-pointer"
+                  >
+                    <X className="w-3.5 h-3.5" />
+                  </button>
+                )}
               </div>
 
               {loading ? (
                 <div className="space-y-3">
                   {[1, 2, 3].map((n) => (
-                    <div key={n} className="p-4 rounded-2xl bg-slate-100 animate-pulse h-24" />
+                    <div key={n} className="p-4 rounded-xl bg-slate-50 border border-slate-200 animate-pulse h-28" />
                   ))}
                 </div>
               ) : filteredStations.length === 0 ? (
-                <div className="p-8 text-center text-slate-500 bg-slate-50 rounded-2xl border border-slate-100">
-                  <p className="font-black text-slate-700 text-sm">No matching observatory stations</p>
+                <div className="p-10 text-center text-slate-500 bg-slate-50 rounded-xl border border-slate-200">
+                  <p className="font-semibold text-slate-800 text-sm">No matching observatory stations</p>
                 </div>
               ) : (
-                <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-3.5">
                   {filteredStations.slice(0, 30).map((st, idx) => (
                     <div
                       key={`${st.station}-${idx}`}
-                      className="p-3.5 rounded-2xl border border-slate-200/80 bg-white shadow-xs space-y-2"
+                      className="p-4 rounded-xl border border-slate-200 bg-white hover:border-slate-300 transition-colors space-y-2"
                     >
-                      <div className="flex items-start justify-between gap-2">
-                        <div>
-                          <span className="text-xs font-black text-slate-900 block">{st.station}</span>
-                          <span className="text-[10px] font-bold text-slate-400">
+                      <div className="flex items-start justify-between gap-3">
+                        <div className="min-w-0 flex-1">
+                          <span className="text-sm font-semibold text-slate-900 block truncate">{st.station}</span>
+                          <span className="text-[11px] text-slate-400 mt-0.5 block">
                             Issued: {st.issuedAt} · Valid: {st.validUntil}
                           </span>
                         </div>
-                        {renderWarningBadge(st.alertColor)}
+                        <div className="shrink-0">
+                          {renderWarningBadge(st.alertColor)}
+                        </div>
                       </div>
 
-                      <p className="text-xs text-slate-600 font-medium leading-relaxed">
+                      <p className="text-xs text-slate-700 leading-relaxed bg-slate-50 p-2.5 rounded-lg border border-slate-100">
                         {st.message}
                       </p>
 
                       {st.hazards && st.hazards.length > 0 && (
-                        <div className="flex items-center gap-1.5 flex-wrap pt-1">
+                        <div className="flex items-center gap-1.5 flex-wrap pt-0.5">
                           {st.hazards.map((h, i) => (
                             <span
                               key={i}
-                              className="px-2 py-0.5 rounded-md bg-slate-100 text-slate-700 text-[10px] font-extrabold"
+                              className="px-2 py-0.5 rounded bg-slate-100 text-slate-700 text-[11px] font-medium border border-slate-200 max-w-full truncate"
                             >
-                              📡 {h}
+                              {h}
                             </span>
                           ))}
                         </div>
@@ -866,12 +872,12 @@ export const ImdWeatherIntelligenceModal = ({ isOpen, onClose, initialDistrict =
             </div>
           )}
 
-          {/* TAB 5: 7-Day Synoptic City Forecast & Warnings */}
+          {/* TAB 5: 7-Day Synoptic City Forecast */}
           {activeTab === 'forecast' && (
-            <div className="space-y-5">
-              {/* District Switcher */}
+            <div className="space-y-4">
+              {/* Hub Switcher */}
               <div className="flex items-center gap-2 flex-wrap">
-                <span className="text-xs font-black text-slate-700 uppercase tracking-wider">Select Hub:</span>
+                <span className="text-xs font-semibold text-slate-600 shrink-0">Select City:</span>
                 {[
                   { id: 'kamrup', name: 'Guwahati' },
                   { id: 'sonitpur', name: 'Tezpur' },
@@ -887,11 +893,12 @@ export const ImdWeatherIntelligenceModal = ({ isOpen, onClose, initialDistrict =
                 ].map((d) => (
                   <button
                     key={d.id}
+                    type="button"
                     onClick={() => setSelectedDistrict(d.id)}
-                    className={`px-3 py-1.5 rounded-xl text-xs font-bold transition-all cursor-pointer ${
+                    className={`px-3 py-1 rounded-lg text-xs font-medium border transition-colors cursor-pointer shrink-0 ${
                       selectedDistrict === d.id
-                        ? 'bg-emerald-700 text-white shadow-xs'
-                        : 'bg-slate-100 text-slate-600 hover:bg-slate-200'
+                        ? 'bg-slate-900 text-white border-slate-900'
+                        : 'bg-white text-slate-600 border-slate-200 hover:bg-slate-50'
                     }`}
                   >
                     {d.name}
@@ -899,95 +906,94 @@ export const ImdWeatherIntelligenceModal = ({ isOpen, onClose, initialDistrict =
                 ))}
               </div>
 
-              {/* Active District Weather Card */}
+              {/* District Report */}
               {reportLoading ? (
-                <div className="p-8 rounded-3xl bg-slate-100 animate-pulse h-48" />
+                <div className="p-8 rounded-xl bg-slate-50 border border-slate-200 animate-pulse h-40" />
               ) : districtReport ? (
-                <div className="space-y-5">
-                  {/* Current Station Observation Hero */}
-                  <div className="p-5 rounded-3xl bg-gradient-to-r from-slate-900 to-slate-800 text-white shadow-xl space-y-4">
+                <div className="space-y-4">
+                  {/* Observation Card */}
+                  <div className="p-4 rounded-xl border border-slate-200 bg-slate-50 space-y-3">
                     <div className="flex items-start justify-between gap-3">
                       <div>
-                        <div className="flex items-center gap-2">
-                          <span className="text-lg font-black">{districtReport.city} Observatory</span>
-                          <span className="text-[10px] font-bold px-2 py-0.5 rounded bg-white/20 uppercase tracking-wider">
+                        <div className="flex items-center gap-2 flex-wrap">
+                          <span className="text-base font-semibold text-slate-900">{districtReport.city} Observatory</span>
+                          <span className="text-[10px] font-medium px-2 py-0.5 rounded bg-slate-200 text-slate-700 uppercase">
                             {districtReport.source}
                           </span>
                         </div>
-                        <p className="text-xs text-slate-300 mt-0.5">
+                        <p className="text-xs text-slate-500 mt-0.5">
                           {districtReport.condition} · As of {districtReport.asOf}
                         </p>
                       </div>
-
-                      {renderWarningBadge(districtReport.nowcastRadar?.alertColor)}
+                      <div className="shrink-0">
+                        {renderWarningBadge(districtReport.nowcastRadar?.alertColor)}
+                      </div>
                     </div>
 
-                    <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 pt-2 border-t border-white/10">
-                      <div className="p-3 rounded-2xl bg-white/10 backdrop-blur-xs">
-                        <span className="text-[10px] font-bold text-slate-400 block uppercase">Temperature</span>
-                        <span className="text-xl font-black text-white mt-0.5 block">
+                    <div className="grid grid-cols-2 sm:grid-cols-4 gap-2.5 pt-2 border-t border-slate-200">
+                      <div className="p-2.5 rounded-lg bg-white border border-slate-200">
+                        <span className="text-[10px] font-medium text-slate-400 block uppercase">Temperature</span>
+                        <span className="text-lg font-semibold text-slate-900 mt-0.5 block">
                           {districtReport.temp_celsius != null ? `${districtReport.temp_celsius}°C` : '—'}
                         </span>
                       </div>
-                      <div className="p-3 rounded-2xl bg-white/10 backdrop-blur-xs">
-                        <span className="text-[10px] font-bold text-slate-400 block uppercase">24h Rainfall</span>
-                        <span className="text-xl font-black text-blue-300 mt-0.5 block">
+                      <div className="p-2.5 rounded-lg bg-white border border-slate-200">
+                        <span className="text-[10px] font-medium text-slate-400 block uppercase">24h Rainfall</span>
+                        <span className="text-lg font-semibold text-slate-900 mt-0.5 block">
                           {districtReport.rainfall_24h_mm != null ? `${districtReport.rainfall_24h_mm} mm` : '0 mm'}
                         </span>
                       </div>
-                      <div className="p-3 rounded-2xl bg-white/10 backdrop-blur-xs">
-                        <span className="text-[10px] font-bold text-slate-400 block uppercase">Humidity</span>
-                        <span className="text-xl font-black text-white mt-0.5 block">
+                      <div className="p-2.5 rounded-lg bg-white border border-slate-200">
+                        <span className="text-[10px] font-medium text-slate-400 block uppercase">Humidity</span>
+                        <span className="text-lg font-semibold text-slate-900 mt-0.5 block">
                           {districtReport.humidity_percent != null ? `${districtReport.humidity_percent}%` : '—'}
                         </span>
                       </div>
-                      <div className="p-3 rounded-2xl bg-white/10 backdrop-blur-xs">
-                        <span className="text-[10px] font-bold text-slate-400 block uppercase">Daylight</span>
-                        <span className="text-xs font-bold text-white mt-1 block">
-                          ☀️ {districtReport.sunrise} / 🌙 {districtReport.sunset}
+                      <div className="p-2.5 rounded-lg bg-white border border-slate-200">
+                        <span className="text-[10px] font-medium text-slate-400 block uppercase">Daylight</span>
+                        <span className="text-xs font-semibold text-slate-800 mt-1 block">
+                          {districtReport.sunrise} / {districtReport.sunset}
                         </span>
                       </div>
                     </div>
 
-                    {/* Coverage disclaimer if proxied */}
                     {districtReport.resolutionMeta?.proxyDisclaimer && (
-                      <div className="p-2.5 rounded-xl bg-amber-500/20 border border-amber-400/30 text-amber-200 text-xs font-medium flex items-center gap-2">
-                        <Info className="w-4 h-4 text-amber-300 shrink-0" />
-                        <span>{districtReport.resolutionMeta.proxyDisclaimer}</span>
-                      </div>
+                      <p className="text-xs text-slate-500 bg-white p-2 rounded border border-slate-200">
+                        {districtReport.resolutionMeta.proxyDisclaimer}
+                      </p>
                     )}
                   </div>
 
                   {/* 7-Day Forecast Grid */}
                   <div>
-                    <h4 className="text-xs font-black text-slate-900 uppercase tracking-wider mb-3 flex items-center gap-1.5">
-                      <Calendar className="w-3.5 h-3.5 text-emerald-600" />
-                      7-Day Synoptic Weather Trend & Severe Bulletins
+                    <h4 className="text-xs font-semibold text-slate-700 uppercase tracking-wider mb-2">
+                      7-Day Synoptic Weather Forecast
                     </h4>
-
-                    <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-4 gap-3">
+                    <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-4 gap-2.5">
                       {(districtReport.forecast7Day || []).map((day) => (
                         <div
                           key={day.day}
-                          className="p-3.5 rounded-2xl border border-slate-200/80 bg-slate-50 space-y-2 hover:bg-white transition-all shadow-2xs"
+                          className="p-3 rounded-xl border border-slate-200 bg-white space-y-2 hover:border-slate-300 transition-colors"
                         >
-                          <div className="flex items-center justify-between">
-                            <span className="text-xs font-black text-slate-900">
+                          <div className="flex items-center justify-between text-xs">
+                            <span className="font-semibold text-slate-800">
                               {day.day === 1 ? 'Today' : `Day ${day.day}`}
                             </span>
-                            <span className="text-[10px] font-semibold text-slate-400">{day.date}</span>
+                            <span className="text-slate-400 text-[11px]">{day.date}</span>
                           </div>
 
-                          <div className="flex items-baseline gap-2">
-                            <span className="text-lg font-black text-slate-900">{day.maxTemp}°</span>
-                            <span className="text-xs font-bold text-slate-400">/ {day.minTemp}°C</span>
+                          <div className="flex items-baseline gap-1.5">
+                            <span className="text-base font-semibold text-slate-900">{day.maxTemp}°</span>
+                            <span className="text-xs text-slate-400">/ {day.minTemp}°C</span>
                           </div>
 
-                          <p className="text-[11px] text-slate-600 font-medium line-clamp-2 leading-snug">
+                          <p className="text-[11px] text-slate-600 leading-relaxed line-clamp-2">
                             {day.forecast}
                           </p>
 
-                          <div className="pt-1">{renderWarningBadge(day.warningColor, day.warningText)}</div>
+                          <div className="pt-1">
+                            {renderWarningBadge(day.warningColor, day.warningText)}
+                          </div>
                         </div>
                       ))}
                     </div>
@@ -1000,34 +1006,33 @@ export const ImdWeatherIntelligenceModal = ({ isOpen, onClose, initialDistrict =
           {/* TAB 6: 5-Day Rainfall Distribution */}
           {activeTab === 'rainfall' && (
             <div className="space-y-4">
-              <div className="p-4 bg-blue-50 border border-blue-200 rounded-2xl text-xs text-blue-900 font-medium space-y-1">
-                <span className="font-bold block text-sm">Monsoon Spatial Precipitation Index</span>
+              <div className="p-3.5 bg-slate-50 border border-slate-200 rounded-xl text-xs text-slate-700 space-y-1">
+                <span className="font-semibold text-slate-900 block text-sm">Spatial Precipitation Distribution</span>
                 <p>
-                  IMD forecasts spatial coverage distribution percentage across monitoring stations to forecast regional
-                  waterlogging, mountain slope saturation, and river basin cresting.
+                  IMD spatial coverage percentages across monitoring stations to forecast regional waterlogging and river basin trends.
                 </p>
               </div>
 
               {districtReport?.rainfallDistribution && (
-                <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
-                  <div className="p-4 bg-white rounded-2xl border border-slate-200 shadow-xs space-y-1">
-                    <span className="text-[10px] font-bold text-slate-400 uppercase">Day 1 Distribution</span>
-                    <span className="text-base font-black text-slate-900 block">
+                <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+                  <div className="p-4 bg-white rounded-xl border border-slate-200 space-y-1">
+                    <span className="text-[10px] font-medium text-slate-400 uppercase">Day 1 Coverage</span>
+                    <span className="text-sm font-semibold text-slate-900 block">
                       {districtReport.rainfallDistribution.day1Distribution || 'Fairly Widespread'}
                     </span>
-                    <span className="text-xs font-semibold text-blue-600 block">
+                    <span className="text-xs text-slate-500 block">
                       {districtReport.rainfallDistribution.day1Percentage || 'Stations [51-75]%'}
                     </span>
                   </div>
-                  <div className="p-4 bg-white rounded-2xl border border-slate-200 shadow-xs space-y-1">
-                    <span className="text-[10px] font-bold text-slate-400 uppercase">Flood Hydrology Risk</span>
-                    <span className="text-base font-black text-emerald-600 block">Normal Basin Runoff</span>
-                    <span className="text-xs font-medium text-slate-500 block">Within reservoir buffer limits</span>
+                  <div className="p-4 bg-white rounded-xl border border-slate-200 space-y-1">
+                    <span className="text-[10px] font-medium text-slate-400 uppercase">Hydrology Status</span>
+                    <span className="text-sm font-semibold text-slate-900 block">Normal Runoff</span>
+                    <span className="text-xs text-slate-500 block">Within nominal buffer thresholds</span>
                   </div>
-                  <div className="p-4 bg-white rounded-2xl border border-slate-200 shadow-xs space-y-1">
-                    <span className="text-[10px] font-bold text-slate-400 uppercase">Freight Impact</span>
-                    <span className="text-base font-black text-slate-800 block">Standard Clearance</span>
-                    <span className="text-xs font-medium text-slate-500 block">All-weather bypass on standby</span>
+                  <div className="p-4 bg-white rounded-xl border border-slate-200 space-y-1">
+                    <span className="text-[10px] font-medium text-slate-400 uppercase">Transit Clearance</span>
+                    <span className="text-sm font-semibold text-slate-900 block">Standard Clearance</span>
+                    <span className="text-xs text-slate-500 block">No weather-induced route stoppages</span>
                   </div>
                 </div>
               )}
@@ -1035,20 +1040,22 @@ export const ImdWeatherIntelligenceModal = ({ isOpen, onClose, initialDistrict =
           )}
         </div>
 
-        {/* Modal Footer */}
-        <div className="p-4 bg-slate-50 border-t border-slate-200 flex items-center justify-between text-xs text-slate-500">
-          <div className="flex items-center gap-1.5 text-[11px]">
-            <Info className="w-3.5 h-3.5 text-slate-400" />
-            <span>Official Government Feed: India Meteorological Department, Ministry of Earth Sciences.</span>
+        {/* Footer */}
+        <div className="px-6 py-3 bg-slate-50 border-t border-slate-200 flex items-center justify-between text-xs text-slate-500 shrink-0">
+          <div className="flex items-center gap-1.5 text-slate-500">
+            <Info className="w-3.5 h-3.5 text-slate-400 shrink-0" />
+            <span>Official Feed: India Meteorological Department, Ministry of Earth Sciences.</span>
           </div>
 
           <button
+            type="button"
             onClick={onClose}
-            className="px-4 py-2 rounded-xl bg-slate-800 hover:bg-slate-700 text-white font-bold text-xs transition-colors cursor-pointer"
+            className="px-4 py-1.5 rounded-lg bg-slate-900 hover:bg-slate-800 text-white font-medium text-xs transition-colors cursor-pointer shrink-0"
           >
-            Done
+            Close
           </button>
         </div>
+
       </div>
     </div>
   );

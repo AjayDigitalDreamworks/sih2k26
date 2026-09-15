@@ -31,7 +31,7 @@ export default function AlertsListPanel({
 }) {
   const [isFilterOpen, setIsFilterOpen] = useState(false);
   const filterRef = useRef(null);
-  const pageSize = 5;
+  const pageSize = 10;
 
   // Click outside to close filter popover
   useEffect(() => {

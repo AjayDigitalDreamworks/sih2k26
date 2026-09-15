@@ -41,7 +41,7 @@ class WeatherService:
     """Enterprise-grade Weather Service integrating IMD with resilient failover."""
 
     _circuit_breaker = CircuitBreaker(failure_threshold=3, cooldown_seconds=60.0)
-    _ip_blocked: bool = True  # Upstream IMD IP authorization pending (HTTP 403)
+    _ip_blocked: bool = False
 
     # Tiered Cache Structures
     _cache_nowcast: Dict[str, Any] = {}          # 3 minutes TTL

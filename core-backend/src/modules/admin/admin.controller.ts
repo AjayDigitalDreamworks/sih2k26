@@ -104,7 +104,7 @@ export class AdminController {
       });
 
       try {
-        await redisClient.set(cacheKey, JSON.stringify(districts), 60);
+        await redisClient.set(cacheKey, JSON.stringify(districts), { ex: 60 });
       } catch {}
 
       return sendSuccess(res, districts, 'Districts retrieved');
@@ -157,7 +157,7 @@ export class AdminController {
       });
 
       try {
-        await redisClient.set(cacheKey, JSON.stringify(routes), 60);
+        await redisClient.set(cacheKey, JSON.stringify(routes), { ex: 60 });
       } catch {}
 
       return sendSuccess(res, routes, 'Routes retrieved');

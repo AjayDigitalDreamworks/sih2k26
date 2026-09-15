@@ -2,6 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { X, RefreshCw, AlertTriangle, ShieldCheck, Truck, Navigation, CheckCircle2, Route } from 'lucide-react';
 import ApiClient from '../../lib/api';
+import { getSocket } from '../../lib/socket';
 import { toast } from 'sonner';
 
 const PRESET_REASONS = [
@@ -65,8 +66,37 @@ export default function DynamicRerouteModal({
       });
 
       if (res?.success) {
+        // Dispatch alert to driver app and persist
+        try {
+          await ApiClient.createTransporterAlert({
+            title: `Dynamic Safe Detour: ${selectedVehicleId}`,
+            type: 'dynamic_reroute',
+            severity: 'High',
+            location: currentVehicle?.current_route || 'Assam Corridor',
+            message: `Reroute active for ${selectedVehicleId}: ${finalReason}. Dynamic safe bypass transmitted to in-cab GPS navigation.`,
+            vehicleId: selectedVehicleId,
+            driverId: currentVehicle?.driver?.id,
+            speedAdvisoryKmh: 35,
+          });
+
+          const socket = getSocket();
+          if (socket && socket.connected) {
+            socket.emit('driver:hazard_warning', {
+              alertId: `alt-${Date.now()}`,
+              vehicleId: selectedVehicleId,
+              driverId: currentVehicle?.driver?.id,
+              title: 'Dynamic Safe Detour Active',
+              message: `Bypassing hazard corridor: ${finalReason}`,
+              severity: 'High',
+              speedAdvisoryKmh: 35,
+              distanceToHazardKm: 1.0,
+              timestamp: new Date().toISOString(),
+            });
+          }
+        } catch (_) {}
+
         toast.success(
-          `Route recalculated for ${selectedVehicleId}! Safe detour broadcasted to driver and maps.`
+          `Route recalculated for ${selectedVehicleId}! Safe detour broadcasted to driver (${currentVehicle?.driver?.name || 'Assigned Driver'}) and live maps.`
         );
         if (onRerouted) onRerouted(res.data);
         onClose();

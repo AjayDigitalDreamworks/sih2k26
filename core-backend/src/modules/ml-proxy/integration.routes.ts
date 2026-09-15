@@ -6,6 +6,7 @@ import { Vehicle, Trip, Route, District, FieldReportPostgres } from '../../model
 import { Alert } from '../../models/mongo/Alert';
 import { TrackingService } from '../tracking/tracking.service';
 import { env } from '../../config/env';
+import { redisClient } from '../../config/redis';
 import { LocalDisasterDigitalTwin } from './simulation.engine';
 
 const ML_URL = env.mlServiceUrl;
@@ -120,7 +121,7 @@ router.get('/weather', async (_req: Request, res: Response) => {
     const data = await proxyToML('/realtime/weather/all', 'GET', undefined, 20000, 8000);
     if (data && typeof data === 'object') {
       try {
-        await redisClient.set(cacheKey, JSON.stringify(data), 120);
+        await redisClient.set(cacheKey, JSON.stringify(data), { ex: 120 });
       } catch {}
     }
     return sendSuccess(res, data, 'All district weather retrieved');
@@ -148,7 +149,7 @@ router.get('/imd/stations', async (req: Request, res: Response) => {
     const data = await proxyToML(`/realtime/imd/stations${qs}`, 'GET', undefined, 20000, 8000);
     if (data && typeof data === 'object') {
       try {
-        await redisClient.set(cacheKey, JSON.stringify(data), 180);
+        await redisClient.set(cacheKey, JSON.stringify(data), { ex: 180 });
       } catch {}
     }
     return sendSuccess(res, data, 'IMD radar stations retrieved');
@@ -172,7 +173,7 @@ router.get('/imd/nowcasts', async (req: Request, res: Response) => {
     const data = await proxyToML(`/realtime/imd/nowcasts${minSev}`, 'GET', undefined, 20000, 3000);
     if (data && typeof data === 'object') {
       try {
-        await redisClient.set(cacheKey, JSON.stringify(data), 120);
+        await redisClient.set(cacheKey, JSON.stringify(data), { ex: 120 });
       } catch {}
     }
     return sendSuccess(res, data, 'IMD active radar nowcasts retrieved');
@@ -305,7 +306,7 @@ router.get('/traffic/route', async (req: Request, res: Response) => {
     const data = await proxyToML(`/realtime/traffic/route?${params}`, 'GET', undefined, 15000, 3000);
     if (data && typeof data === 'object') {
       try {
-        await redisClient.set(cacheKey, JSON.stringify(data), 180);
+        await redisClient.set(cacheKey, JSON.stringify(data), { ex: 180 });
       } catch {}
     }
     return sendSuccess(res, data, 'Traffic data retrieved');
@@ -461,7 +462,7 @@ router.get('/pipeline/risk-scores', async (_req: Request, res: Response) => {
     const data = await proxyToML('/pipeline/risk-scores', 'GET', undefined, 60000, 3500);
     if (data && typeof data === 'object') {
       try {
-        await redisClient.set(cacheKey, JSON.stringify(data), 60);
+        await redisClient.set(cacheKey, JSON.stringify(data), { ex: 60 });
       } catch {}
     }
     return sendSuccess(res, data, 'Pipeline risk scores retrieved');
@@ -484,7 +485,7 @@ router.get('/pipeline/disruptions', async (_req: Request, res: Response) => {
     const data = await proxyToML('/pipeline/disruptions', 'GET', undefined, 60000, 3500);
     if (data && typeof data === 'object') {
       try {
-        await redisClient.set(cacheKey, JSON.stringify(data), 60);
+        await redisClient.set(cacheKey, JSON.stringify(data), { ex: 60 });
       } catch {}
     }
     return sendSuccess(res, data, 'Pipeline disruptions retrieved');

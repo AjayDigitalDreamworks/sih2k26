@@ -246,7 +246,58 @@ function MapControlsTicks({ zoomInTick, zoomOutTick, centerTick, centerPos }) {
   return null;
 }
 
-export default function LiveTrackingMap({ embedded = false, selectedId, onSelect }) {
+// Smoothly frames matching vehicles when the operator toggles filter tabs
+function FitBoundsOnFilterChange({ activeFilterTab, markers, highlightedIds }) {
+  const map = useMap();
+  const prevTabRef = useRef(activeFilterTab);
+
+  useEffect(() => {
+    if (prevTabRef.current === activeFilterTab) return;
+    prevTabRef.current = activeFilterTab;
+
+    if (!markers || markers.length === 0) return;
+
+    if (activeFilterTab === 'all') {
+      try {
+        const bounds = L.latLngBounds(markers.map((m) => [m.lat, m.lng]));
+        map.fitBounds(bounds, { padding: [50, 50], maxZoom: 13, animate: true, duration: 0.8 });
+      } catch {}
+      return;
+    }
+
+    const matching = markers.filter((m) => {
+      if (Array.isArray(highlightedIds) && highlightedIds.length > 0) {
+        return highlightedIds.includes(m.id);
+      }
+      if (activeFilterTab === 'risk') return Boolean(m.isRisk);
+      if (activeFilterTab === 'delayed') return Boolean(m.isDelayed);
+      if (activeFilterTab === 'moving') return m.status === 'moving' || m.status === 'in_transit';
+      if (activeFilterTab === 'idle') return !m.status || m.status === 'idle' || m.status === 'stopped';
+      return false;
+    });
+
+    if (matching.length === 1) {
+      try {
+        map.flyTo([matching[0].lat, matching[0].lng], Math.max(map.getZoom(), 13), { duration: 0.8 });
+      } catch {}
+    } else if (matching.length > 1) {
+      try {
+        const bounds = L.latLngBounds(matching.map((m) => [m.lat, m.lng]));
+        map.fitBounds(bounds, { padding: [60, 60], maxZoom: 14, animate: true, duration: 0.8 });
+      } catch {}
+    }
+  }, [activeFilterTab, markers, highlightedIds, map]);
+
+  return null;
+}
+
+export default function LiveTrackingMap({
+  embedded = false,
+  selectedId,
+  onSelect,
+  activeFilterTab = 'all',
+  highlightedIds = [],
+}) {
   const mapRef = useRef(null);
   const isControlled = selectedId !== undefined;
   const [localSel, setLocalSel] = useState(null);
@@ -625,6 +676,13 @@ export default function LiveTrackingMap({ embedded = false, selectedId, onSelect
         const lng = lp?.lng ?? v.current_lng ?? null;
         if (lat == null || lng == null) return null;
         const liveStatus = lp?.liveStatus || v.live_status || ageStatus(v.last_gps_at) || 'OFFLINE';
+        const hazard = checkVehicleCorridorHazard(v) || v.hazard || null;
+        const hasHazard = Boolean(hazard);
+        const isDelayed = v.status === 'delayed' || hasHazard || Boolean(v.is_delayed) || Boolean(v.traffic_delay_minutes && v.traffic_delay_minutes > 0);
+        const delayMinutes = v.delay_minutes || (hasHazard ? 45 : isDelayed ? 35 : 0);
+        const delayCategory = v.delay_category || (hazard?.type ? String(hazard.type).replace(/_/g, ' ') : isDelayed ? 'Corridor Delay' : null);
+        const delayReason = v.delay_reason || (hazard ? `${hazard.title} at ${hazard.location || 'corridor'} — Traffic queue & single-lane hold` : isDelayed ? 'Heavy mountain corridor freight traffic bottleneck' : null);
+
         return {
           id: v.id,
           lat, lng,
@@ -635,13 +693,23 @@ export default function LiveTrackingMap({ embedded = false, selectedId, onSelect
           lastGpsAt: lp?.timestamp || v.last_gps_at || null,
           gpsSource: v.gps_source || (lp ? 'WEB_GPS' : null),
           model: v.model || '',
-          driver: v.driver?.name || 'Unassigned',
+          driver: v.driver?.name || (typeof v.driver === 'string' ? v.driver : 'Unassigned'),
           route: v.current_route || '',
           trackingActive: !!(v.tracking_active || lp),
+          status: v.status || 'idle',
+          isRisk: hasHazard,
+          isDelayed: isDelayed,
+          delay_minutes: delayMinutes,
+          delay_category: delayCategory,
+          delay_reason: delayReason,
+          traffic_delay_minutes: v.traffic_delay_minutes,
+          plate_number: v.plate_number,
+          hazard: hazard,
+          rawVehicle: v,
         };
       })
       .filter(Boolean);
-  }, [vehicles, live]);
+  }, [vehicles, live, checkVehicleCorridorHazard]);
 
   const selMarker = markers.find((m) => m.id === selId) || null;
   const handleSelect = (id) => {
@@ -671,13 +739,23 @@ export default function LiveTrackingMap({ embedded = false, selectedId, onSelect
   );
 
   return (
-    <div className={embedded ? '' : 'bg-white rounded-2xl border border-slate-200/80 shadow-2xs p-4 sm:p-5 flex flex-col justify-between h-full'}>
+    <div className={embedded ? '' : 'bg-white rounded-2xl border border-slate-200/90 shadow-2xs p-4 sm:p-5 flex flex-col justify-between h-full'}>
       {!embedded && (
-        <div className="flex items-center justify-between gap-2 mb-3">
-          <h3 className="text-sm sm:text-base font-extrabold text-[#0B1E36] tracking-tight">Live Tracking & GPS</h3>
-          <span className="px-3 py-1 rounded-xl bg-white border border-slate-200 text-slate-700 text-xs font-bold shadow-2xs">
-            {markers.length} on map · {vehicles.length} in fleet
-          </span>
+        <div className="flex items-center justify-between gap-2 mb-3.5 pb-2.5 border-b border-slate-100">
+          <div className="flex items-center gap-2.5">
+            <div className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse" />
+            <h3 className="text-sm sm:text-base font-bold text-slate-900 tracking-tight">
+              Live Fleet Telemetry & GPS
+            </h3>
+            <span className="hidden sm:inline-flex items-center px-2 py-0.5 rounded-md text-[10px] font-semibold bg-emerald-50 text-emerald-700 border border-emerald-200/70">
+              Active Sync
+            </span>
+          </div>
+          <div className="flex items-center gap-1.5 px-2.5 py-1 rounded-lg bg-slate-50 border border-slate-200/80 text-xs font-medium text-slate-600">
+            <span className="font-bold text-slate-900">{markers.length}</span> on map
+            <span className="text-slate-300">·</span>
+            <span className="font-bold text-slate-900">{vehicles.length}</span> in fleet
+          </div>
         </div>
       )}
 
@@ -918,16 +996,52 @@ export default function LiveTrackingMap({ embedded = false, selectedId, onSelect
             );
           })}
 
-          {/* Real fleet vehicles (heading arrows, honest LIVE/STALE/OFFLINE) */}
-          {markers.map((m) => (
-            <VehicleMarker
-              key={m.id}
-              v={m}
-              selected={m.id === selId}
-              onSelect={() => handleSelect(m.id)}
-              zIndexOffset={m.id === selId ? 1000 : m.liveStatus === 'LIVE' ? 800 : 500}
-            />
-          ))}
+          {/* Real fleet vehicles (heading arrows, honest LIVE/STALE/OFFLINE with attention blinking) */}
+          {markers.map((m) => {
+            const isSelected = m.id === selId;
+            let isBlinking = false;
+            let blinkColor = null;
+            let blinkBadge = null;
+
+            if (isSelected) {
+              isBlinking = true;
+              blinkColor = m.isRisk ? '#DC2626' : m.isDelayed ? '#D97706' : '#0284C7';
+              blinkBadge = m.isRisk ? '⚠️ AT RISK' : m.isDelayed ? '⏱️ DELAYED' : '🎯 TARGET';
+            } else if (activeFilterTab === 'risk' && (m.isRisk || (Array.isArray(highlightedIds) && highlightedIds.includes(m.id)))) {
+              isBlinking = true;
+              blinkColor = '#DC2626';
+              blinkBadge = '⚠️ AT RISK';
+            } else if (activeFilterTab === 'delayed' && (m.isDelayed || (Array.isArray(highlightedIds) && highlightedIds.includes(m.id)))) {
+              isBlinking = true;
+              blinkColor = '#D97706';
+              blinkBadge = '⏱️ DELAYED';
+            } else if (activeFilterTab === 'moving' && ((m.status === 'moving' || m.status === 'in_transit') || (Array.isArray(highlightedIds) && highlightedIds.includes(m.id)))) {
+              isBlinking = true;
+              blinkColor = '#059669';
+              blinkBadge = '🟢 IN TRANSIT';
+            } else if (activeFilterTab === 'idle' && ((!m.status || m.status === 'idle' || m.status === 'stopped') || (Array.isArray(highlightedIds) && highlightedIds.includes(m.id)))) {
+              isBlinking = true;
+              blinkColor = '#7C3AED';
+              blinkBadge = '⚪ IDLE';
+            } else if (Array.isArray(highlightedIds) && highlightedIds.length > 0 && highlightedIds.includes(m.id)) {
+              isBlinking = true;
+              blinkColor = '#0284C7';
+              blinkBadge = 'MATCH';
+            }
+
+            return (
+              <VehicleMarker
+                key={m.id}
+                v={m}
+                selected={isSelected}
+                onSelect={() => handleSelect(m.id)}
+                zIndexOffset={isBlinking ? 3500 : isSelected ? 1000 : m.liveStatus === 'LIVE' ? 800 : 500}
+                isBlinking={isBlinking}
+                blinkColor={blinkColor}
+                blinkBadge={blinkBadge}
+              />
+            );
+          })}
 
           {/* 🚨 Active SOS vehicles — big pulsing red markers on top of everything */}
           {Object.entries(sosMap).map(([vid, sos]) => {
@@ -936,7 +1050,7 @@ export default function LiveTrackingMap({ embedded = false, selectedId, onSelect
               <Marker
                 key={'sos-' + vid}
                 position={[Number(sos.lat), Number(sos.lng)]}
-                zIndexOffset={3000}
+                zIndexOffset={4000}
                 icon={L.divIcon({
                   className: '',
                   html: `<div style="position:relative;width:40px;height:40px">` +
@@ -963,6 +1077,7 @@ export default function LiveTrackingMap({ embedded = false, selectedId, onSelect
           })}
 
           {selMarker && <FlyToSelected target={selMarker} routeGeom={liveRoutes[selId]?.coords} />}
+          <FitBoundsOnFilterChange activeFilterTab={activeFilterTab} markers={markers} highlightedIds={highlightedIds} />
           <MapControlsTicks zoomInTick={zoomIn} zoomOutTick={zoomOut} centerTick={centerT} centerPos={centerPos} />
           <MapMinimap mapRef={mapRef} tile={tile} />
         </MapContainer>

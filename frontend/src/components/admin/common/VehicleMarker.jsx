@@ -6,7 +6,15 @@ import AnimatedTacticalVehicleMarker from '@/components/common/AnimatedTacticalV
  * Upgraded to OSIRIS-style animated gliding, heading orientation, radar pulse,
  * and command-center telemetry HUD.
  */
-export const VehicleMarker = ({ v, selected = false, onSelect, zIndexOffset }) => {
+export const VehicleMarker = ({
+  v,
+  selected = false,
+  onSelect,
+  zIndexOffset,
+  isBlinking = false,
+  blinkColor = null,
+  blinkBadge = null,
+}) => {
   if (!v || (v.lat == null && v.latitude == null)) return null;
 
   return (
@@ -15,6 +23,9 @@ export const VehicleMarker = ({ v, selected = false, onSelect, zIndexOffset }) =
       selected={selected}
       onSelect={onSelect}
       zIndexOffset={zIndexOffset}
+      isBlinking={isBlinking}
+      blinkColor={blinkColor}
+      blinkBadge={blinkBadge}
     />
   );
 };

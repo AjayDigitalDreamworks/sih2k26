@@ -72,6 +72,9 @@ export default function AnimatedTacticalVehicleMarker({
   selected = false,
   onSelect,
   zIndexOffset,
+  isBlinking = false,
+  blinkColor = null,
+  blinkBadge = null,
 }) {
   const targetLat = Number(vehicle?.lat ?? vehicle?.latitude ?? vehicle?.current_lat);
   const targetLng = Number(vehicle?.lng ?? vehicle?.longitude ?? vehicle?.current_lng);
@@ -197,9 +200,12 @@ export default function AnimatedTacticalVehicleMarker({
 
   if (!isValidCoord({ lat: targetLat, lng: targetLng })) return null;
 
-  const size = selected ? 38 : 32;
+  const size = selected ? 38 : isBlinking ? 36 : 32;
   const initialBearing = currentBearingRef.current;
   const compass = getCompassDir(displayBearing);
+
+  // Active theme / blink color
+  const effectiveBlinkColor = blinkColor || (isSos ? '#DC2626' : isEmergency ? '#EF4444' : selected ? '#0284C7' : color);
 
   // OSIRIS Tactical DivIcon
   const icon = useMemo(() => {
@@ -213,24 +219,59 @@ export default function AnimatedTacticalVehicleMarker({
           0%, 100% { opacity: 1; filter: drop-shadow(0 0 12px #EF4444); }
           50% { opacity: 0.4; filter: drop-shadow(0 0 3px #EF4444); }
         }
+        @keyframes attentionStrobeRing {
+          0% { transform: translate(-50%, -50%) scale(0.6); opacity: 1; border-width: 3.5px; }
+          60% { opacity: 0.85; }
+          100% { transform: translate(-50%, -50%) scale(3.2); opacity: 0; border-width: 1px; }
+        }
+        @keyframes attentionHullBlinkPulse {
+          0%, 100% {
+            transform: scale(1.22);
+            filter: drop-shadow(0 0 16px ${effectiveBlinkColor}) drop-shadow(0 0 26px ${effectiveBlinkColor}dd);
+          }
+          50% {
+            transform: scale(0.96);
+            filter: drop-shadow(0 0 4px ${effectiveBlinkColor}55);
+          }
+        }
+        @keyframes attentionBadgeBob {
+          0%, 100% { transform: translateX(-50%) translateY(0); }
+          50% { transform: translateX(-50%) translateY(-3.5px); }
+        }
       </style>
     `;
 
-    const radarRings = isLive || isEmergency || isSos
+    // Normal radar rings
+    const radarRings = (isLive || isEmergency || isSos) && !isBlinking
       ? `
         <div style="position:absolute;top:50%;left:50%;width:${size}px;height:${size}px;border-radius:50%;border:2px solid ${color};animation:osirisPulse 2s cubic-bezier(0.2,0.8,0.2,1) infinite;pointer-events:none;"></div>
         <div style="position:absolute;top:50%;left:50%;width:${size}px;height:${size}px;border-radius:50%;border:1.5px solid ${color};animation:osirisPulse 2s cubic-bezier(0.2,0.8,0.2,1) infinite 0.7s;pointer-events:none;"></div>
       `
       : '';
 
+    // Intense multi-wave attention strobe when active or filtered
+    const attentionStrobeWaves = isBlinking
+      ? `
+        <div style="position:absolute;top:50%;left:50%;width:${size + 8}px;height:${size + 8}px;border-radius:50%;border:3px solid ${effectiveBlinkColor};animation:attentionStrobeRing 1.3s cubic-bezier(0.1,0.8,0.2,1) infinite;pointer-events:none;z-index:1;"></div>
+        <div style="position:absolute;top:50%;left:50%;width:${size + 8}px;height:${size + 8}px;border-radius:50%;border:2.5px solid ${effectiveBlinkColor};animation:attentionStrobeRing 1.3s cubic-bezier(0.1,0.8,0.2,1) infinite 0.45s;pointer-events:none;z-index:1;"></div>
+        <div style="position:absolute;top:50%;left:50%;width:${size + 8}px;height:${size + 8}px;border-radius:50%;border:2px solid ${effectiveBlinkColor};animation:attentionStrobeRing 1.3s cubic-bezier(0.1,0.8,0.2,1) infinite 0.9s;pointer-events:none;z-index:1;"></div>
+      `
+      : '';
+
     const telemetryTag = speedKmh != null
-      ? `<div class="tactical-telemetry-tag" style="position:absolute;bottom:-18px;left:50%;transform:translateX(-50%);background:#0B1E36;border:1px solid ${color}88;border-radius:6px;padding:1px 5px;color:#F8FAFC;font-family:ui-monospace,SFMono-Regular,Menlo,monospace;font-size:9px;font-weight:800;white-space:nowrap;box-shadow:0 2px 6px rgba(0,0,0,0.5);letter-spacing:0.5px;">
+      ? `<div class="tactical-telemetry-tag" style="position:absolute;bottom:-18px;left:50%;transform:translateX(-50%);background:#0B1E36;border:1px solid ${isBlinking ? effectiveBlinkColor : color}88;border-radius:6px;padding:1px 5px;color:#F8FAFC;font-family:ui-monospace,SFMono-Regular,Menlo,monospace;font-size:9px;font-weight:800;white-space:nowrap;box-shadow:0 2px 6px rgba(0,0,0,0.5);letter-spacing:0.5px;z-index:10;">
            ${speedKmh} km/h ${compass ? `· ${compass}` : ''}
          </div>`
       : '';
 
     const sosBadge = isSos
-      ? `<div style="position:absolute;top:-8px;right:-8px;background:#DC2626;color:#fff;font-size:9px;font-weight:900;padding:1px 4px;border-radius:4px;border:1.5px solid #fff;box-shadow:0 0 8px rgba(220,38,38,0.9);animation:osirisEmergency 1.5s infinite;">SOS</div>`
+      ? `<div style="position:absolute;top:-8px;right:-8px;background:#DC2626;color:#fff;font-size:9px;font-weight:900;padding:1px 4px;border-radius:4px;border:1.5px solid #fff;box-shadow:0 0 8px rgba(220,38,38,0.9);animation:osirisEmergency 1.5s infinite;z-index:11;">SOS</div>`
+      : '';
+
+    const floatingAttentionBadge = blinkBadge
+      ? `<div style="position:absolute;top:-26px;left:50%;transform:translateX(-50%);background:${effectiveBlinkColor};color:#FFFFFF;border:2px solid #FFFFFF;border-radius:9999px;padding:2px 7px;font-family:system-ui,-apple-system,sans-serif;font-size:9px;font-weight:900;white-space:nowrap;box-shadow:0 3px 10px rgba(0,0,0,0.6),0 0 14px ${effectiveBlinkColor};animation:attentionBadgeBob 1.2s ease-in-out infinite;pointer-events:none;z-index:20;letter-spacing:0.3px;">
+          ${blinkBadge}
+        </div>`
       : '';
 
     return L.divIcon({
@@ -239,26 +280,30 @@ export default function AnimatedTacticalVehicleMarker({
         ${pulseKeyframe}
         <div style="position:relative;width:${size}px;height:${size}px;cursor:pointer;">
           ${radarRings}
-          <!-- Tactical Rotating Vehicle Hull (No CSS transition to ensure 60fps RAF synchronization) -->
-          <div class="tactical-rotator" style="position:relative;width:${size}px;height:${size}px;transform:rotate(${Math.round(initialBearing)}deg);filter:drop-shadow(0 0 ${isLive ? '8px' : '3px'} ${color}99);">
-            <svg viewBox="0 0 40 40" width="${size}" height="${size}">
-              <!-- Tactical Halo -->
-              <circle cx="20" cy="20" r="18" fill="#0B1E36" stroke="${color}" stroke-width="2.5" />
-              <!-- Directional Chevron / Vehicle Hull -->
-              <path d="M20 7 L29 28 L20 23 L11 28 Z" fill="${color}" stroke="#FFFFFF" stroke-width="1.2" stroke-linejoin="round" />
-              <!-- Center beacon -->
-              <circle cx="20" cy="20" r="3.5" fill="#FFFFFF" />
-            </svg>
+          ${attentionStrobeWaves}
+          ${floatingAttentionBadge}
+          <!-- Tactical Rotating Vehicle Hull with Blinking Scale & Shadow -->
+          <div style="${isBlinking ? 'animation:attentionHullBlinkPulse 1.2s ease-in-out infinite;' : ''}">
+            <div class="tactical-rotator" style="position:relative;width:${size}px;height:${size}px;transform:rotate(${Math.round(initialBearing)}deg);filter:drop-shadow(0 0 ${isBlinking ? '14px' : isLive ? '8px' : '3px'} ${effectiveBlinkColor}bb);">
+              <svg viewBox="0 0 40 40" width="${size}" height="${size}">
+                <!-- Tactical Halo -->
+                <circle cx="20" cy="20" r="18" fill="#0B1E36" stroke="${effectiveBlinkColor}" stroke-width="${isBlinking ? '3.5' : '2.5'}" />
+                <!-- Directional Chevron / Vehicle Hull -->
+                <path d="M20 7 L29 28 L20 23 L11 28 Z" fill="${effectiveBlinkColor}" stroke="#FFFFFF" stroke-width="1.2" stroke-linejoin="round" />
+                <!-- Center beacon -->
+                <circle cx="20" cy="20" r="3.5" fill="#FFFFFF" />
+              </svg>
+            </div>
           </div>
           ${sosBadge}
           ${telemetryTag}
         </div>
       `,
-      iconSize: [size, size + 20],
+      iconSize: [size, size + 22],
       iconAnchor: [size / 2, size / 2],
       popupAnchor: [0, -size / 2],
     });
-  }, [size, color, isLive, isEmergency, isSos, speedKmh]);
+  }, [size, color, effectiveBlinkColor, isLive, isEmergency, isSos, isBlinking, blinkBadge, speedKmh]);
 
   const vehicleId = vehicle?.id || 'FLEET-VEHICLE';
   const modelName = vehicle?.model || vehicle?.type || 'Heavy Transport';
@@ -270,7 +315,7 @@ export default function AnimatedTacticalVehicleMarker({
       ref={markerRef}
       position={[targetLat, targetLng]}
       icon={icon}
-      zIndexOffset={zIndexOffset != null ? zIndexOffset : isSos ? 2000 : isLive ? 800 : 400}
+      zIndexOffset={zIndexOffset != null ? zIndexOffset : isBlinking ? 3500 : isSos ? 2000 : isLive ? 800 : 400}
       eventHandlers={onSelect ? { click: () => onSelect(vehicle) } : undefined}
     >
       <Popup closeButton={true} className="osiris-tactical-popup">
@@ -332,6 +377,36 @@ export default function AnimatedTacticalVehicleMarker({
               {isSos ? 'EMERGENCY' : isLive ? 'LIVE RADAR' : rawStatus}
             </span>
           </div>
+
+          {/* Delay Status & Genuine Root Cause */}
+          {(vehicle?.isDelayed || vehicle?.status === 'delayed' || vehicle?.delay_reason || vehicle?.delayReason) && (
+            <div style={{
+              background: 'rgba(217, 119, 6, 0.18)',
+              border: '1px solid #F59E0B',
+              color: '#FEF3C7',
+              padding: '7px 9px',
+              borderRadius: 8,
+              fontSize: 11,
+              marginBottom: 8,
+              boxShadow: '0 2px 8px rgba(0,0,0,0.3)',
+            }}>
+              <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', fontWeight: 800 }}>
+                <span style={{ display: 'flex', alignItems: 'center', gap: 4, color: '#FBBF24', fontSize: 10.5, textTransform: 'uppercase', letterSpacing: '0.4px' }}>
+                  <Clock size={12} color="#FBBF24" />
+                  {vehicle.delay_minutes ? `+${vehicle.delay_minutes} MIN DELAY` : 'DELIVERY DELAYED'}
+                </span>
+                {(vehicle.delay_category || vehicle.delayCategory) && (
+                  <span style={{ fontSize: 9, background: '#D97706', color: '#FFF', padding: '1px 5px', borderRadius: 4, fontWeight: 800, letterSpacing: '0.3px' }}>
+                    {vehicle.delay_category || vehicle.delayCategory}
+                  </span>
+                )}
+              </div>
+              <div style={{ color: '#F8FAFC', fontSize: 10, lineHeight: 1.35, marginTop: 4 }}>
+                <strong style={{ color: '#FCD34D' }}>Root Cause: </strong>
+                {vehicle.delay_reason || vehicle.delayReason || 'Mountain corridor freight bottleneck & checkpost hold'}
+              </div>
+            </div>
+          )}
 
           {vehicle?.enteringHighRiskCorridor && (
             <div style={{

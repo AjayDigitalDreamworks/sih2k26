@@ -33,6 +33,7 @@ router.delete('/drivers/:id', TransporterController.deleteDriver);
 
 // 5. Alerts
 router.get('/alerts', TransporterController.getAlerts);
+router.post('/alerts', TransporterController.createAlert);
 router.patch('/alerts/:id', TransporterController.updateAlertStatus);
 router.post('/alerts/mark-all-read', TransporterController.markAllAlertsRead);
 

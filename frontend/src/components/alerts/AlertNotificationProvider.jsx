@@ -530,7 +530,7 @@ function SoundTestPanel({ playAlertSound, handleNewAlert, handleEmergency, isMut
   };
 
   return (
-    <div className="fixed bottom-6 right-6 z-[9999]">
+    <div className="fixed bottom-4 right-20 z-[9990]">
       <AnimatePresence>
         {open && (
           <motion.div
@@ -590,8 +590,10 @@ function SoundTestPanel({ playAlertSound, handleNewAlert, handleEmergency, isMut
       <button
         type="button"
         onClick={() => setOpen(!open)}
-        className={`w-12 h-12 rounded-full shadow-xl flex items-center justify-center text-white text-lg cursor-pointer transition-all ${open ? 'bg-slate-700 hover:bg-slate-600 rotate-45' : 'bg-emerald-600 hover:bg-emerald-700'}`}
-        title="Toggle Sound Test Panel"
+        className={`w-8 h-8 rounded-full shadow-md flex items-center justify-center text-xs cursor-pointer transition-all opacity-60 hover:opacity-100 ${
+          open ? 'bg-slate-700 text-white rotate-45' : 'bg-slate-800 text-slate-200 border border-slate-700'
+        }`}
+        title="Toggle Sound Test Panel (Dev)"
       >
         {open ? '✕' : '🔊'}
       </button>

@@ -155,6 +155,13 @@ class ApiClient {
     });
   }
 
+  static createTransporterAlert(payload) {
+    return this.request('/transporter/alerts', {
+      method: 'POST',
+      body: JSON.stringify(payload),
+    }).catch(() => this.createAlert(payload));
+  }
+
   static getAdminFieldReports() {
     return this.request('/admin/field-reports');
   }
@@ -264,6 +271,13 @@ class ApiClient {
     return this.request('/transporter/vehicles');
   }
 
+  static getVehicles() {
+    return this.getTransporterVehicles().then((res) => {
+      if (res?.success && Array.isArray(res.data) && res.data.length > 0) return res;
+      return this.request('/admin/vehicles');
+    });
+  }
+
   static createVehicle(payload) {
     return this.request('/transporter/vehicles', {
       method: 'POST',
@@ -297,8 +311,32 @@ class ApiClient {
     return this.getTransporterDrivers();
   }
 
+  static createDriver(payload) {
+    return this.request('/transporter/drivers', {
+      method: 'POST',
+      body: JSON.stringify(payload),
+    });
+  }
+
   static getTransporterDeliveries() {
     return this.request('/transporter/deliveries');
+  }
+
+  static async getConsignment(id) {
+    try {
+      const res = await this.getTransporterDeliveries();
+      if (res?.success && Array.isArray(res.data)) {
+        const found = res.data.find((d) => d.id === id || d.tracking_number === id);
+        if (found) return { success: true, data: found };
+      }
+      return await this.request(`/transporter/deliveries/${id}`);
+    } catch (e) {
+      return { success: false, error: e.message };
+    }
+  }
+
+  static getDelivery(id) {
+    return this.getConsignment(id);
   }
 
   static createDelivery(payload) {
