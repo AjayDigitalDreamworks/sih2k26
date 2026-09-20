@@ -198,8 +198,6 @@ export default function AnimatedTacticalVehicleMarker({
     };
   }, [targetLat, targetLng, explicitHeading, speedKmh]);
 
-  if (!isValidCoord({ lat: targetLat, lng: targetLng })) return null;
-
   const size = selected ? 38 : isBlinking ? 36 : 32;
   const initialBearing = currentBearingRef.current;
   const compass = getCompassDir(displayBearing);
@@ -304,6 +302,10 @@ export default function AnimatedTacticalVehicleMarker({
       popupAnchor: [0, -size / 2],
     });
   }, [size, color, effectiveBlinkColor, isLive, isEmergency, isSos, isBlinking, blinkBadge, speedKmh]);
+
+  if (!isValidCoord({ lat: targetLat, lng: targetLng })) {
+    return null;
+  }
 
   const vehicleId = vehicle?.id || 'FLEET-VEHICLE';
   const modelName = vehicle?.model || vehicle?.type || 'Heavy Transport';
@@ -474,7 +476,8 @@ export default function AnimatedTacticalVehicleMarker({
             <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
               <MapPin size={12} color="#F59E0B" style={{ flexShrink: 0 }} />
               <span style={{ fontFamily: 'monospace', fontSize: 10, color: '#94A3B8' }}>
-                {displayPos.lat.toFixed(4)}° N, {displayPos.lng.toFixed(4)}° E
+                {Number.isFinite(displayPos?.lat) ? displayPos.lat.toFixed(4) : Number(targetLat).toFixed(4)}° N,{' '}
+                {Number.isFinite(displayPos?.lng) ? displayPos.lng.toFixed(4) : Number(targetLng).toFixed(4)}° E
               </span>
             </div>
           </div>

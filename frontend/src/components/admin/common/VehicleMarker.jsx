@@ -15,10 +15,17 @@ export const VehicleMarker = ({
   blinkColor = null,
   blinkBadge = null,
 }) => {
-  if (!v || (v.lat == null && v.latitude == null)) return null;
+  const lat = Number(v?.lat ?? v?.latitude ?? v?.current_lat);
+  const lng = Number(v?.lng ?? v?.longitude ?? v?.current_lng);
+  if (!Number.isFinite(lat) || !Number.isFinite(lng) || Math.abs(lat) > 90 || Math.abs(lng) > 180) {
+    return null;
+  }
+
+  const key = v?.id || v?._id || `v-${lat}-${lng}`;
 
   return (
     <AnimatedTacticalVehicleMarker
+      key={key}
       vehicle={v}
       selected={selected}
       onSelect={onSelect}
