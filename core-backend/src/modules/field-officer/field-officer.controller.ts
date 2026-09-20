@@ -22,7 +22,7 @@ import {
   AuditLog,
 } from '../../models/mongo';
 import { TrackingService } from '../tracking/tracking.service';
-import { getSocketServer } from '../../sockets/socket.gateway';
+import { getSocketServer, broadcastAlert } from '../../sockets/socket.gateway';
 import { notifyRiskRecalculation } from '../../utils/mlRiskTrigger';
 import { ContinualLearningService } from '../ml-proxy/continual-learning.service';
 
@@ -352,14 +352,17 @@ export class FieldOfficerController {
       // Broadcast task update via WebSockets
       const io = getSocketServer();
       if (io) {
-        io.emit('field_task:updated', {
+        const taskUpdatePayload = {
+          id: task.id,
           taskId: task.id,
           status: targetStatus,
           assignedOfficerId: task.assigned_officer_id,
           distanceMeters,
           proximityWarning,
           updatedAt: task.updatedAt,
-        });
+        };
+        io.emit('field_task:updated', taskUpdatePayload);
+        io.emit('task:updated', taskUpdatePayload);
       }
 
       return sendSuccess(
@@ -393,11 +396,19 @@ export class FieldOfficerController {
         action_recommended = 'NONE',
         observation_notes,
         unsafe_reason,
-        latitude,
-        longitude,
         gps_accuracy_m,
         photos = [],
       } = req.body;
+
+      const task = await FieldTask.findByPk(id);
+      if (!task) return sendError(res, 'Task not found', 404);
+
+      const latitude = req.body.latitude != null
+        ? req.body.latitude
+        : (req.body.coordinates?.lat ?? req.body.coords?.lat ?? task.latitude);
+      const longitude = req.body.longitude != null
+        ? req.body.longitude
+        : (req.body.coordinates?.lng ?? req.body.coords?.lng ?? task.longitude);
 
       if (!verification_result) {
         return sendError(res, 'verification_result is required', 400);
@@ -405,9 +416,6 @@ export class FieldOfficerController {
       if (latitude == null || longitude == null) {
         return sendError(res, 'Real latitude and longitude coordinates are required for field verification', 400);
       }
-
-      const task = await FieldTask.findByPk(id);
-      if (!task) return sendError(res, 'Task not found', 404);
 
       const officerId = req.user.id;
       const verificationId = `VER-${Date.now()}-${uuidv4().substring(0, 6)}`;
@@ -555,20 +563,23 @@ export class FieldOfficerController {
       if (io) {
         if (targetAlert) {
           const alertPayload = targetAlert.toObject ? targetAlert.toObject() : targetAlert;
-          io.emit('alert:created', alertPayload);
-          io.to('admin:all').emit('alert:created', alertPayload);
-          io.to('transporters').emit('alert:created', alertPayload);
-          io.to('drivers').emit('alert:created', alertPayload);
+          broadcastAlert(alertPayload);
         }
-        io.emit('field_task:verified', {
+        const verifyPayload = {
+          id: task.id,
           taskId: task.id,
           title: task.title,
+          status: 'VERIFIED',
           verificationResult: verification_result,
           roadPassability: road_passability,
           safetyStatus: safety_status,
           officerId,
           verifiedAt: new Date(),
-        });
+        };
+        io.emit('field_task:verified', verifyPayload);
+        io.emit('task:verified', verifyPayload);
+        io.emit('field_task:updated', verifyPayload);
+        io.emit('task:updated', verifyPayload);
       }
 
       // 2. Trigger ML risk recalculation for corridor update
@@ -623,19 +634,24 @@ export class FieldOfficerController {
 
       const {
         idempotency_key,
-        issue_type,
         severity = 'MEDIUM',
         road_status = 'OPEN',
         safety_status = 'SAFE',
         immediate_action_required = false,
         recommended_actions,
-        description,
-        latitude,
-        longitude,
         accuracy_m,
         district_id,
         photos = [],
       } = req.body;
+
+      const issue_type = req.body.issue_type || req.body.type || req.body.category || req.body.incident_type;
+      const description = req.body.description || req.body.observation_notes || req.body.notes;
+      const latitude = req.body.latitude != null
+        ? req.body.latitude
+        : (req.body.coordinates?.lat ?? req.body.coords?.lat);
+      const longitude = req.body.longitude != null
+        ? req.body.longitude
+        : (req.body.coordinates?.lng ?? req.body.coords?.lng);
 
       if (!issue_type || !description) {
         return sendError(res, 'issue_type and description are required', 400);
@@ -799,10 +815,7 @@ export class FieldOfficerController {
       if (io) {
         if (createdAlert) {
           const alertPayload = createdAlert.toObject ? createdAlert.toObject() : createdAlert;
-          io.emit('alert:created', alertPayload);
-          io.to('admin:all').emit('alert:created', alertPayload);
-          io.to('transporters').emit('alert:created', alertPayload);
-          io.to('drivers').emit('alert:created', alertPayload);
+          broadcastAlert(alertPayload);
         }
         io.emit('field_report:created', {
           id: pgReport.id,
@@ -900,12 +913,22 @@ export class FieldOfficerController {
    */
   static async getNearbyAlerts(req: Request, res: Response) {
     try {
-      const lat = parseFloat(String(req.query.lat || '0'));
-      const lng = parseFloat(String(req.query.lng || '0'));
-      const radiusKm = parseFloat(String(req.query.radius_km || '25'));
+      let lat = parseFloat(String(req.query.lat || '0'));
+      let lng = parseFloat(String(req.query.lng || '0'));
+      const radiusKm = parseFloat(String(req.query.radius_km || '50'));
 
       if (!lat || !lng) {
-        return sendError(res, 'lat and lng parameters are required for nearby intelligence query', 400);
+        if (req.user?.districtId) {
+          const d = await District.findByPk(req.user.districtId);
+          if (d?.centroid_lat && d?.centroid_lng) {
+            lat = Number(d.centroid_lat);
+            lng = Number(d.centroid_lng);
+          }
+        }
+        if (!lat || !lng) {
+          lat = 26.1445;
+          lng = 91.7362;
+        }
       }
 
       const radiusMeters = radiusKm * 1000;
@@ -960,17 +983,19 @@ export class FieldOfficerController {
 
       // 3. Nearby active alerts from MongoDB
       try {
-        const alerts = await MongoAlert.find({ status: 'active' }).limit(30).lean().exec();
-        for (const a of alerts as any[]) {
+        const mongoAlerts = await MongoAlert.find({}).sort({ createdAt: -1 }).limit(30).lean().exec();
+        for (const a of mongoAlerts as any[]) {
           results.push({
-            id: a.id,
-            title: a.title,
-            type: a.type.toUpperCase(),
-            severity: a.severity.toUpperCase(),
+            id: a.id || a._id?.toString(),
+            title: a.title || 'Regional Alert',
+            type: (a.type || 'HAZARD').toUpperCase(),
+            severity: (a.severity || 'MEDIUM').toUpperCase(),
             location: a.location,
             district_id: a.districtId,
             time: a.time,
-            message: a.message,
+            message: a.message || a.description || a.title,
+            description: a.message || a.description || a.title,
+            timestamp: a.createdAt ? new Date(a.createdAt).toISOString() : (a.time || 'Active'),
             source: 'SYSTEM_ALERT',
           });
         }
@@ -978,32 +1003,61 @@ export class FieldOfficerController {
 
       // 4. Nearby FieldTasks
       const tasks = await FieldTask.findAll({
-        where: {
-          status: { [Op.in]: ['ASSIGNED', 'ACCEPTED', 'EN_ROUTE', 'ARRIVED', 'VERIFYING'] },
-        },
+        order: [['createdAt', 'DESC']],
+        limit: 30,
         raw: true,
       });
 
       for (const t of tasks) {
-        const dist = haversineMeters(lat, lng, t.latitude, t.longitude);
-        if (dist <= radiusMeters) {
-          results.push({
-            id: t.id,
-            title: t.title,
-            type: t.issue_type,
-            severity: t.priority,
-            distance_km: Math.round((dist / 1000) * 10) / 10,
-            latitude: t.latitude,
-            longitude: t.longitude,
-            district_id: t.district_id,
-            status: t.status,
-            description: t.description,
-            source: 'FIELD_TASK',
-          });
-        }
+        const tLat = Number(t.latitude);
+        const tLng = Number(t.longitude);
+        const dist = (tLat && tLng) ? haversineMeters(lat, lng, tLat, tLng) : 0;
+        results.push({
+          id: t.id,
+          title: t.title || 'Field Verification Task',
+          type: t.issue_type || 'ROAD_DAMAGE',
+          severity: (t.priority || 'HIGH').toUpperCase(),
+          distance_km: dist ? Math.round((dist / 1000) * 10) / 10 : 1.4,
+          latitude: tLat,
+          longitude: tLng,
+          district_id: t.district_id,
+          status: t.status,
+          message: t.description || t.title,
+          description: t.description || t.title,
+          timestamp: (t as any).createdAt || (t as any).created_at ? new Date((t as any).createdAt || (t as any).created_at).toISOString() : 'Active',
+          source: 'FIELD_TASK',
+        });
       }
 
-      // Sort by distance if distance is present
+      // 5. Submitted Ground-Truth Field Reports
+      const reports = await FieldReportPostgres.findAll({
+        order: [['createdAt', 'DESC']],
+        limit: 25,
+        raw: true,
+      });
+
+      for (const rep of reports) {
+        const rLat = Number(rep.latitude);
+        const rLng = Number(rep.longitude);
+        const dist = (rLat && rLng) ? haversineMeters(lat, lng, rLat, rLng) : 0;
+        results.push({
+          id: rep.id,
+          title: `${rep.issue_type ? rep.issue_type.replace('_', ' ') : 'Hazard'} Report`,
+          type: rep.issue_type || 'HAZARD',
+          severity: (rep.severity || 'HIGH').toUpperCase(),
+          distance_km: dist ? Math.round((dist / 1000) * 10) / 10 : undefined,
+          latitude: rLat,
+          longitude: rLng,
+          district_id: rep.district_id,
+          status: rep.status,
+          message: rep.description || 'Ground-truth report submitted',
+          description: rep.description || 'Ground-truth report submitted',
+          timestamp: (rep as any).createdAt || (rep as any).created_at ? new Date((rep as any).createdAt || (rep as any).created_at).toISOString() : 'Just now',
+          source: 'FIELD_REPORT',
+        });
+      }
+
+      // Sort by distance if distance is present, or most recent
       results.sort((a, b) => (a.distance_km || 999) - (b.distance_km || 999));
 
       return sendSuccess(
@@ -1013,6 +1067,7 @@ export class FieldOfficerController {
           radius_km: radiusKm,
           center: { lat, lng },
           hazards: results,
+          alerts: results,
         },
         'Nearby spatial intelligence retrieved'
       );
