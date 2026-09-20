@@ -84,82 +84,7 @@ function MapEventsCoords({ onMove }) {
   return null;
 }
 
-function MapMinimap({ mapRef, tile }) {
-  const divRef = useRef(null);
-  const stateRef = useRef(null);
-  useEffect(() => {
-    let cancelled = false;
-    let cleaned = false;
-    const teardown = () => {
-      if (cleaned) return;
-      cleaned = true;
-      const s = stateRef.current;
-      stateRef.current = null;
-      if (!s) return;
-      s.main?.off('move zoom', s.sync);
-      if (s.rect) s.rect.remove();
-      if (s.mini) s.mini.remove();
-    };
-    const boot = () => {
-      if (cancelled) return;
-      const main = mapRef.current;
-      const el = divRef.current;
-      // Zero-size guard: never create the mini map until it has real pixels.
-      if (!main || !el || !el.offsetWidth || !el.offsetHeight || stateRef.current) { if (!cancelled) setTimeout(boot, 200); return; }
-      let mini;
-      try {
-        mini = L.map(el, {
-          zoomControl: false,
-          attributionControl: false,
-          scrollWheelZoom: false,
-          dragging: false,
-          doubleClickZoom: false,
-          boxZoom: false,
-          touchZoom: false,
-          keyboard: false,
-        });
-      } catch { if (!cancelled) setTimeout(boot, 200); return; }
-      L.tileLayer(tile.url, { attribution: '', subdomains: tile.subdomains || 'abc' }).addTo(mini);
 
-      const rect = L.rectangle(main.getBounds(), {
-        color: '#059669',
-        weight: 1.5,
-        opacity: 0.85,
-        fillOpacity: 0.06,
-      }).addTo(mini);
-
-      let rafId = null;
-      const sync = () => {
-        if (!main || !mini || cancelled) return;
-        if (rafId) return;
-        rafId = requestAnimationFrame(() => {
-          rafId = null;
-          if (cancelled || !stateRef.current?.mini) return;
-          try {
-            const center = main.getCenter();
-            const targetZoom = Math.max(1, Math.min(12, Math.round(main.getZoom()) - 5));
-            mini.setView(center, targetZoom, { animate: false });
-            if (stateRef.current?.rect) {
-              stateRef.current.rect.setBounds(main.getBounds());
-            }
-          } catch {
-            /* ignore transient leaflet transition states */
-          }
-        });
-      };
-
-      stateRef.current = { mini, rect, main, sync, teardown };
-      main.on('move zoom', sync);
-      mini.on('click', (e) => {
-        if (main && e?.latlng) main.panTo(e.latlng);
-      });
-      sync();
-    };
-    boot();
-    return () => { cancelled = true; teardown(); };
-  }, [mapRef, tile.url]);
-  return <div ref={divRef} style={{ position: 'absolute', top: 10, left: 10, zIndex: 980, width: 148, height: 108, borderRadius: 6, overflow: 'hidden', border: '2px solid rgba(255,255,255,0.9)', boxShadow: '0 2px 10px rgba(0,0,0,0.25)', background: '#E8EAED' }} />;
-}
 
 const ageStatus = (iso) => {
   if (!iso) return null;
@@ -898,36 +823,27 @@ export default function LiveTrackingMap({
                       position={startPt}
                       zIndexOffset={895}
                       icon={L.divIcon({
-                        className: 'raahi-startpoint-pin',
+                        className: '',
                         html: `
-                          <div style="position:relative;width:40px;height:46px;display:flex;flex-direction:column;align-items:center;pointer-events:auto;">
-                            <div style="position:absolute;bottom:0;left:50%;transform:translateX(-50%);width:26px;height:12px;border-radius:50%;background:rgba(16,185,129,0.35);animation:pulse 1.8s infinite;"></div>
-                            <div style="width:32px;height:32px;background:linear-gradient(135deg, #10B981 0%, #047857 100%);border-radius:50% 50% 50% 0;transform:rotate(-45deg);border:2.5px solid #FFFFFF;box-shadow:0 4px 14px rgba(16,185,129,0.55);display:flex;align-items:center;justify-content:center;z-index:2;">
-                              <div style="transform:rotate(45deg);display:flex;align-items:center;justify-content:center;color:#fff;">
-                                <svg width="15" height="15" viewBox="0 0 24 24" fill="currentColor"><path d="M4 2v20M4 4h13l-2.5 5 2.5 5H4V4z"/></svg>
-                              </div>
-                            </div>
-                            <div style="position:absolute;top:-20px;white-space:nowrap;background:#0F172A;color:#F8FAFC;font-family:'Roboto',sans-serif;font-size:10px;font-weight:800;padding:2px 8px;border-radius:6px;box-shadow:0 3px 8px rgba(0,0,0,0.4);border:1px solid #334155;letter-spacing:0.3px;">
-                              ${startTitle}
+                          <div style="position:relative;width:24px;height:24px;display:flex;align-items:center;justify-content:center;">
+                            <div style="position:absolute;inset:-3px;border-radius:50%;background:rgba(16,185,129,0.3);animation:pulse 2s infinite;"></div>
+                            <div style="width:20px;height:20px;border-radius:50%;background:#059669;border:2.5px solid #FFFFFF;box-shadow:0 2px 6px rgba(0,0,0,0.3);display:flex;align-items:center;justify-content:center;color:#FFFFFF;font-size:10px;">
+                              🚩
                             </div>
                           </div>
                         `,
-                        iconSize: [40, 46],
-                        iconAnchor: [20, 42],
-                        popupAnchor: [0, -42],
+                        iconSize: [24, 24],
+                        iconAnchor: [12, 12],
+                        popupAnchor: [0, -12],
                       })}
                     >
                       <Popup>
-                        <div className="text-xs min-w-[180px]">
-                          <div className="font-black text-slate-900 flex items-center gap-1.5">
+                        <div className="text-xs min-w-[170px]">
+                          <div className="font-bold text-slate-900 flex items-center gap-1.5">
                             <span>🚩</span> <span>{startTitle}</span>
                           </div>
-                          <p className="text-[10px] text-slate-500 mt-1">
-                            Origin Terminal · {vid}
-                          </p>
-                          <p className="text-[10px] text-emerald-700 font-bold mt-0.5">
-                            Active Corridor Departure
-                          </p>
+                          <p className="text-[10px] text-slate-500 mt-1">Origin Terminal · Vehicle {vid}</p>
+                          <p className="text-[10px] text-emerald-700 font-semibold mt-0.5">Active Corridor Departure</p>
                         </div>
                       </Popup>
                     </Marker>
@@ -943,33 +859,26 @@ export default function LiveTrackingMap({
                       position={endPt}
                       zIndexOffset={900}
                       icon={L.divIcon({
-                        className: 'raahi-endpoint-pin',
+                        className: '',
                         html: `
-                          <div style="position:relative;width:40px;height:46px;display:flex;flex-direction:column;align-items:center;pointer-events:auto;">
-                            <div style="position:absolute;bottom:0;left:50%;transform:translateX(-50%);width:26px;height:12px;border-radius:50%;background:rgba(220,38,38,0.35);animation:pulse 1.8s infinite;"></div>
-                            <div style="width:32px;height:32px;background:linear-gradient(135deg, #DC2626 0%, #991B1B 100%);border-radius:50% 50% 50% 0;transform:rotate(-45deg);border:2.5px solid #FFFFFF;box-shadow:0 4px 14px rgba(220,38,38,0.55);display:flex;align-items:center;justify-content:center;z-index:2;">
-                              <div style="transform:rotate(45deg);display:flex;align-items:center;justify-content:center;font-size:14px;color:#fff;">
-                                🏁
-                              </div>
-                            </div>
-                            <div style="position:absolute;top:-20px;white-space:nowrap;background:#0F172A;color:#F8FAFC;font-family:'Roboto',sans-serif;font-size:10px;font-weight:800;padding:2px 8px;border-radius:6px;box-shadow:0 3px 8px rgba(0,0,0,0.4);border:1px solid #334155;letter-spacing:0.3px;">
-                              ${title}
+                          <div style="position:relative;width:24px;height:24px;display:flex;align-items:center;justify-content:center;">
+                            <div style="position:absolute;inset:-3px;border-radius:50%;background:rgba(220,38,38,0.3);animation:pulse 2s infinite;"></div>
+                            <div style="width:20px;height:20px;border-radius:50%;background:#DC2626;border:2.5px solid #FFFFFF;box-shadow:0 2px 6px rgba(0,0,0,0.3);display:flex;align-items:center;justify-content:center;color:#FFFFFF;font-size:10px;">
+                              🏁
                             </div>
                           </div>
                         `,
-                        iconSize: [40, 46],
-                        iconAnchor: [20, 42],
-                        popupAnchor: [0, -42],
+                        iconSize: [24, 24],
+                        iconAnchor: [12, 12],
+                        popupAnchor: [0, -12],
                       })}
                     >
                       <Popup>
-                        <div className="text-xs min-w-[180px]">
-                          <div className="font-black text-slate-900 flex items-center gap-1.5">
+                        <div className="text-xs min-w-[170px]">
+                          <div className="font-bold text-slate-900 flex items-center gap-1.5">
                             <span>🏁</span> <span>{title}</span>
                           </div>
-                          <p className="text-[10px] text-slate-500 mt-1">
-                            Destination · {vid}
-                          </p>
+                          <p className="text-[10px] text-slate-500 mt-1">Destination Terminal · Vehicle {vid}</p>
                           {r.distanceKm != null && <p className="text-[10px] text-slate-600">Remaining: <b>{Math.round(r.distanceKm)} km</b></p>}
                           {r.etaLabel && <p className="text-[10px] text-emerald-700 font-bold">ETA: {r.etaLabel}</p>}
                         </div>
@@ -1079,73 +988,108 @@ export default function LiveTrackingMap({
           {selMarker && <FlyToSelected target={selMarker} routeGeom={liveRoutes[selId]?.coords} />}
           <FitBoundsOnFilterChange activeFilterTab={activeFilterTab} markers={markers} highlightedIds={highlightedIds} />
           <MapControlsTicks zoomInTick={zoomIn} zoomOutTick={zoomOut} centerTick={centerT} centerPos={centerPos} />
-          <MapMinimap mapRef={mapRef} tile={tile} />
         </MapContainer>
 
-        {/* Chips row (top center) */}
-        <div className="absolute top-3 left-1/2 -translate-x-1/2 z-[900] flex items-center gap-1.5 flex-wrap justify-center max-w-[92%]">
+        {/* Top-Left Modern Glass Toolbar: Heat & Radar Controls */}
+        <div className="absolute top-3 left-3 z-[850] flex items-center gap-1.5">
+          <button
+            type="button"
+            onClick={() => setHeatMode((m) => (m === 'off' ? 'rain' : m === 'rain' ? 'flood' : 'off'))}
+            className={`flex items-center gap-1.5 px-2.5 py-1.5 rounded-xl text-[11px] font-bold shadow-xs border transition-all cursor-pointer backdrop-blur-md ${
+              heatMode === 'off'
+                ? 'bg-white/95 text-slate-700 border-slate-200/90 hover:bg-slate-50'
+                : heatMode === 'rain'
+                ? 'bg-blue-600 text-white border-blue-600 shadow-blue-500/20'
+                : 'bg-orange-600 text-white border-orange-600 shadow-orange-500/20'
+            }`}
+            title="Toggle rainfall or flood heatmap"
+          >
+            <span
+              className="w-2.5 h-2.5 rounded-full"
+              style={{
+                background:
+                  heatMode === 'rain'
+                    ? '#93C5FD'
+                    : heatMode === 'flood'
+                    ? '#FED7AA'
+                    : 'linear-gradient(135deg,#38BDF8,#EA580C)',
+              }}
+            />
+            <span>Heat: {heatMode === 'off' ? 'OFF' : heatMode === 'rain' ? 'Rain' : 'Flood'}</span>
+          </button>
+
+          <button
+            type="button"
+            onClick={() => setRadarOn((v) => !v)}
+            className={`flex items-center gap-1.5 px-2.5 py-1.5 rounded-xl text-[11px] font-bold shadow-xs border transition-all cursor-pointer backdrop-blur-md ${
+              radarOn
+                ? 'bg-blue-600 text-white border-blue-600 shadow-blue-500/20'
+                : 'bg-white/95 text-slate-700 border-slate-200/90 hover:bg-slate-50'
+            }`}
+            title="Toggle IMD Doppler rain radar"
+          >
+            <CloudRain className="w-3.5 h-3.5" />
+            <span>Radar: {radarOn ? 'ON' : 'OFF'}</span>
+          </button>
+        </div>
+
+        {/* Top-Right Telemetry & Fleet Status */}
+        <div className="absolute top-3 right-3 z-[850] flex items-center gap-1.5">
           {markers.length > 0 && (
-            <span className="px-2.5 py-1 rounded-full text-[10px] font-bold shadow-xs bg-slate-800/85 text-white border border-slate-700">
-              {liveCount} LIVE · {staleCount} STALE · {offlineCount} OFFLINE
-            </span>
+            <div className="flex items-center gap-2 px-3 py-1.5 rounded-xl text-[11px] font-bold shadow-xs bg-white/95 backdrop-blur-md text-slate-800 border border-slate-200/90">
+              <span className="flex items-center gap-1">
+                <span className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse" />
+                <span>{liveCount} Live</span>
+              </span>
+              <span className="text-slate-300">·</span>
+              <span className="text-slate-500">{staleCount + offlineCount} Stale</span>
+              {Object.values(liveRoutes).some((r) => r?.rerouted) && (
+                <>
+                  <span className="text-slate-300">·</span>
+                  <span className="text-amber-700 font-extrabold flex items-center gap-1">
+                    <span className="w-1.5 h-1.5 rounded-full bg-amber-500 animate-pulse" />
+                    {Object.values(liveRoutes).filter((r) => r?.rerouted).length} Detour Active
+                  </span>
+                </>
+              )}
+            </div>
           )}
+
           {Object.keys(sosMap).length > 0 && (
-            <span className="px-2.5 py-1 rounded-full text-[10px] font-bold shadow-xs bg-red-600 text-white border border-red-400 animate-pulse">
-              🚨 {Object.keys(sosMap).length} SOS ACTIVE
+            <span className="px-2.5 py-1.5 rounded-xl text-[11px] font-extrabold shadow-xs bg-red-600 text-white border border-red-500 animate-pulse flex items-center gap-1">
+              🚨 {Object.keys(sosMap).length} SOS
             </span>
           )}
-          {Object.values(liveRoutes).some((r) => r?.rerouted) && (
-            <span className="px-2.5 py-1 rounded-full text-[10px] font-bold shadow-xs bg-amber-500 text-slate-900 border border-amber-300 font-sans flex items-center gap-1 animate-pulse">
-              ⚠️ DYNAMIC REROUTE ({Object.values(liveRoutes).filter((r) => r?.rerouted).length} ACTIVE)
-            </span>
-          )}
-          {alerts.length > 0 && chip('bg-emerald-50 text-emerald-800 border border-emerald-300', `Continuous Corridor Monitoring Active (${alerts.length} alerts)`)}
-          {vehicles.some((v) => (v.status === 'moving' || v.status === 'in_transit') && checkVehicleCorridorHazard(v)) && (
-            <span className="px-2.5 py-1 rounded-full text-[10px] font-black shadow-xs bg-amber-600 text-white border border-amber-400 font-sans flex items-center gap-1">
-              ⚠️ CORRIDOR OBSTRUCTION DETECTED — DETOUR READY
-            </span>
-          )}
-          {heatMode === 'rain' && chip('bg-blue-600/90 text-white border border-blue-400', `Rainfall heat: LIVE (${heatData.rain.length} districts)`)}
-          {heatMode === 'flood' && chip('bg-orange-600/90 text-white border border-orange-400', `Flood heat: LIVE (${heatData.flood.length} districts)`)}
         </div>
 
         {/* Zoom / center controls */}
-        <div className="absolute right-3 bottom-14 z-[800] flex flex-col gap-1.5">
-          <button type="button" onClick={() => setZoomIn((c) => c + 1)} className="w-7 h-7 rounded-lg bg-white/95 shadow-xs border border-slate-200 flex items-center justify-center text-slate-700 hover:bg-slate-50 cursor-pointer" title="Zoom In"><Plus className="w-3.5 h-3.5" /></button>
-          <button type="button" onClick={() => setZoomOut((c) => c + 1)} className="w-7 h-7 rounded-lg bg-white/95 shadow-xs border border-slate-200 flex items-center justify-center text-slate-700 hover:bg-slate-50 cursor-pointer" title="Zoom Out"><Minus className="w-3.5 h-3.5" /></button>
-          <button type="button" onClick={() => setCenterT((c) => c + 1)} className="w-7 h-7 rounded-lg bg-white/95 shadow-xs border border-slate-200 flex items-center justify-center text-slate-700 hover:bg-slate-50 cursor-pointer" title="Center on fleet"><Target className="w-3.5 h-3.5" /></button>
+        <div className="absolute right-3 bottom-14 z-[800] flex flex-col gap-1">
+          <button type="button" onClick={() => setZoomIn((c) => c + 1)} className="w-7 h-7 rounded-lg bg-white/95 backdrop-blur-sm shadow-xs border border-slate-200/90 flex items-center justify-center text-slate-700 hover:bg-slate-50 cursor-pointer" title="Zoom In"><Plus className="w-3.5 h-3.5" /></button>
+          <button type="button" onClick={() => setZoomOut((c) => c + 1)} className="w-7 h-7 rounded-lg bg-white/95 backdrop-blur-sm shadow-xs border border-slate-200/90 flex items-center justify-center text-slate-700 hover:bg-slate-50 cursor-pointer" title="Zoom Out"><Minus className="w-3.5 h-3.5" /></button>
+          <button type="button" onClick={() => setCenterT((c) => c + 1)} className="w-7 h-7 rounded-lg bg-white/95 backdrop-blur-sm shadow-xs border border-slate-200/90 flex items-center justify-center text-slate-700 hover:bg-slate-50 cursor-pointer" title="Center on fleet"><Target className="w-3.5 h-3.5" /></button>
         </div>
 
-        {/* Basemap switcher */}
-        <div className="absolute right-3 bottom-3 z-[800] flex gap-1">
+        {/* Basemap switcher (segmented control) */}
+        <div className="absolute right-3 bottom-3 z-[800] bg-white/95 backdrop-blur-md p-0.5 rounded-xl border border-slate-200/90 shadow-xs flex gap-0.5">
           {Object.entries(TILE_LAYERS).map(([id, l]) => (
-            <button key={id} type="button" onClick={() => setActiveLayer(id)}
-              className={`px-2 py-1 rounded-md text-[9px] font-bold shadow-xs border cursor-pointer transition ${activeLayer === id ? 'bg-emerald-600 text-white border-emerald-600' : 'bg-white/95 text-slate-600 border-slate-200 hover:bg-slate-50'}`}>
-              {l.name}
+            <button
+              key={id}
+              type="button"
+              onClick={() => setActiveLayer(id)}
+              className={`px-2 py-1 rounded-lg text-[10px] font-bold cursor-pointer transition-all ${
+                activeLayer === id
+                  ? 'bg-slate-900 text-white shadow-xs'
+                  : 'text-slate-600 hover:text-slate-900 hover:bg-slate-100'
+              }`}
+            >
+              {l.name.replace(' (HD)', '')}
             </button>
           ))}
         </div>
 
-        {/* Radar toggle */}
-        <button type="button" onClick={() => setRadarOn((v) => !v)}
-          className={`absolute right-3 top-3 z-[800] flex items-center gap-1 px-2 py-1 rounded-lg text-[9px] font-bold shadow-xs border cursor-pointer ${radarOn ? 'bg-blue-600 text-white border-blue-600' : 'bg-white/95 text-slate-500 border-slate-200'}`}
-          title="Toggle rain radar">
-          <CloudRain className="w-3 h-3" /> {radarOn ? 'Radar ON' : 'Radar OFF'}
-        </button>
-
-        {/* Heatmap toggle: Off → Rain → Flood */}
-        <button
-          type="button"
-          onClick={() => setHeatMode((m) => (m === 'off' ? 'rain' : m === 'rain' ? 'flood' : 'off'))}
-          className={`absolute left-3 top-3 z-[800] flex items-center gap-1 px-2 py-1 rounded-lg text-[9px] font-bold shadow-xs border cursor-pointer ${heatMode === 'off' ? 'bg-white/95 text-slate-500 border-slate-200' : heatMode === 'rain' ? 'bg-blue-600 text-white border-blue-600' : 'bg-orange-600 text-white border-orange-600'}`}
-          title="Rainfall / flood heatmap">
-          <span className="w-3 h-3 rounded-full" style={{ background: heatMode === 'rain' ? '#2563EB' : heatMode === 'flood' ? '#EA580C' : 'linear-gradient(135deg,#38BDF8,#EA580C)' }} />
-          Heat: {heatMode === 'off' ? 'OFF' : heatMode === 'rain' ? 'Rain' : 'Flood'}
-        </button>
-
         {/* Coords readout */}
-        <div className="absolute bottom-3 left-1/2 -translate-x-1/2 z-[800] bg-white/95 rounded-lg px-2.5 py-1 text-[10px] font-semibold text-slate-600 shadow-xs border border-slate-200">
-          {cursorLatLng ? `${cursorLatLng.lat.toFixed(4)}, ${cursorLatLng.lng.toFixed(4)}` : '—'}
+        <div className="absolute bottom-3 left-1/2 -translate-x-1/2 z-[790] bg-white/90 backdrop-blur-sm rounded-lg px-2.5 py-1 text-[10px] font-bold text-slate-600 shadow-2xs border border-slate-200/80">
+          {cursorLatLng ? `${cursorLatLng.lat.toFixed(4)}°N, ${cursorLatLng.lng.toFixed(4)}°E` : '—'}
         </div>
 
         {/* Selected vehicle live-tracking card */}

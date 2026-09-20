@@ -61,7 +61,7 @@ export const RouteSequenceTimeline = ({ plan, activeRouteId = 'safest' }) => {
               </div>
               <div style={{ fontSize: '13px', fontWeight: 800, color: '#0F172A', lineHeight: 1.3 }}>{originName}</div>
             </div>
-            <div style={{ fontSize: '11px', color: '#64748B', marginTop: '8px', borderTop: '1px solid #E2E8F0', paddingTop: '6px' }}>
+            <div style={{ fontSize: '11px', color: '#059669', marginTop: '8px', fontWeight: 600 }}>
               Departure Hub
             </div>
           </div>
@@ -122,8 +122,6 @@ export const RouteSequenceTimeline = ({ plan, activeRouteId = 'safest' }) => {
                   {fc && (
                     <div style={{
                       marginTop: '8px',
-                      borderTop: '1px solid #F1F5F9',
-                      paddingTop: '6px',
                       fontSize: '10.5px',
                       fontWeight: 700,
                       color: (fcRisk === 'critical' || fcRisk === 'high') ? '#DC2626' : fcRisk === 'medium' ? '#D97706' : '#0284C7',
@@ -155,7 +153,7 @@ export const RouteSequenceTimeline = ({ plan, activeRouteId = 'safest' }) => {
               </div>
               <div style={{ fontSize: '13px', fontWeight: 800, color: '#0F172A', lineHeight: 1.3 }}>{destName}</div>
             </div>
-            <div style={{ fontSize: '11px', color: '#991B1B', marginTop: '8px', borderTop: '1px solid #FEE2E2', paddingTop: '6px' }}>
+            <div style={{ fontSize: '11px', color: '#DC2626', marginTop: '8px', fontWeight: 600 }}>
               Final Delivery Point
             </div>
           </div>

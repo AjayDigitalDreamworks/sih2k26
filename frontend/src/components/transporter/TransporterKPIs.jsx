@@ -178,77 +178,15 @@ export default function TransporterKPIs() {
     }
   };
 
-  const renderSparkline = (points, color = 'emerald') => {
-    if (!points || !Array.isArray(points) || points.length < 2) return null;
-    const min = Math.min(...points);
-    const max = Math.max(...points);
-    const isFlat = max === min;
-    const range = isFlat ? 1 : max - min;
-    const width = 120;
-    const height = 28;
-
-    const coords = points.map((val, idx) => {
-      const x = (idx / (points.length - 1)) * width;
-      const y = isFlat ? height / 2 : height - ((val - min) / range) * (height - 10) - 5;
-      return { x, y };
-    });
-
-    let lineD = `M ${coords[0].x} ${coords[0].y}`;
-    for (let i = 0; i < coords.length - 1; i++) {
-      const p0 = coords[i];
-      const p1 = coords[i + 1];
-      const cx = (p0.x + p1.x) / 2;
-      lineD += ` C ${cx} ${p0.y}, ${cx} ${p1.y}, ${p1.x} ${p1.y}`;
-    }
-
-    const areaD = `${lineD} L ${width} ${height} L 0 ${height} Z`;
-
-    const colorConfig = {
-      indigo: { stroke: '#4F46E5', stop: '#6366F1' },
-      blue: { stroke: '#2563EB', stop: '#3B82F6' },
-      emerald: { stroke: '#059669', stop: '#10B981' },
-      teal: { stroke: '#0D9488', stop: '#14B8A6' },
-      rose: { stroke: '#E11D48', stop: '#F43F5E' },
-      slate: { stroke: '#94A3B8', stop: '#CBD5E1' },
-    };
-
-    const cfg = colorConfig[color] || colorConfig.emerald;
-    const gradId = `sparkline-${color}`;
-    const lastCoord = coords[coords.length - 1];
-
-    return (
-      <div className="w-full h-7 overflow-hidden pt-1">
-        <svg viewBox={`0 0 ${width} ${height}`} className="w-full h-full overflow-visible" preserveAspectRatio="none">
-          <defs>
-            <linearGradient id={gradId} x1="0" y1="0" x2="0" y2="1">
-              <stop offset="0%" stopColor={cfg.stop} stopOpacity="0.25" />
-              <stop offset="100%" stopColor={cfg.stop} stopOpacity="0.0" />
-            </linearGradient>
-          </defs>
-          <path d={areaD} fill={`url(#${gradId})`} />
-          <path
-            d={lineD}
-            fill="none"
-            stroke={cfg.stroke}
-            strokeWidth="2"
-            strokeLinecap="round"
-            strokeLinejoin="round"
-          />
-          <circle cx={lastCoord.x} cy={lastCoord.y} r="2.5" fill={cfg.stroke} />
-        </svg>
-      </div>
-    );
-  };
-
   return (
     <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-3.5 items-stretch">
       {data.map((kpi) => (
         <div
           key={kpi.id}
-          className="bg-white rounded-xl p-4 border border-slate-200/90 shadow-2xs hover:shadow-xs hover:border-slate-300 transition-all flex flex-col justify-between"
+          className="bg-white rounded-2xl p-4.5 border border-slate-200/90 shadow-2xs hover:shadow-xs hover:border-slate-300 transition-all flex flex-col justify-between"
         >
           {/* Top Label & Icon */}
-          <div className="flex items-center justify-between gap-2 mb-2.5">
+          <div className="flex items-center justify-between gap-2 mb-3">
             <span className="text-xs font-semibold text-slate-500 tracking-tight truncate">
               {kpi.title}
             </span>
@@ -258,18 +196,13 @@ export default function TransporterKPIs() {
           </div>
 
           {/* Value & Badge */}
-          <div className="flex items-baseline justify-between gap-2">
+          <div className="flex items-baseline justify-between gap-2 mt-1">
             <div className="text-2xl font-bold text-slate-900 tracking-tight">
               {kpi.value}
             </div>
-            <span className={`text-[11px] font-medium px-2 py-0.5 rounded border shrink-0 ${kpi.badgeCls}`}>
+            <span className={`text-[11px] font-semibold px-2 py-0.5 rounded-md border shrink-0 ${kpi.badgeCls}`}>
               {kpi.change}
             </span>
-          </div>
-
-          {/* Smooth Area Sparkline */}
-          <div className="mt-2">
-            {renderSparkline(kpi.sparkline, kpi.color)}
           </div>
         </div>
       ))}
