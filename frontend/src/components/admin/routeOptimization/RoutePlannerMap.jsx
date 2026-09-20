@@ -89,8 +89,8 @@ export const RoutePlannerMap = ({
   vehicles: propVehicles,
 }) => {
   const { routePlannerInitialState, setRoutePlannerInitialState } = useApp() || {};
-  const [fromId, setFromId] = useState('dabua_chowk');
-  const [toId, setToId] = useState('aravali_college');
+  const [fromId, setFromId] = useState('kamrup');
+  const [toId, setToId] = useState('imphal_west');
   const [stops, setStops] = useState([]); // [{ id, districtId, customAddress }]
   const [emergencyContext, setEmergencyContext] = useState(null);
   const [prefer, setPrefer] = useState('optimal');
@@ -405,10 +405,10 @@ export const RoutePlannerMap = ({
     }
   }, [routePlannerInitialState, cargoWeightKg, onPlanChange, propOnSelectRoute, setRoutePlannerInitialState, vehicleType, prefer, planRoute]);
 
-  // Initial real plan on mount with Faridabad hubs (only if no incoming state)
+  // Initial real plan on mount with North-East lifeline corridor (Guwahati -> Imphal)
   useEffect(() => {
     if (!routePlannerInitialState) {
-      planRoute('dabua_chowk', 'aravali_college', 'safest', vehicleType, true);
+      planRoute('kamrup', 'imphal_west', 'safest', vehicleType, true);
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);

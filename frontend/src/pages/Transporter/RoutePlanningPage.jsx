@@ -67,8 +67,8 @@ export default function RoutePlanningPage() {
     if (originParam || destParam) {
       if (setRoutePlannerInitialState) {
         setRoutePlannerInitialState({
-          fromDistrictId: originParam || 'dabua_chowk',
-          toDistrictId: destParam || 'aravali_college',
+          fromDistrictId: originParam || 'kamrup',
+          toDistrictId: destParam || 'imphal_west',
           prefer: 'safest',
         });
       }
