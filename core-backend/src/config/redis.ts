@@ -46,6 +46,18 @@ if (env.redisUrl) {
 const l1Cache = new Map<string, { value: any; expiry: number }>();
 const L1_MAX_TTL_MS = 30 * 1000; // 30s L1 cache
 
+function handleUpstashError(err: any, op: string, key?: string) {
+  const msg = (err as Error)?.message || String(err);
+  if (msg.includes('max requests limit exceeded') || msg.includes('ERR max requests')) {
+    if (upstashRedis) {
+      console.warn('⚠️ [Redis] Upstash quota limit exceeded (500,000 requests limit reached). Automatically switching to in-memory store.');
+      upstashRedis = null;
+    }
+  } else {
+    console.warn(`[Redis] Upstash ${op} error for ${key || ''}:`, msg);
+  }
+}
+
 export const redisClient = {
   async get<T = any>(key: string): Promise<T | null> {
     const now = Date.now();
@@ -77,7 +89,7 @@ export const redisClient = {
         }
         return val;
       } catch (err) {
-        console.warn(`[Redis] Upstash get error for ${key}:`, (err as Error).message);
+        handleUpstashError(err, 'get', key);
       }
     }
     // In-memory fallback
@@ -117,7 +129,7 @@ export const redisClient = {
         }
         return 'OK';
       } catch (err) {
-        console.warn(`[Redis] Upstash set error for ${key}:`, (err as Error).message);
+        handleUpstashError(err, 'set', key);
       }
     }
     // In-memory fallback
@@ -136,7 +148,9 @@ export const redisClient = {
       try { return await localRedis.del(key); } catch {}
     }
     if (upstashRedis) {
-      try { return await upstashRedis.del(key); } catch {}
+      try { return await upstashRedis.del(key); } catch (err) {
+        handleUpstashError(err, 'del', key);
+      }
     }
     const existed = memoryStore.has(key);
     memoryStore.delete(key);
@@ -148,7 +162,9 @@ export const redisClient = {
       try { return await localRedis.keys(pattern); } catch {}
     }
     if (upstashRedis) {
-      try { return await upstashRedis.keys(pattern); } catch {}
+      try { return await upstashRedis.keys(pattern); } catch (err) {
+        handleUpstashError(err, 'keys', pattern);
+      }
     }
     const regex = new RegExp('^' + pattern.replace(/\*/g, '.*') + '$');
     return Array.from(memoryStore.keys()).filter((k) => regex.test(k));
