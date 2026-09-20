@@ -54,7 +54,7 @@ export function SiteNav({ onOpenLogin }) {
 
         <div className="nav-actions">
           {isAuthenticated && user ? (
-            <div className="flex items-center gap-2.5 bg-emerald-900/80 backdrop-blur-md border border-emerald-500/40 px-3 py-1.5 rounded-full text-xs text-white shadow-lg">
+            <div className="hidden md:flex items-center gap-2.5 bg-emerald-900/80 backdrop-blur-md border border-emerald-500/40 px-3 py-1.5 rounded-full text-xs text-white shadow-lg">
               <span className="w-2 h-2 rounded-full bg-emerald-400 animate-pulse" />
               <div className="flex flex-col text-left">
                 <span className="font-bold text-emerald-200">{user.name}</span>

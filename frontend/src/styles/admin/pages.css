@@ -175,6 +175,23 @@
   }
 }
 
+@media (max-width: 640px) {
+  .route-query-card,
+  .route-query-bar {
+    padding: 12px 14px;
+    border-radius: 12px;
+  }
+  .query-input-wrap {
+    height: 36px;
+    padding: 0 10px;
+    font-size: 12px;
+  }
+  .query-input-wrap input,
+  .query-input-wrap select {
+    font-size: 12px;
+  }
+}
+
 /* Route Timeline Sequence */
 .route-sequence-list {
   display: flex;

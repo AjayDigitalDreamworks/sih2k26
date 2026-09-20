@@ -20,13 +20,14 @@ import {
   Wifi,
   ChevronRight,
   Users,
+  X,
 } from 'lucide-react';
 import { useApp } from '@/contexts/AppContext';
 import { useLang } from '@/contexts/LanguageContext';
 
 export const Sidebar = () => {
   const navigate = useNavigate();
-  const { currentPage, setCurrentPage, sidebarCollapsed, openModal, alerts } = useApp();
+  const { currentPage, setCurrentPage, sidebarCollapsed, setSidebarCollapsed, openModal, alerts } = useApp();
   const { t } = useLang();
   const [isOnline, setIsOnline] = useState(typeof navigator !== 'undefined' ? navigator.onLine : true);
 
@@ -113,6 +114,16 @@ export const Sidebar = () => {
             </div>
           )}
         </a>
+        {!sidebarCollapsed && (
+          <button
+            type="button"
+            onClick={() => setSidebarCollapsed(true)}
+            className="lg:hidden p-1.5 rounded-lg text-slate-400 hover:text-slate-600 hover:bg-slate-100 cursor-pointer ml-auto"
+            aria-label="Close menu"
+          >
+            <X size={18} />
+          </button>
+        )}
       </div>
 
       {/* Sidebar Navigation */}
@@ -144,6 +155,9 @@ export const Sidebar = () => {
                     onClick={() => {
                       setCurrentPage(item.id);
                       navigate(item.id === 'dashboard' ? '/admin' : `/admin/${item.id}`);
+                      if (typeof window !== 'undefined' && window.innerWidth < 1024) {
+                        setSidebarCollapsed(true);
+                      }
                     }}
                     className={`nav-item ${isActive ? 'active' : ''} ${item.isEmergency ? 'emergency' : ''}`}
                     title={sidebarCollapsed ? `${translatedLabel}${item.badge ? ` (${item.badge})` : ''}` : undefined}

@@ -34,7 +34,9 @@ export const mapVehicle = (v) => ({
 
 export const AppProvider = ({ children, scope = 'admin' }) => {
   const [currentPage, setCurrentPage] = useState('dashboard');
-  const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
+  const [sidebarCollapsed, setSidebarCollapsed] = useState(() => {
+    return typeof window !== 'undefined' ? window.innerWidth < 1024 : false;
+  });
   const [searchQuery, setSearchQuery] = useState('');
 
   const [activeModal, setActiveModal] = useState(null);

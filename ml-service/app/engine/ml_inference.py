@@ -84,6 +84,19 @@ class MLModels:
             return
         self._risk_loaded = True
         try:
+            # First check for packaged raahi_risk_model.pkl
+            pkl_path = os.path.join(os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))), "model", "raahi_risk_model.pkl")
+            if os.path.exists(pkl_path):
+                import pickle
+                with open(pkl_path, "rb") as f:
+                    bundle = pickle.load(f)
+                if "model" in bundle and "scaler" in bundle:
+                    self._risk_model = bundle["model"]
+                    self._risk_scaler = bundle["scaler"]
+                    self._model_status["risk"] = "loaded_from_pkl"
+                    print(f"[OK] Risk model loaded from {pkl_path}")
+                    return
+
             risk_path = os.path.join(MODELS_DIR, "risk_model.joblib")
             risk_scaler_path = os.path.join(MODELS_DIR, "risk_scaler.joblib")
             if os.path.exists(risk_path) and os.path.exists(risk_scaler_path):
@@ -125,6 +138,23 @@ class MLModels:
         if self._disruption_loaded:
             return
         self._disruption_loaded = True
+
+        pkl_path = os.path.join(os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))), "model", "raahi_risk_model.pkl")
+        if os.path.exists(pkl_path):
+            try:
+                import pickle
+                with open(pkl_path, "rb") as f:
+                    bundle = pickle.load(f)
+                if "disruption_models" in bundle and bundle["disruption_models"]:
+                    self._disruption_models = bundle["disruption_models"]
+                    self._disruption_scaler = bundle.get("disruption_scaler")
+                    for name in self._disruption_models:
+                        self._model_status[f"disruption_{name}"] = "loaded_from_pkl"
+                    print("[OK] Disruption models loaded from raahi_risk_model.pkl")
+                    return
+            except Exception as e:
+                print(f"[WARN] Could not load disruption models from pkl: {e}")
+
         for name in ["landslide", "flood", "road_block", "severity"]:
             try:
                 path = os.path.join(MODELS_DIR, f"disruption_{name}_model.joblib")
@@ -163,6 +193,26 @@ class MLModels:
         if self._route_loaded:
             return
         self._route_loaded = True
+
+        pkl_path = os.path.join(os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))), "model", "raahi_risk_model.pkl")
+        if os.path.exists(pkl_path):
+            try:
+                import pickle
+                with open(pkl_path, "rb") as f:
+                    bundle = pickle.load(f)
+                rm = bundle.get("route_models", {})
+                if "delay" in rm and "safety" in rm:
+                    self._route_delay_model = rm.get("delay")
+                    self._route_safety_model = rm.get("safety")
+                    self._route_rank_model = rm.get("rank")
+                    self._route_scaler = rm.get("scaler")
+                    self._commodity_encoder = rm.get("commodity_encoder")
+                    self._model_status["route"] = "loaded_from_pkl"
+                    print("[OK] Route optimization models loaded from raahi_risk_model.pkl")
+                    return
+            except Exception as e:
+                print(f"[WARN] Could not load route models from pkl: {e}")
+
         try:
             delay_path = os.path.join(MODELS_DIR, "route_delay_model.joblib")
             safety_path = os.path.join(MODELS_DIR, "route_safety_model.joblib")

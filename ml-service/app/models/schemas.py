@@ -32,6 +32,7 @@ class RiskScoreResponse(BaseModel):
 
 class DisruptionPredictRequest(BaseModel):
     districtId: str
+    includeRealTime: Optional[bool] = True
     weatherSnapshot: Optional[WeatherSnapshot] = None
     # Real DB-sourced fields
     connectivityScore: Optional[int] = Field(default=80, description="District connectivity score from DB (0-100)")

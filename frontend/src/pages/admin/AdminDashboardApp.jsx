@@ -23,7 +23,7 @@ import { EmergencyModePage } from './EmergencyModePage';
 import { UsersPage } from './UsersPage';
 
 function AdminContent() {
-  const { currentPage, emergencySos, clearEmergencySos, setCurrentPage } = useApp();
+  const { currentPage, emergencySos, clearEmergencySos, setCurrentPage, sidebarCollapsed, setSidebarCollapsed } = useApp();
   const location = useLocation();
   const navigate = useNavigate();
 
@@ -102,6 +102,13 @@ function AdminContent() {
   return (
     <div className="app-container">
       <Sidebar />
+      {!sidebarCollapsed && (
+        <div
+          className="sidebar-backdrop lg:hidden"
+          onClick={() => setSidebarCollapsed(true)}
+          aria-label="Close sidebar menu"
+        />
+      )}
       <div className="main-wrapper">
         <TopHeader />
         {/* Real-time driver SOS banner — critical, visible on every page */}
