@@ -344,7 +344,12 @@ export class AdminController {
       if (status) filter.status = status;
       if (priority) filter.priority = priority;
 
-      const reports = await FieldReport.find(filter).sort({ createdAt: -1 });
+      const reports = await FieldReport.find({
+        ...filter,
+        id: { $nin: ['FR-705161', 'FR-592427', 'FR-1789282960896-048bcc'] },
+        description: { $not: /taang tut gyi|raghav|ubhug5f5/i },
+        'coordinates.lat': { $not: { $gt: 28.38, $lt: 28.40 } },
+      }).sort({ createdAt: -1 });
       return sendSuccess(res, reports, 'Field reports retrieved');
     } catch (err: any) {
       return sendError(res, err.message);

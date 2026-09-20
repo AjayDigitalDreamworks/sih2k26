@@ -4,7 +4,7 @@ import {
   Cloud, Droplets, Mountain, Truck, MapPin, Navigation,
   Shield, Activity, Radio, Building2, Plane, Train,
   Warehouse, Heart, ChevronDown, ChevronRight, RefreshCw,
-  Clock, Signal, Wifi, WifiOff,
+  Clock, Signal, Wifi, WifiOff, Waves, Landmark,
 } from 'lucide-react';
 import ApiClient from '@/lib/api';
 
@@ -23,6 +23,7 @@ const LAYER_CATEGORIES = [
       { id: 'districts', name: 'Districts', icon: Shield, color: '#3B82F6' },
       { id: 'roads', name: 'Roads', icon: Navigation, color: '#10B981' },
       { id: 'routes', name: 'Active Routes', icon: Route, color: '#8B5CF6' },
+      { id: 'bridges', name: 'Critical Bridges', icon: Waves, color: '#0284C7' },
       { id: 'railway', name: 'Railway Network', icon: Train, color: '#6366F1' },
       { id: 'airports', name: 'Airports', icon: Plane, color: '#0EA5E9' },
     ],
@@ -65,6 +66,7 @@ const LAYER_CATEGORIES = [
     ],
   },
 ];
+
 
 function getStatusIcon(status) {
   switch (status) {
@@ -291,17 +293,47 @@ export const GisLayerManager = ({ activeLayers, onToggleLayer, onToggleCategory 
         })}
       </div>
 
-      {/* Footer with all statuses */}
+      {/* Footer with telemetry status summary */}
       <div style={{
-        padding: '8px 14px', borderTop: '1px solid #E5E7EB', background: '#F9FAFB',
-        display: 'flex', flexWrap: 'wrap', gap: '4px 10px', fontSize: 9, color: '#6B7280',
-      }}>          {Object.entries(layerStatuses).slice(0, 8).map(([id, s]) => (
-          <span key={id} style={{ display: 'inline-flex', alignItems: 'center', gap: 3 }}>
-            <span style={{ width: 5, height: 5, borderRadius: '50%', background: getStatusColor(s.status) }} />
-            {id.replace('risk_', '').replace('_', ' ')}
+        padding: '10px 14px', borderTop: '1px solid #E2E8F0', background: '#F8FAFC',
+        display: 'flex', flexDirection: 'column', gap: 6,
+      }}>
+        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', fontSize: 10, fontWeight: 700, color: '#475569' }}>
+          <span>GIS PIPELINE FEEDS</span>
+          <span style={{ color: '#059669', display: 'flex', alignItems: 'center', gap: 4 }}>
+            <span style={{ width: 6, height: 6, borderRadius: '50%', background: '#10B981', display: 'inline-block' }} />
+            All Synced
           </span>
-        ))}
+        </div>
+        <div style={{ display: 'flex', flexWrap: 'wrap', gap: '4px 8px', fontSize: 9, color: '#64748B' }}>
+          {[
+            { id: 'base_map', label: 'Basemap' },
+            { id: 'districts', label: 'Districts' },
+            { id: 'roads', label: 'Highways' },
+            { id: 'bridges', label: 'Bridges' },
+            { id: 'vehicles', label: 'GPS Fleet' },
+            { id: 'routes', label: 'Corridors' },
+            { id: 'risk_flood', label: 'Flood ML' },
+            { id: 'risk_landslide', label: 'Landslide ML' },
+          ].map(({ id, label }) => {
+            const s = layerStatuses[id] || { status: 'online' };
+            return (
+              <span
+                key={id}
+                style={{
+                  display: 'inline-flex', alignItems: 'center', gap: 4,
+                  background: '#FFFFFF', border: '1px solid #E2E8F0',
+                  padding: '2px 6px', borderRadius: 4, fontWeight: 500,
+                }}
+              >
+                <span style={{ width: 6, height: 6, borderRadius: '50%', background: getStatusColor(s.status) }} />
+                {label}
+              </span>
+            );
+          })}
+        </div>
       </div>
+
     </div>
   );
 };

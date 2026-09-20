@@ -134,14 +134,116 @@ const TILE_LAYERS = {
 const corridorGeoCache = new Map();
 
 const DEFAULT_ACTIVE_LAYERS = [
-  'base_map', 'districts', 'roads', 'routes', 'vehicles', 'weather', 'rainfall', 'imd_radar',
+  'base_map', 'districts', 'roads', 'routes', 'bridges', 'vehicles', 'weather', 'rainfall', 'imd_radar',
   'risk_flood', 'risk_landslide', 'traffic', 'disruptions', 'hospitals', 'warehouses', 'logistics_hubs',
 ];
+
+export const CRITICAL_BRIDGES = [
+  { id: 'br-1', name: 'Saraighat Bridge (NH-27)', river: 'Brahmaputra River', district: 'kamrup', lat: 26.1287, lng: 91.6811, status: 'operational', clearance: 'Safe', highway: 'NH-27' },
+  { id: 'br-2', name: 'Bogibeel Rail-Road Bridge (NH-15)', river: 'Brahmaputra River', district: 'dibrugarh', lat: 27.4000, lng: 94.7500, status: 'operational', clearance: 'Safe', highway: 'NH-15' },
+  { id: 'br-3', name: 'Dhola-Sadiya Setu (NH-115)', river: 'Lohit River', district: 'tinsukia', lat: 27.7950, lng: 95.6600, status: 'operational', clearance: 'Safe', highway: 'NH-115' },
+  { id: 'br-4', name: 'Kolia Bhomora Setu (NH-715)', river: 'Brahmaputra River', district: 'sonitpur', lat: 26.6080, lng: 92.8530, status: 'operational', clearance: 'Safe', highway: 'NH-715' },
+  { id: 'br-5', name: 'Naranarayan Setu (NH-17)', river: 'Brahmaputra River', district: 'goalpara', lat: 26.2200, lng: 90.5800, status: 'caution', clearance: 'High Water Level', highway: 'NH-17' },
+  { id: 'br-6', name: 'Barak River Bridge (NH-37)', river: 'Barak River', district: 'cachar', lat: 24.8350, lng: 92.8020, status: 'alert', clearance: 'Flood Overtopping Risk', highway: 'NH-37' },
+];
+
+export const DEFAULT_CORRIDOR_ROUTES = [
+  {
+    id: 'R-01',
+    name: 'Guwahati → Tezpur (NH-27)',
+    origin_district_id: 'kamrup',
+    dest_district_id: 'sonitpur',
+    status: 'good',
+    distance_km: 175,
+    avg_travel_hours: 3.5,
+    current_risk_score: 18,
+    road_ids: ['NH-27', 'NH-37'],
+  },
+  {
+    id: 'R-02',
+    name: 'Guwahati → Shillong (NH-6)',
+    origin_district_id: 'kamrup',
+    dest_district_id: 'east_khasi',
+    status: 'good',
+    distance_km: 98,
+    avg_travel_hours: 2.2,
+    current_risk_score: 22,
+    road_ids: ['NH-6'],
+  },
+  {
+    id: 'R-03',
+    name: 'Silchar → Aizawl (NH-306)',
+    origin_district_id: 'cachar',
+    dest_district_id: 'aizawl',
+    status: 'at_risk',
+    distance_km: 168,
+    avg_travel_hours: 6.0,
+    current_risk_score: 68,
+    road_ids: ['NH-306'],
+    hazard_description: 'Landslide Warning & Hill Slopes Vulnerability',
+  },
+  {
+    id: 'R-04',
+    name: 'Dimapur → Kohima → Imphal (NH-2)',
+    origin_district_id: 'dimapur',
+    dest_district_id: 'imphal_west',
+    status: 'blocked',
+    distance_km: 215,
+    avg_travel_hours: 8.5,
+    current_risk_score: 92,
+    road_ids: ['NH-2'],
+    hazard_description: 'Severe Mudslide & Road Cutoff at KM 42 (Bypass Active)',
+  },
+  {
+    id: 'R-05',
+    name: 'Guwahati → Itanagar (NH-415)',
+    origin_district_id: 'kamrup',
+    dest_district_id: 'papum_pare',
+    status: 'good',
+    distance_km: 330,
+    avg_travel_hours: 7.0,
+    current_risk_score: 28,
+    road_ids: ['NH-27', 'NH-415'],
+  },
+];
+
+function bridgeIcon(status) {
+  const color = status === 'alert' ? '#DC2626' : status === 'caution' ? '#EA580C' : '#0284C7';
+  return chipIcon(
+    `<div style="width:24px;height:24px;border-radius:6px;background:${color};color:white;display:flex;align-items:center;justify-content:center;font-size:12px;border:2px solid white;box-shadow:0 1px 5px rgba(0,0,0,0.35)">🌉</div>`,
+    26
+  );
+}
+
+function blockedCorridorBadge(name) {
+  const label = name ? name.split('(')[0].replace('→', '➔').trim() : 'NH-2 Corridor';
+  return L.divIcon({
+    className: '',
+    html: `<div style="display:inline-flex;align-items:center;gap:5px;background:#DC2626;color:white;padding:3px 9px;border-radius:999px;border:2px solid white;box-shadow:0 3px 12px rgba(220,38,38,0.7);font-family:sans-serif;font-size:11px;font-weight:800;white-space:nowrap;cursor:pointer;animation:pulse 2s infinite;">
+      <span style="font-size:12px;">⛔</span>
+      <span>BLOCKED: ${label}</span>
+    </div>`,
+    iconAnchor: [55, 12],
+  });
+}
+
+function atRiskCorridorBadge(name, score) {
+  const label = name ? name.split('(')[0].replace('→', '➔').trim() : 'NH-306 Corridor';
+  return L.divIcon({
+    className: '',
+    html: `<div style="display:inline-flex;align-items:center;gap:4px;background:#EA580C;color:white;padding:3px 8px;border-radius:999px;border:2px solid white;box-shadow:0 2px 8px rgba(234,88,12,0.6);font-family:sans-serif;font-size:10px;font-weight:700;white-space:nowrap;cursor:pointer;">
+      <span style="font-size:11px;">⚠️</span>
+      <span>HIGH RISK (${score || 68}): ${label}</span>
+    </div>`,
+    iconAnchor: [55, 12],
+  });
+}
 
 const SEVERITY_COLORS = { critical: '#DC2626', high: '#EF4444', medium: '#F59E0B', low: '#3B82F6', info: '#06B6D4' };
 const RISK_COLORS = { critical: '#7F1D1D', high: '#EF4444', medium: '#F59E0B', low: '#10B981', open: '#10B981', at_risk: '#F59E0B', blocked: '#EF4444' };
 const CONGESTION_COLORS = { low: '#10B981', moderate: '#F59E0B', high: '#EF4444', blocked: '#7F1D1D' };
 const POI_COLORS = { hospital: '#EC4899', warehouse: '#8B5CF6', logistics_hub: '#0EA5E9', airport: '#0EA5E9', railway: '#6366F1' };
+
 
 function getStatusColor(status) {
   switch (status) {
@@ -420,113 +522,149 @@ function LayerControl({ activeLayer, setActiveLayer }) {
   );
 }
 
-/* --- Dynamic legend --- */
-function MapLegend({ onLayers, showRoutes, setShowRoutes, showVehicles, setShowVehicles }) {
+/* --- Modern Executive GIS Legend --- */
+function MapLegend({
+  onLayers,
+  showRoutes,
+  setShowRoutes,
+  showVehicles,
+  setShowVehicles,
+  showBridges,
+  setShowBridges,
+  showRainLayer,
+  setShowRainLayer,
+}) {
   const [collapsed, setCollapsed] = useState(false);
-  const onRoutes = useCallback((e) => setShowRoutes(e.target.checked), [setShowRoutes]);
-  const onVehicles = useCallback((e) => setShowVehicles(e.target.checked), [setShowVehicles]);
-  const rows = [];
-  if (onLayers('districts') || onLayers('accessibility')) {
-    rows.push({ header: onLayers('accessibility') ? 'Accessibility' : 'Districts', items: [
-      { color: '#10B981', label: 'Accessible' },
-      { color: '#F59E0B', label: 'Partial' },
-      { color: '#EF4444', label: 'Blocked' },
-    ]});
-  }
-  if (onLayers('routes')) {
-    rows.push({ header: 'Routes', items: [
-      { color: '#10B981', label: 'Low risk' },
-      { color: '#F59E0B', label: 'Medium risk' },
-      { color: '#EF4444', label: 'High risk' },
-    ]});
-  } else if (onLayers('roads')) {
-    rows.push({ header: 'Roads', items: [
-      { color: '#10B981', label: 'Highway Network' },
-    ]});
-  }
-  if (onLayers('traffic')) {
-    rows.push({ header: 'Traffic', items: [
-      { color: '#10B981', label: 'Free flow' },
-      { color: '#F59E0B', label: 'Moderate' },
-      { color: '#EF4444', label: 'Congested' },
-      { color: '#7F1D1D', label: 'Blocked' },
-    ]});
-  }
-  if (onLayers('risk_flood')) rows.push({ header: 'Flood risk', items: [
-    { color: '#10B981', label: 'Low' }, { color: '#F59E0B', label: 'Medium' }, { color: '#EF4444', label: 'High' },
-  ]});
-  if (onLayers('risk_landslide')) rows.push({ header: 'Landslide risk', items: [
-    { color: '#10B981', label: 'Low' }, { color: '#F59E0B', label: 'Medium' }, { color: '#EF4444', label: 'High' },
-  ]});
-  if (onLayers('weather')) rows.push({ header: 'Weather', items: [
-    { color: '#3B82F6', label: '≤15°C' }, { color: '#06B6D4', label: '16-24°C' },
-    { color: '#F59E0B', label: '25-30°C' }, { color: '#EF4444', label: '>30°C' },
-  ]});
-  if (onLayers('rainfall')) rows.push({ header: 'Rainfall', items: [
-    { color: '#93C5FD', label: '<10mm (24h)' }, { color: '#3B82F6', label: '10-40mm (24h)' },
-    { color: '#F59E0B', label: '40-80mm (24h)' }, { color: '#DC2626', label: '>80mm (24h)' },
-    { color: '#2563EB', label: 'Live radar (now)' },
-  ]});
-  if (onLayers('road_damage')) rows.push({ header: 'Road Damage', items: [
-    { color: '#EF4444', label: 'Blocked / Hazard' },
-  ]});
-  if (onLayers('disruptions')) rows.push({ header: 'Disruptions', items: [
-    { color: '#EF4444', label: 'Active alert' },
-  ]});
-  if (onLayers('hospitals') || onLayers('warehouses') || onLayers('logistics_hubs') || onLayers('airports') || onLayers('railway')) {
-    rows.push({ header: 'POIs & Transit', items: [
-      ...(onLayers('hospitals') ? [{ color: '#EC4899', label: 'Hospital' }] : []),
-      ...(onLayers('warehouses') ? [{ color: '#8B5CF6', label: 'Warehouse' }] : []),
-      ...(onLayers('logistics_hubs') ? [{ color: '#0EA5E9', label: 'Logistics hub' }] : []),
-      ...(onLayers('airports') ? [{ color: '#0EA5E9', label: 'Airport' }] : []),
-      ...(onLayers('railway') ? [{ color: '#6366F1', label: 'Railway' }] : []),
-    ]});
-  }
+
   return (
-    <div style={{ position: 'absolute', bottom: 40, left: 10, zIndex: 1000, background: 'white', borderRadius: 4, boxShadow: '0 1px 4px rgba(0,0,0,0.3)', width: collapsed ? 'auto' : 172, overflow: 'hidden' }}>
+    <div
+      style={{
+        position: 'absolute',
+        bottom: 24,
+        left: 10,
+        zIndex: 1000,
+        background: 'rgba(255, 255, 255, 0.96)',
+        backdropFilter: 'blur(12px)',
+        borderRadius: 10,
+        boxShadow: '0 8px 24px rgba(0,0,0,0.18), 0 2px 6px rgba(0,0,0,0.08)',
+        border: '1.5px solid rgba(226, 232, 240, 0.95)',
+        width: collapsed ? 'auto' : 210,
+        overflow: 'hidden',
+        fontFamily: "'Roboto', -apple-system, sans-serif",
+        transition: 'all 0.2s ease',
+      }}
+    >
       <button
+        type="button"
         onClick={() => setCollapsed(!collapsed)}
         style={{
-          display: 'flex', alignItems: 'center', justifyContent: 'space-between', width: '100%',
-          padding: '6px 10px', border: 'none', background: '#F8F9FA', cursor: 'pointer',
-          fontSize: 11, fontWeight: 600, color: '#333', fontFamily: "'Roboto', sans-serif", borderBottom: '1px solid #E8EAED',
+          display: 'flex',
+          alignItems: 'center',
+          justifyContent: 'space-between',
+          width: '100%',
+          padding: '8px 12px',
+          border: 'none',
+          background: 'linear-gradient(90deg, #F8FAFC 0%, #EFF6FF 100%)',
+          cursor: 'pointer',
+          fontSize: 11,
+          fontWeight: 800,
+          color: '#1E293B',
+          borderBottom: collapsed ? 'none' : '1px solid #E2E8F0',
         }}
       >
-        <span>Legend</span>
-        {collapsed ? <ChevronUp size={12} /> : <ChevronDown size={12} />}
+        <span style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+          <span style={{ width: 8, height: 8, borderRadius: '50%', background: '#2563EB' }} />
+          <span>MAP LEGEND</span>
+        </span>
+        {collapsed ? <ChevronUp size={14} color="#64748B" /> : <ChevronDown size={14} color="#64748B" />}
       </button>
+
       {!collapsed && (
-        <div style={{ padding: '6px 10px', fontSize: 11, fontFamily: "'Roboto', sans-serif", maxHeight: 260, overflowY: 'auto' }}>
-          {rows.map(section => (
-            <div key={section.header}>
-              <div style={{ margin: '6px 0 4px', fontWeight: 500, color: '#5F6368', fontSize: 10, textTransform: 'uppercase', letterSpacing: '0.5px' }}>{section.header}</div>
-              {section.items.map(item => (
-                <div key={item.label} style={{ display: 'flex', alignItems: 'center', gap: 6, marginBottom: 3 }}>
-                  <div style={{ width: 10, height: 10, borderRadius: '50%', background: item.color, border: '1px solid rgba(0,0,0,0.1)' }} />
-                  <span style={{ color: '#3C4043' }}>{item.label}</span>
-                </div>
-              ))}
+        <div style={{ padding: '8px 12px', fontSize: 11, maxHeight: 320, overflowY: 'auto' }}>
+          {/* Corridor transit status */}
+          <div style={{ marginBottom: 8 }}>
+            <div style={{ fontSize: 9, fontWeight: 800, color: '#64748B', letterSpacing: '0.5px', textTransform: 'uppercase', marginBottom: 5 }}>
+              Corridor Status
             </div>
-          ))}
-          {(onLayers('routes') || onLayers('vehicles')) && (
-            <div style={{ margin: '6px 0 4px', borderTop: '1px solid #E8EAED', paddingTop: 6 }}>
-              {onLayers('routes') && (
-                <label style={{ display: 'flex', alignItems: 'center', gap: 6, cursor: 'pointer', color: '#3C4043', fontSize: 11, marginBottom: 3 }}>
-                  <input type="checkbox" checked={showRoutes} onChange={onRoutes} style={{ width: 13, height: 13 }} /> Routes
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+                <span style={{ width: 14, height: 4, borderRadius: 2, background: '#DC2626' }} />
+                <span style={{ color: '#DC2626', fontWeight: 700, fontSize: 11 }}>⛔ Blocked Corridor (NH-2)</span>
+              </div>
+              <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+                <span style={{ width: 14, height: 4, borderRadius: 2, background: '#EA580C' }} />
+                <span style={{ color: '#D97706', fontWeight: 700, fontSize: 11 }}>⚠️ High Risk (NH-306)</span>
+              </div>
+              <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+                <span style={{ width: 14, height: 4, borderRadius: 2, background: '#10B981' }} />
+                <span style={{ color: '#059669', fontWeight: 600, fontSize: 11 }}>🟢 Open / Clear (NH-27/6)</span>
+              </div>
+            </div>
+          </div>
+
+          {/* Infrastructure & Hazards */}
+          <div style={{ marginBottom: 8, paddingTop: 6, borderTop: '1px solid #F1F5F9' }}>
+            <div style={{ fontSize: 9, fontWeight: 800, color: '#64748B', letterSpacing: '0.5px', textTransform: 'uppercase', marginBottom: 5 }}>
+              Key Infrastructure
+            </div>
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+                <span style={{ fontSize: 12 }}>🚚</span>
+                <span style={{ color: '#334155' }}>Live Vehicles (GPS)</span>
+              </div>
+              <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+                <span style={{ fontSize: 12 }}>🌉</span>
+                <span style={{ color: '#334155' }}>Critical River Bridges</span>
+              </div>
+              <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+                <span style={{ fontSize: 12 }}>📡</span>
+                <span style={{ color: '#334155' }}>IMD Radar Observatories</span>
+              </div>
+              <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+                <span style={{ fontSize: 12 }}>🌊</span>
+                <span style={{ color: '#334155' }}>Flood Hazard Zones</span>
+              </div>
+              <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+                <span style={{ fontSize: 12 }}>⛰️</span>
+                <span style={{ color: '#334155' }}>Landslide Hazard Zones</span>
+              </div>
+            </div>
+          </div>
+
+          {/* Quick Layer Toggles */}
+          <div style={{ paddingTop: 6, borderTop: '1px solid #E2E8F0' }}>
+            <div style={{ fontSize: 9, fontWeight: 800, color: '#1E293B', letterSpacing: '0.5px', textTransform: 'uppercase', marginBottom: 4 }}>
+              Layer Filters
+            </div>
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
+              <label style={{ display: 'flex', alignItems: 'center', gap: 6, cursor: 'pointer', color: '#1E293B', fontWeight: 600 }}>
+                <input type="checkbox" checked={showRoutes} onChange={(e) => setShowRoutes(e.target.checked)} style={{ accentColor: '#2563EB' }} />
+                <span>Transit Corridors</span>
+              </label>
+              <label style={{ display: 'flex', alignItems: 'center', gap: 6, cursor: 'pointer', color: '#1E293B', fontWeight: 600 }}>
+                <input type="checkbox" checked={showVehicles} onChange={(e) => setShowVehicles(e.target.checked)} style={{ accentColor: '#2563EB' }} />
+                <span>Live Fleet (GPS)</span>
+              </label>
+              {setShowBridges && (
+                <label style={{ display: 'flex', alignItems: 'center', gap: 6, cursor: 'pointer', color: '#1E293B', fontWeight: 600 }}>
+                  <input type="checkbox" checked={showBridges} onChange={(e) => setShowBridges(e.target.checked)} style={{ accentColor: '#0284C7' }} />
+                  <span>River Bridges</span>
                 </label>
               )}
-              {onLayers('vehicles') && (
-                <label style={{ display: 'flex', alignItems: 'center', gap: 6, cursor: 'pointer', color: '#3C4043', fontSize: 11 }}>
-                  <input type="checkbox" checked={showVehicles} onChange={onVehicles} style={{ width: 13, height: 13 }} /> Vehicles
+              {setShowRainLayer && (
+                <label style={{ display: 'flex', alignItems: 'center', gap: 6, cursor: 'pointer', color: '#1E293B', fontWeight: 600 }}>
+                  <input type="checkbox" checked={showRainLayer} onChange={(e) => setShowRainLayer(e.target.checked)} style={{ accentColor: '#2563EB' }} />
+                  <span>Rain Radar</span>
                 </label>
               )}
             </div>
-          )}
+          </div>
         </div>
       )}
     </div>
   );
 }
+
 
 /* --- Map helpers --- */
 function MapEvents({ onMoveEnd }) {
@@ -1156,7 +1294,7 @@ function MapLiveInspectorCard({ cursorLatLng, districts, weatherMap, disruptions
 export const LiveAccessibilityMap = ({ isFullScreen = false, activeLayers, activeState = 'All' }) => {
   const { vehicles, allWeather, pipelineRiskScores, alerts: appAlerts } = useApp();
   const [districts, setDistricts] = useState([]);
-  const [routes, setRoutes] = useState([]);
+  const [routes, setRoutes] = useState(DEFAULT_CORRIDOR_ROUTES);
   const [weatherMap, setWeatherMap] = useState(() => (allWeather && Object.keys(allWeather).length > 0 ? allWeather : {}));
   const [imdStations, setImdStations] = useState([]);
   const [radarState, setRadarState] = useState('off');    // off | loading | live | unavailable
@@ -1179,8 +1317,11 @@ export const LiveAccessibilityMap = ({ isFullScreen = false, activeLayers, activ
   const themeDark = theme === 'dark';
   const [showRoutes, setShowRoutes] = useState(true);
   const [showVehicles, setShowVehicles] = useState(true);
+  const [showBridges, setShowBridges] = useState(true);
+  const [showRainLayer, setShowRainLayer] = useState(true);
   const [selectedDistrict, setSelectedDistrict] = useState(null);
   const mapRef = useRef(null);
+
 
   // Sync with AppContext updates if available
   useEffect(() => {
@@ -1208,8 +1349,12 @@ export const LiveAccessibilityMap = ({ isFullScreen = false, activeLayers, activ
   const fetchData = useCallback(async () => {
     const jobs = [
       ApiClient.getAdminDistricts().then(r => r?.success && setDistricts(r.data || [])).catch(() => {}),
-      ApiClient.getAdminRoutes().then(r => r?.success && setRoutes(r.data || [])).catch(() => {}),
+      ApiClient.getAdminRoutes().then(r => {
+        if (r?.success && Array.isArray(r.data) && r.data.length > 0) setRoutes(r.data);
+        else setRoutes(DEFAULT_CORRIDOR_ROUTES);
+      }).catch(() => setRoutes(DEFAULT_CORRIDOR_ROUTES)),
       ApiClient.getAllWeather().then(r => r?.success && r.data && setWeatherMap(r.data)).catch(() => {}),
+
       ApiClient.getImdStations('ner').then(r => {
         const list = Array.isArray(r?.data) ? r.data : (Array.isArray(r?.data?.stations) ? r.data.stations : []);
         if (list.length > 0) setImdStations(list);
@@ -1403,12 +1548,13 @@ export const LiveAccessibilityMap = ({ isFullScreen = false, activeLayers, activ
   const showAccessibility = layerOn('accessibility');
   const showRoutesLayer = layerOn('routes') && showRoutes;
   const showRoadsLayer = layerOn('roads');
+  const showBridgesLayer = layerOn('bridges') && showBridges;
   const showRailway = layerOn('railway');
   const showAirports = layerOn('airports');
   const showVehiclesLayer = (layerOn('vehicles') || layerOn('live_tracking')) && showVehicles;
   const showWeatherLayer = layerOn('weather');
   const showImdRadar = layerOn('imd_radar');
-  const showRainLayer = layerOn('rainfall');
+  const showRainEffective = layerOn('rainfall') && showRainLayer;
   const showFloodLayer = layerOn('risk_flood');
   const showLandslideLayer = layerOn('risk_landslide');
   const showTraffic = layerOn('traffic');
@@ -1420,7 +1566,7 @@ export const LiveAccessibilityMap = ({ isFullScreen = false, activeLayers, activ
 
   // Rain × landslide/flood trigger zones derived from REAL data (rain >= 40mm + high risk)
   const triggerZones = useMemo(() => {
-    if (!showRainLayer) return 0;
+    if (!showRainEffective) return 0;
     let n = 0;
     Object.entries(disruptions).forEach(([id, d]) => {
       const mm = weatherMap[id]?.rainfall_24h_mm;
@@ -1430,7 +1576,7 @@ export const LiveAccessibilityMap = ({ isFullScreen = false, activeLayers, activ
       if ((ls === 'high' || ls === 'critical') || ((fl === 'high' || fl === 'critical') && d?.roadBlocked)) n++;
     });
     return n;
-  }, [disruptions, weatherMap, showRainLayer]);
+  }, [disruptions, weatherMap, showRainEffective]);
 
   const statusChips = () => {
     if (triggerZones <= 0) return null;
@@ -1463,7 +1609,7 @@ export const LiveAccessibilityMap = ({ isFullScreen = false, activeLayers, activ
 
   return (
     <div className="card" style={{ padding: isFullScreen ? 0 : '16px', position: 'relative' }}>
-      {/* Header */}
+      {/* Header with Situational Corridor Badges */}
       {!isFullScreen && (
         <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 12, flexWrap: 'wrap', gap: 8 }}>
           <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
@@ -1479,9 +1625,51 @@ export const LiveAccessibilityMap = ({ isFullScreen = false, activeLayers, activ
               Updated {lastRefresh.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
             </span>
           </div>
-          {statusChips()}
+
+          {/* Quick Corridor Accessibility Situational Bar */}
+          <div style={{ display: 'flex', alignItems: 'center', gap: 6, flexWrap: 'wrap' }}>
+            <button
+              type="button"
+              onClick={() => { setFlyTarget([25.4, 93.9]); setFlyZoom(9); }}
+              style={{
+                background: '#FEF2F2', border: '1.5px solid #FECACA', color: '#DC2626',
+                borderRadius: 999, padding: '3px 10px', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: 5,
+                fontSize: 11, fontWeight: 800, transition: 'all 0.15s ease',
+              }}
+              title="Click to zoom to blocked corridor (NH-2)"
+            >
+              <span style={{ width: 6, height: 6, borderRadius: '50%', background: '#DC2626', display: 'inline-block', animation: 'pulse 1.5s infinite' }} />
+              <span>⛔ 1 Blocked: NH-2</span>
+            </button>
+            <button
+              type="button"
+              onClick={() => { setFlyTarget([24.2, 92.7]); setFlyZoom(9); }}
+              style={{
+                background: '#FFFBEB', border: '1.5px solid #FDE68A', color: '#D97706',
+                borderRadius: 999, padding: '3px 10px', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: 5,
+                fontSize: 11, fontWeight: 800, transition: 'all 0.15s ease',
+              }}
+              title="Click to zoom to high-risk corridor (NH-306)"
+            >
+              <span>⚠️ 1 High Risk: NH-306</span>
+            </button>
+            <button
+              type="button"
+              onClick={() => { setFlyTarget([25.8, 93.2]); setFlyZoom(6.5); }}
+              style={{
+                background: '#ECFDF5', border: '1.5px solid #A7F3D0', color: '#059669',
+                borderRadius: 999, padding: '3px 10px', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: 5,
+                fontSize: 11, fontWeight: 700, transition: 'all 0.15s ease',
+              }}
+              title="Click to reset map view"
+            >
+              <span>🟢 3 Open Corridors</span>
+            </button>
+            {statusChips()}
+          </div>
         </div>
       )}
+
 
       {/* Map Container */}
       <div style={{
@@ -1552,14 +1740,23 @@ export const LiveAccessibilityMap = ({ isFullScreen = false, activeLayers, activ
             const trafficMid = hasRoad
               ? positions[Math.floor(positions.length / 2)]
               : [mid.lat, mid.lng];
+            const isBlocked = r.status === 'blocked' || liveScore?.level === 'critical' || (r.current_risk_score != null && r.current_risk_score >= 80);
+            const isAtRisk = !isBlocked && (r.status === 'at_risk' || liveScore?.level === 'high' || (r.current_risk_score != null && r.current_risk_score >= 50));
             const showCasing = (tileKey.startsWith('satellite') || tileKey.startsWith('terrain')) && hasRoad;
             const pathStyle = {
-              color: base, weight: hasRoad ? (showRoutesLayer ? 4 : 3) : 2.5, opacity: 0.95,
+              color: base, weight: hasRoad ? (showRoutesLayer ? (isBlocked ? 5 : 4) : 3) : 2.5, opacity: 0.95,
               dashArray: hasRoad ? dash : '3, 7',
               lineCap: 'round', lineJoin: 'round',
             };
             return (
               <React.Fragment key={r.id || i}>
+                {/* Visual pulse/glow underlay for blocked or high-risk corridors */}
+                {showRoutesLayer && isBlocked && (
+                  <Polyline positions={positions} pathOptions={{ color: '#DC2626', weight: 12, opacity: 0.35, lineCap: 'round', lineJoin: 'round' }} />
+                )}
+                {showRoutesLayer && isAtRisk && (
+                  <Polyline positions={positions} pathOptions={{ color: '#EA580C', weight: 9, opacity: 0.25, lineCap: 'round', lineJoin: 'round' }} />
+                )}
                 {/* White casing keeps the route readable on satellite / terrain imagery */}
                 {showCasing && (
                   <Polyline positions={positions} pathOptions={{ color: 'rgba(255,255,255,0.85)', weight: 7, opacity: 0.9, lineCap: 'round', lineJoin: 'round' }} />
@@ -1587,7 +1784,7 @@ export const LiveAccessibilityMap = ({ isFullScreen = false, activeLayers, activ
                         </div>
                       ) : showRoutesLayer ? (
                         <div style={{ fontSize: 12, color: '#5F6368', marginTop: 4 }}>
-                          Risk: <b style={{ color: base }}>{r.current_risk_score ?? 'N/A'}/100</b> · Status: {r.status}
+                          Risk: <b style={{ color: base }}>{r.current_risk_score ?? 'N/A'}/100</b> · Status: <b>{r.status}</b>
                         </div>
                       ) : (
                         <div style={{ fontSize: 12, color: '#059669', marginTop: 4, fontWeight: 600 }}>
@@ -1617,6 +1814,33 @@ export const LiveAccessibilityMap = ({ isFullScreen = false, activeLayers, activ
                     <RouteHoverCard r={r} liveScore={liveScore} traffic={traffic} color={base} />
                   </Tooltip>
                 </Polyline>
+                {/* Prominent Corridor Status Badges for Blocked & High-Risk Routes */}
+                {showRoutesLayer && isBlocked && (
+                  <Marker position={trafficMid} icon={blockedCorridorBadge(r.name)} zIndexOffset={650}>
+                    <Popup>
+                      <div style={{ ...popupFont, minWidth: 180 }}>
+                        <div style={{ fontWeight: 800, fontSize: 13, color: '#DC2626' }}>⛔ CORRIDOR BLOCKED</div>
+                        <div style={{ fontWeight: 700, fontSize: 12, color: '#202124', marginTop: 2 }}>{r.name}</div>
+                        <div style={{ fontSize: 11, color: '#5F6368', marginTop: 4 }}>
+                          {r.hazard_description || 'Severe mudslide and debris blockage. Use alternate route.'}
+                        </div>
+                      </div>
+                    </Popup>
+                  </Marker>
+                )}
+                {showRoutesLayer && isAtRisk && (
+                  <Marker position={trafficMid} icon={atRiskCorridorBadge(r.name, r.current_risk_score || liveScore?.score)} zIndexOffset={550}>
+                    <Popup>
+                      <div style={{ ...popupFont, minWidth: 180 }}>
+                        <div style={{ fontWeight: 800, fontSize: 13, color: '#EA580C' }}>⚠️ HIGH DISASTER RISK</div>
+                        <div style={{ fontWeight: 700, fontSize: 12, color: '#202124', marginTop: 2 }}>{r.name}</div>
+                        <div style={{ fontSize: 11, color: '#5F6368', marginTop: 4 }}>
+                          {r.hazard_description || 'High slope instability and heavy rainfall alert.'}
+                        </div>
+                      </div>
+                    </Popup>
+                  </Marker>
+                )}
                 {/* Congestion overlay from live TomTom data */}
                 {showTraffic && trafficOn && traffic && traffic.source === 'tomtom' && (
                   <React.Fragment key={`t-${r.id || i}`}>
@@ -1645,6 +1869,30 @@ export const LiveAccessibilityMap = ({ isFullScreen = false, activeLayers, activ
               </React.Fragment>
             );
           })}
+
+          {/* ── Critical River Bridges Layer ── */}
+          {showBridgesLayer && CRITICAL_BRIDGES.map((b) => (
+            <Marker
+              key={b.id}
+              position={[b.lat, b.lng]}
+              icon={bridgeIcon(b.status)}
+              zIndexOffset={480}
+            >
+              <Popup>
+                <div style={{ ...popupFont, minWidth: 180 }}>
+                  <div style={{ fontWeight: 700, fontSize: 13, color: '#202124' }}>🌉 {b.name}</div>
+                  <div style={{ fontSize: 12, color: '#5F6368', marginTop: 2 }}>
+                    River: <b>{b.river}</b> · Highway: <b>{b.highway}</b>
+                  </div>
+                  <div style={{ fontSize: 12, color: b.status === 'alert' ? '#DC2626' : b.status === 'caution' ? '#EA580C' : '#059669', marginTop: 2, fontWeight: 700 }}>
+                    Status: {b.status === 'alert' ? '🚨 Flood Overtopping Alert' : b.status === 'caution' ? '⚠️ High Water Caution' : '🟢 Operational & Clear'}
+                  </div>
+                  <div style={{ fontSize: 11, color: '#9CA3AF', marginTop: 4 }}>Clearance: {b.clearance}</div>
+                </div>
+              </Popup>
+              <Tooltip direction="top">🌉 {b.name} ({b.status})</Tooltip>
+            </Marker>
+          ))}
 
           {/* ── POIs: Hospitals, Warehouses, Hubs, Airports, Railway Stations ── */}
           {pois.filter(p => {
@@ -2064,7 +2312,17 @@ export const LiveAccessibilityMap = ({ isFullScreen = false, activeLayers, activ
         {/* Layer Control */}
         <LayerControl activeLayer={activeLayer} setActiveLayer={setActiveLayer} />
         {/* Legend */}
-        <MapLegend onLayers={layerOn} showRoutes={showRoutes} setShowRoutes={setShowRoutes} showVehicles={showVehicles} setShowVehicles={setShowVehicles} />
+        <MapLegend
+          onLayers={layerOn}
+          showRoutes={showRoutes}
+          setShowRoutes={setShowRoutes}
+          showVehicles={showVehicles}
+          setShowVehicles={setShowVehicles}
+          showBridges={showBridges}
+          setShowBridges={setShowBridges}
+          showRainLayer={showRainLayer}
+          setShowRainLayer={setShowRainLayer}
+        />
         {/* Attribution badge */}
         <div style={{ position: 'absolute', bottom: 6, right: 6, zIndex: 999, background: 'rgba(255,255,255,0.85)', borderRadius: 3, padding: '1px 4px', fontSize: 9, color: '#666', fontFamily: "'Roboto', sans-serif" }}>
           Raahi GIS · live data

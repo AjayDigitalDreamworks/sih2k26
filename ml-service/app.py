@@ -12,6 +12,14 @@ or
 import os
 import sys
 
+# Configure UTF-8 encoding on Windows to prevent UnicodeEncodeError with cp1252
+if sys.platform == 'win32':
+    try:
+        sys.stdout.reconfigure(encoding='utf-8', errors='replace')
+        sys.stderr.reconfigure(encoding='utf-8', errors='replace')
+    except Exception:
+        pass
+
 # Ensure current directory is on python path
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 if BASE_DIR not in sys.path:
@@ -25,5 +33,6 @@ if __name__ == "__main__":
     # Dynamic port detection for cloud deployment platforms (Render, Railway, Heroku, etc.)
     port = int(os.environ.get("PORT", 8000))
     host = os.environ.get("HOST", "0.0.0.0")
-    print(f"\n🚀 Starting Raahi ML Engine on {host}:{port}...")
+    print(f"\n[START] Starting Raahi ML Engine on {host}:{port}...")
     uvicorn.run("app:app", host=host, port=port, reload=False)
+

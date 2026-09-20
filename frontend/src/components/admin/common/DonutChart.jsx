@@ -74,7 +74,7 @@ export const DonutChart = ({
                 <span>{item.label}</span>
               </div>
               <span className="donut-legend-val">
-                {item.amount || item.count || item.value}
+                {item.count !== undefined ? item.count : (item.amount !== undefined ? item.amount : (item.value !== undefined ? item.value : ''))}
                 {item.percentage !== undefined && (
                   <span style={{ fontSize: '11px', color: 'var(--text-muted)', marginLeft: 4 }}>
                     ({item.percentage}%)

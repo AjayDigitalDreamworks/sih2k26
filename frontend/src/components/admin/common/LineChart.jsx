@@ -12,27 +12,29 @@ export const LineChart = ({
 
   if (!data.length || !series.length) return null;
 
-  const padding = { top: 20, right: 20, bottom: 30, left: 40 };
+  const padding = { top: 20, right: 24, bottom: 30, left: 36 };
   const width = 600; // viewBox internal units
 
   // Calculate max value across series
-  const computedMax =
-    yMax ||
-    Math.max(
-      ...data.flatMap((d) =>
-        series.map((s) => (typeof d[s.key] === 'number' ? d[s.key] : 0))
-      )
-    ) * 1.15 || 100;
+  const maxVal = Math.max(
+    ...data.flatMap((d) =>
+      series.map((s) => (typeof d[s.key] === 'number' ? d[s.key] : 0))
+    ),
+    1
+  );
+
+  const computedMax = yMax || Math.ceil(maxVal * 1.25);
 
   const chartWidth = width - padding.left - padding.right;
   const chartHeight = height - padding.top - padding.bottom;
 
-  // Coordinate helper — guard against single-point series (div-by-zero → NaN svg attrs)
   const getX = (index) => padding.left + (index / Math.max(data.length - 1, 1)) * chartWidth;
-  const getY = (value) => height - padding.bottom - (value / computedMax) * chartHeight;
+  const getY = (value) => height - padding.bottom - (Math.max(value, 0) / computedMax) * chartHeight;
+
+  const activeItem = hoverIndex !== null && hoverIndex >= 0 && hoverIndex < data.length ? data[hoverIndex] : null;
 
   return (
-    <div className={`line-chart-container ${className}`} style={{ width: '100%' }}>
+    <div className={`line-chart-container ${className}`} style={{ width: '100%', position: 'relative' }}>
       <svg
         viewBox={`0 0 ${width} ${height}`}
         style={{ width: '100%', height: 'auto', overflow: 'visible' }}
@@ -48,15 +50,16 @@ export const LineChart = ({
                 y1={y}
                 x2={width - padding.right}
                 y2={y}
-                stroke="var(--border-subtle)"
+                stroke="#E2E8F0"
                 strokeDasharray="4 4"
                 strokeWidth="1"
               />
               <text
-                x={padding.left - 8}
-                y={y + 4}
-                fill="var(--text-muted)"
+                x={padding.left - 6}
+                y={y + 3}
+                fill="#94A3B8"
                 fontSize="10"
+                fontWeight="500"
                 textAnchor="end"
               >
                 {val}
@@ -68,19 +71,35 @@ export const LineChart = ({
         {/* X-axis labels */}
         {data.map((d, i) => {
           const x = getX(i);
+          const isHovered = hoverIndex === i;
           return (
             <text
               key={i}
               x={x}
               y={height - 8}
-              fill="var(--text-muted)"
+              fill={isHovered ? '#0F172A' : '#94A3B8'}
               fontSize="10"
+              fontWeight={isHovered ? '700' : '500'}
               textAnchor="middle"
             >
               {d.date || d.label}
             </text>
           );
         })}
+
+        {/* Vertical hover indicator line */}
+        {hoverIndex !== null && (
+          <line
+            x1={getX(hoverIndex)}
+            y1={padding.top}
+            x2={getX(hoverIndex)}
+            y2={height - padding.bottom}
+            stroke="#94A3B8"
+            strokeWidth="1.5"
+            strokeDasharray="3 3"
+            opacity="0.8"
+          />
+        )}
 
         {/* Lines for each series */}
         {series.map((s) => {
@@ -97,31 +116,36 @@ export const LineChart = ({
                 strokeLinejoin="round"
               />
               {/* Dots */}
-              {data.map((d, i) => (
-                <circle
-                  key={i}
-                  cx={getX(i)}
-                  cy={getY(d[s.key] || 0)}
-                  r={hoverIndex === i ? 5 : 3.5}
-                  fill={s.color}
-                  stroke="var(--bg-card)"
-                  strokeWidth="1.5"
-                  style={{ transition: 'r 0.15s ease' }}
-                />
-              ))}
+              {data.map((d, i) => {
+                const val = d[s.key] || 0;
+                const isHovered = hoverIndex === i;
+                return (
+                  <circle
+                    key={i}
+                    cx={getX(i)}
+                    cy={getY(val)}
+                    r={isHovered ? 5.5 : 3.5}
+                    fill={s.color}
+                    stroke="#FFFFFF"
+                    strokeWidth={isHovered ? 2.5 : 1.5}
+                    style={{ transition: 'r 0.15s ease' }}
+                  />
+                );
+              })}
             </g>
           );
         })}
 
-        {/* Interactive Hover Vertical Bar */}
+        {/* Interactive Hover Columns */}
         {data.map((d, i) => {
           const x = getX(i);
+          const colWidth = chartWidth / Math.max(data.length - 1, 1);
           return (
             <rect
               key={i}
-              x={x - chartWidth / (data.length * 2)}
+              x={x - colWidth / 2}
               y={padding.top}
-              width={chartWidth / data.length}
+              width={colWidth}
               height={chartHeight}
               fill="transparent"
               onMouseEnter={() => setHoverIndex(i)}
@@ -132,6 +156,39 @@ export const LineChart = ({
         })}
       </svg>
 
+      {/* Floating Hover Tooltip */}
+      {activeItem && hoverIndex !== null && (
+        <div
+          style={{
+            position: 'absolute',
+            top: 10,
+            right: 15,
+            backgroundColor: 'rgba(15, 23, 42, 0.92)',
+            backdropFilter: 'blur(8px)',
+            color: 'white',
+            borderRadius: '6px',
+            padding: '6px 10px',
+            fontSize: '11px',
+            boxShadow: '0 4px 12px rgba(0,0,0,0.2)',
+            zIndex: 10,
+            pointerEvents: 'none',
+            display: 'flex',
+            alignItems: 'center',
+            gap: '10px',
+          }}
+        >
+          <strong style={{ color: '#E2E8F0' }}>{activeItem.date || activeItem.label}:</strong>
+          <div style={{ display: 'flex', gap: '8px' }}>
+            {series.map(s => (
+              <span key={s.key} style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
+                <span style={{ width: 6, height: 6, borderRadius: '50%', background: s.color }} />
+                <span>{s.label}: <b>{activeItem[s.key] ?? 0}</b></span>
+              </span>
+            ))}
+          </div>
+        </div>
+      )}
+
       {/* Legend */}
       {showLegend && (
         <div
@@ -140,7 +197,7 @@ export const LineChart = ({
             alignItems: 'center',
             justifyContent: 'center',
             gap: '16px',
-            marginTop: '12px',
+            marginTop: '10px',
             flexWrap: 'wrap',
           }}
         >
@@ -154,7 +211,7 @@ export const LineChart = ({
                   borderRadius: '2px',
                 }}
               />
-              <span style={{ color: 'var(--text-secondary)' }}>{s.label}</span>
+              <span style={{ color: '#475569', fontWeight: 500 }}>{s.label}</span>
             </div>
           ))}
         </div>
@@ -162,3 +219,5 @@ export const LineChart = ({
     </div>
   );
 };
+
+export default LineChart;

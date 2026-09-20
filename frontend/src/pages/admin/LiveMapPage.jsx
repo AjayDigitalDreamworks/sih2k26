@@ -9,7 +9,7 @@ import { GisLayerManager } from '@/components/admin/common/GisLayerManager';
 export const LiveMapPage = () => {
   // Stabilize the initial layer set so toggling never mutates the live array.
   const [activeLayers, setActiveLayers] = useState([
-    'base_map', 'districts', 'roads', 'routes', 'vehicles', 'weather', 'rainfall', 'imd_radar',
+    'base_map', 'districts', 'roads', 'routes', 'bridges', 'vehicles', 'weather', 'rainfall', 'imd_radar',
     'risk_flood', 'risk_landslide', 'traffic', 'disruptions', 'hospitals', 'warehouses', 'logistics_hubs',
   ].slice());
   const [activeState, setActiveState] = useState('All');
@@ -20,14 +20,14 @@ export const LiveMapPage = () => {
   const applyPreset = (preset) => {
     setActivePreset(preset);
     if (preset === 'fleet') {
-      setActiveLayers(['base_map', 'roads', 'routes', 'vehicles', 'traffic']);
+      setActiveLayers(['base_map', 'roads', 'routes', 'bridges', 'vehicles', 'traffic']);
     } else if (preset === 'weather') {
-      setActiveLayers(['base_map', 'roads', 'routes', 'weather', 'rainfall', 'imd_radar', 'risk_flood', 'risk_landslide', 'disruptions']);
+      setActiveLayers(['base_map', 'roads', 'routes', 'bridges', 'weather', 'rainfall', 'imd_radar', 'risk_flood', 'risk_landslide', 'disruptions']);
     } else if (preset === 'emergency') {
-      setActiveLayers(['base_map', 'roads', 'routes', 'vehicles', 'disruptions', 'hospitals', 'warehouses', 'logistics_hubs']);
+      setActiveLayers(['base_map', 'roads', 'routes', 'bridges', 'vehicles', 'disruptions', 'hospitals', 'warehouses', 'logistics_hubs']);
     } else {
       setActiveLayers([
-        'base_map', 'districts', 'roads', 'routes', 'vehicles', 'weather', 'rainfall', 'imd_radar',
+        'base_map', 'districts', 'roads', 'routes', 'bridges', 'vehicles', 'weather', 'rainfall', 'imd_radar',
         'risk_flood', 'risk_landslide', 'traffic', 'disruptions', 'hospitals', 'warehouses', 'logistics_hubs',
       ]);
     }
