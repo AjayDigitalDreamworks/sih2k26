@@ -1,7 +1,7 @@
 import React, { useState } from 'react';
 import { useNavigate, useLocation } from 'react-router-dom';
 import { motion } from 'framer-motion';
-import { Mail, Lock, Eye, EyeOff, ArrowRight } from 'lucide-react';
+import { Mail, Lock, Eye, EyeOff, ArrowRight, ShieldCheck, Truck } from 'lucide-react';
 import { toast } from 'sonner';
 import { useAuth } from '@/contexts/AuthContext';
 import { useLang } from '@/contexts/LanguageContext';
@@ -13,11 +13,23 @@ export default function LoginForm() {
   const location = useLocation();
   const { login, isLoading } = useAuth();
   const { t } = useLang();
-  
+
+  // Role toggle: 'admin' or 'transporter'
+  const [selectedRole, setSelectedRole] = useState('admin');
   const [showPassword, setShowPassword] = useState(false);
-  const [emailOrPhone, setEmailOrPhone] = useState('');
-  const [password, setPassword] = useState('');
-  const [rememberMe, setRememberMe] = useState(false);
+  const [emailOrPhone, setEmailOrPhone] = useState('admin@raahi.gov.in');
+  const [password, setPassword] = useState('password123');
+  const [rememberMe, setRememberMe] = useState(true);
+
+  const handleRoleSelect = (role) => {
+    setSelectedRole(role);
+    if (role === 'admin') {
+      setEmailOrPhone('admin@raahi.gov.in');
+    } else {
+      setEmailOrPhone('transporter@raahi.gov.in');
+    }
+    setPassword('password123');
+  };
 
   const handleSubmit = async (e) => {
     e.preventDefault();
@@ -26,10 +38,10 @@ export default function LoginForm() {
       return;
     }
 
-    const result = await login('user', emailOrPhone, password, rememberMe);
+    const result = await login(selectedRole, emailOrPhone, password, rememberMe);
     if (result.success) {
       toast.success(result.message);
-      
+
       const backendRole = result.user?.backendRole;
       const userRole = result.user?.role;
 
@@ -46,7 +58,7 @@ export default function LoginForm() {
         if (backendRole === 'transporter' || userRole === 'operator' || userRole === 'transporter') {
           return '/transporter/dashboard';
         }
-        return '/home';
+        return selectedRole === 'admin' ? '/admin' : '/transporter/dashboard';
       };
 
       const isAuthorizedForPath = (path) => {
@@ -119,6 +131,34 @@ export default function LoginForm() {
           {t('auth.signInPrompt')}{' '}
           <span className="font-extrabold text-emerald-600">Raahi</span>
         </p>
+      </div>
+
+      {/* Dual Login Options: Admin & Transporter */}
+      <div className="grid grid-cols-2 p-1 bg-slate-100 rounded-xl border border-slate-200/80 mb-4">
+        <button
+          type="button"
+          onClick={() => handleRoleSelect('admin')}
+          className={`flex items-center justify-center gap-1.5 py-2 px-3 rounded-lg text-xs font-bold transition-all cursor-pointer ${
+            selectedRole === 'admin'
+              ? 'bg-white text-slate-900 shadow-xs ring-1 ring-slate-200'
+              : 'text-slate-500 hover:text-slate-800'
+          }`}
+        >
+          <ShieldCheck className={`w-3.5 h-3.5 ${selectedRole === 'admin' ? 'text-indigo-600' : 'text-slate-400'}`} />
+          <span>Admin Login</span>
+        </button>
+        <button
+          type="button"
+          onClick={() => handleRoleSelect('transporter')}
+          className={`flex items-center justify-center gap-1.5 py-2 px-3 rounded-lg text-xs font-bold transition-all cursor-pointer ${
+            selectedRole === 'transporter'
+              ? 'bg-white text-slate-900 shadow-xs ring-1 ring-slate-200'
+              : 'text-slate-500 hover:text-slate-800'
+          }`}
+        >
+          <Truck className={`w-3.5 h-3.5 ${selectedRole === 'transporter' ? 'text-emerald-600' : 'text-slate-400'}`} />
+          <span>Transporter Login</span>
+        </button>
       </div>
 
       {/* Form Elements */}
@@ -220,3 +260,5 @@ export default function LoginForm() {
     </div>
   );
 }
+
+

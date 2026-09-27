@@ -1,7 +1,22 @@
 export const loginTabs = [
-  { id: 'user', label: 'User Login', icon: 'user' },
-  { id: 'official', label: 'Official Login', icon: 'shield' },
-  { id: 'operator', label: 'Operator Login', icon: 'operator' },
+  {
+    id: 'admin',
+    label: 'Admin Portal',
+    badge: 'Command Authority',
+    icon: 'shield',
+    defaultEmail: 'admin@raahi.gov.in',
+    targetPath: '/admin',
+    description: 'Regional Command Center, GIS Live Map, AI Risk Forecasts & SOS Oversight',
+  },
+  {
+    id: 'transporter',
+    label: 'Transporter Hub',
+    badge: 'Fleet Logistics',
+    icon: 'truck',
+    defaultEmail: 'transporter@raahi.gov.in',
+    targetPath: '/transporter/dashboard',
+    description: 'Fleet Tracking, Consignments, Dynamic Rerouting & Commercial Dispatches',
+  },
 ];
 
 export const authFeatures = [

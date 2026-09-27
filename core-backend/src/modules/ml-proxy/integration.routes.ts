@@ -491,7 +491,19 @@ router.get('/pipeline/status', async (_req: Request, res: Response) => {
 router.get('/pipeline/alerts', async (req: Request, res: Response) => {
   try {
     const params = new URLSearchParams(req.query as any);
-    const data = await proxyToML(`/pipeline/alerts?${params}`, 'GET', undefined, 15000);
+    const cacheKey = `pipeline:alerts:${params.toString()}`;
+    try {
+      const cached = await redisClient.get(cacheKey);
+      if (cached) {
+        const parsed = typeof cached === 'string' ? JSON.parse(cached) : cached;
+        return sendSuccess(res, parsed, 'Pipeline alerts retrieved (cached)');
+      }
+    } catch {}
+
+    const data = await proxyToML(`/pipeline/alerts?${params}`, 'GET', undefined, 0, 5000);
+    if (data && typeof data === 'object') {
+      try { await redisClient.set(cacheKey, JSON.stringify(data), { ex: 10 }); } catch {}
+    }
     return sendSuccess(res, data, 'Pipeline alerts retrieved');
   } catch (err: any) {
     return sendSuccess(res, [], 'Pipeline alerts (fallback)');
@@ -636,7 +648,7 @@ router.post('/route/plan', async (req: Request, res: Response) => {
     }
 
     try {
-      const data = await proxyToML('/route/plan', 'POST', payload, 180000, 4000);
+      const data = await proxyToML('/route/plan', 'POST', payload, 180000, 14000);
       if (data && (data.success || data.recommended)) {
         return sendSuccess(res, data, 'Route plan retrieved');
       }
