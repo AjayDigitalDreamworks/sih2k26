@@ -16,8 +16,9 @@ import TransporterFooter from '../../components/transporter/TransporterFooter';
 import NewConsignmentModal from '../../components/consignments/NewConsignmentModal';
 import AddVehicleModal from '../../components/vehicles/AddVehicleModal';
 import FleetHealthPulseBar from '../../components/transporter/FleetHealthPulseBar';
-import ActionableHazardBanner from '../../components/transporter/ActionableHazardBanner';
+import FleetDangerAndStuckTracker from '../../components/transporter/FleetDangerAndStuckTracker';
 import DynamicRerouteModal from '../../components/transporter/DynamicRerouteModal';
+import BroadcastDriverAlertModal from '../../components/transporter/BroadcastDriverAlertModal';
 import ApiClient from '../../lib/api';
 import { subscribeToTripUpdates, subscribeToRouteCleared } from '../../lib/socket';
 
@@ -26,11 +27,20 @@ export default function TransporterDashboard() {
   const [showNewModal, setShowNewModal] = useState(false);
   const [showAddVehicleModal, setShowAddVehicleModal] = useState(false);
   const [showRerouteModal, setShowRerouteModal] = useState(false);
+  const [rerouteVehicleId, setRerouteVehicleId] = useState('');
+  const [rerouteReason, setRerouteReason] = useState('');
+  const [showBroadcastModal, setShowBroadcastModal] = useState(false);
+  const [broadcastVehicleId, setBroadcastVehicleId] = useState('');
+  const [broadcastHazard, setBroadcastHazard] = useState(null);
+  const [selectedMapVehicleId, setSelectedMapVehicleId] = useState(null);
+
   const [vehicles, setVehicles] = useState([]);
   const [alerts, setAlerts] = useState([]);
+  const [deliveries, setDeliveries] = useState([]);
   const [fleetFilter, setFleetFilter] = useState('all');
   const mapSectionRef = useRef(null);
   const alertsSectionRef = useRef(null);
+  const dangerSectionRef = useRef(null);
 
   const loadVehicles = async () => {
     try {
@@ -54,21 +64,52 @@ export default function TransporterDashboard() {
     }
   };
 
+  const loadDeliveries = async () => {
+    try {
+      const res = await ApiClient.getTransporterDeliveries();
+      if (res?.success && Array.isArray(res.data)) {
+        setDeliveries(res.data);
+      }
+    } catch (e) {
+      console.warn('Transporter dashboard deliveries load failed:', e);
+    }
+  };
+
   useEffect(() => {
     loadVehicles();
     loadAlerts();
+    loadDeliveries();
     const unsubTrip = subscribeToTripUpdates(() => {
       loadVehicles();
+      loadDeliveries();
     });
     const unsubClear = subscribeToRouteCleared(() => {
       loadVehicles();
       loadAlerts();
+      loadDeliveries();
     });
     return () => {
       unsubTrip();
       unsubClear();
     };
   }, []);
+
+  const handleOpenReroute = (vehicleId = '', reason = '') => {
+    setRerouteVehicleId(vehicleId);
+    setRerouteReason(reason);
+    setShowRerouteModal(true);
+  };
+
+  const handleOpenBroadcast = (vehicleId = '', hazard = null) => {
+    setBroadcastVehicleId(vehicleId);
+    setBroadcastHazard(hazard);
+    setShowBroadcastModal(true);
+  };
+
+  const handleFocusOnMap = (vehicleId) => {
+    setSelectedMapVehicleId(vehicleId);
+    mapSectionRef.current?.scrollIntoView({ behavior: 'smooth', block: 'center' });
+  };
 
   return (
     <div className="min-h-screen bg-[#F8FAFC] flex selection:bg-emerald-500 selection:text-white font-sans antialiased text-slate-900">
@@ -98,17 +139,27 @@ export default function TransporterDashboard() {
               onSelectFilter={setFleetFilter}
               onQuickDispatch={() => setShowNewModal(true)}
               onFocusHazard={() => {
-                mapSectionRef.current?.scrollIntoView({ behavior: 'smooth', block: 'center' });
+                dangerSectionRef.current?.scrollIntoView({ behavior: 'smooth', block: 'center' });
               }}
             />
           </section>
 
-          {/* Actionable 1-Click Hazard Intervention Banner */}
-          <section>
-            <ActionableHazardBanner
-              alerts={alerts}
+          {/* Dedicated Fleet Disruption & Threat Intervention Command:
+              1) Vehicles Moving Toward Danger & Risk Roads (with Appropriate Action triggers)
+              2) Stuck Vehicles & Critical Consignment/SLA Impact Analysis */}
+          <section ref={dangerSectionRef}>
+            <FleetDangerAndStuckTracker
               vehicles={vehicles}
-              onRerouted={loadVehicles}
+              alerts={alerts}
+              deliveries={deliveries}
+              onOpenRerouteModal={handleOpenReroute}
+              onOpenBroadcastModal={handleOpenBroadcast}
+              onFocusVehicleOnMap={handleFocusOnMap}
+              onRefresh={() => {
+                loadVehicles();
+                loadAlerts();
+                loadDeliveries();
+              }}
             />
           </section>
 
@@ -145,7 +196,10 @@ export default function TransporterDashboard() {
             <div className="grid grid-cols-1 lg:grid-cols-12 gap-5 items-stretch">
               {/* Live Tracking Map (8 cols on lg ~ 68%) */}
               <div ref={mapSectionRef} className="lg:col-span-8 h-full">
-                <LiveTrackingMap />
+                <LiveTrackingMap
+                  selectedId={selectedMapVehicleId}
+                  onSelect={(id) => setSelectedMapVehicleId(id)}
+                />
               </div>
 
               {/* Alerts & Notifications (4 cols on lg ~ 32%) */}
@@ -185,7 +239,7 @@ export default function TransporterDashboard() {
           <section>
             <TransporterOperationsWorkflow
               onNewTrip={() => setShowNewModal(true)}
-              onOpenRerouteModal={() => setShowRerouteModal(true)}
+              onOpenRerouteModal={() => handleOpenReroute()}
               onFocusMap={() => {
                 mapSectionRef.current?.scrollIntoView({ behavior: 'smooth', block: 'center' });
               }}
@@ -206,6 +260,7 @@ export default function TransporterDashboard() {
         onClose={() => setShowNewModal(false)}
         onConsignmentAdded={() => {
           loadVehicles();
+          loadDeliveries();
         }}
       />
 
@@ -223,10 +278,26 @@ export default function TransporterDashboard() {
         isOpen={showRerouteModal}
         onClose={() => setShowRerouteModal(false)}
         vehicles={vehicles}
+        initialVehicleId={rerouteVehicleId}
+        initialReason={rerouteReason}
         onRerouted={() => {
           loadVehicles();
+          loadAlerts();
+        }}
+      />
+
+      {/* Broadcast Driver Alert Modal */}
+      <BroadcastDriverAlertModal
+        isOpen={showBroadcastModal}
+        onClose={() => setShowBroadcastModal(false)}
+        vehicles={vehicles}
+        initialVehicleId={broadcastVehicleId}
+        initialHazard={broadcastHazard}
+        onAlertCreated={() => {
+          loadAlerts();
         }}
       />
     </div>
   );
 }
+
