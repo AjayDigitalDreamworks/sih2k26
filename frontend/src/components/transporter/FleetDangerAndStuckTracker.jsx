@@ -6,23 +6,23 @@ import {
   ShieldAlert,
   Zap,
   Radio,
-  Phone,
   Clock,
   Package,
-  TrendingDown,
   Navigation,
   MapPin,
   CheckCircle2,
   RefreshCw,
   Truck,
   ArrowRight,
-  ExternalLink,
   Flame,
   LifeBuoy,
-  ChevronRight,
   Gauge,
-  CircleAlert,
   PhoneCall,
+  ChevronRight,
+  Timer,
+  TrendingDown,
+  Layers,
+  Sparkles,
 } from 'lucide-react';
 import ApiClient from '../../lib/api';
 import { getSocket } from '../../lib/socket';
@@ -31,17 +31,8 @@ import { toast } from 'sonner';
 /**
  * FleetDangerAndStuckTracker
  *
- * Dedicated executive command panel on Transporter Dashboard home page:
- * 1. "Moving Toward Danger & Risk Roads":
- *    - Real-time detection of moving vehicles heading toward active hazard zones.
- *    - Proximity distance, ETA to danger zone, road hazard severity.
- *    - Immediate actions: 1-Click AI Detour, In-Cab Audio/Push Warning, Driver Call, Live Map Focus.
- *
- * 2. "Stuck Vehicles & Critical Cargo Impact":
- *    - Real-time detection of stationary/stopped/delayed trucks trapped at bottlenecks.
- *    - Where it is stuck (exact landmark, corridor km), duration stationary.
- *    - Complete business impact: Consignment ID, Cargo type, SLA breach countdown, financial exposure, supply chain ripple.
- *    - Immediate actions: Request Emergency Clearance Priority, Authorize Detour/U-Turn, Driver Call, Map Focus.
+ * Executive Disruption & Threat Intervention Command for Transporter Dashboard.
+ * Engineered with high-end control-tower aesthetics, micro-interactions, and real-time situational awareness.
  */
 export default function FleetDangerAndStuckTracker({
   vehicles = [],
@@ -62,13 +53,10 @@ export default function FleetDangerAndStuckTracker({
   const movingTowardDanger = useMemo(() => {
     return vehicles
       .filter((v) => {
-        // Exclude completely idle with no route
         if (v.status === 'idle' && !v.current_route) return false;
-        // Looking for moving/in-transit trucks with speed > 0 or status 'moving'
         const isMoving = v.status === 'moving' || v.status === 'in_transit' || (Number(v.speed) || 0) > 0;
         if (!isMoving) return false;
 
-        // Check if there is an associated hazard or if vehicle route intersects an active alert
         const vRoute = String(v.current_route || '').toLowerCase();
         const vId = String(v.id || '').toLowerCase();
 
@@ -89,7 +77,6 @@ export default function FleetDangerAndStuckTracker({
         return hasAttachedHazard || matchesActiveAlert || v.is_delayed || (v.risk_score && v.risk_score > 55);
       })
       .map((v) => {
-        // Resolve hazard details
         const vRoute = String(v.current_route || '').toLowerCase();
         const matchedAlert =
           v.hazard ||
@@ -114,10 +101,12 @@ export default function FleetDangerAndStuckTracker({
           matchedAlert?.district ||
           (v.current_route ? `${v.current_route.split('→')[1]?.trim() || v.current_route} Chokepoint` : 'Northeast Sector');
 
-        // Dynamic estimated distance & ETA based on vehicle speed
         const speed = Math.max(25, Number(v.speed) || 40);
         const distanceKm = Number((12.4 + (String(v.id).charCodeAt(0) % 8)).toFixed(1));
         const etaMins = Math.max(8, Math.round((distanceKm / speed) * 60));
+
+        // Proximity progress percentage (assuming a 30km threat detection horizon)
+        const proximityProgress = Math.min(95, Math.max(15, Math.round(((30 - distanceKm) / 30) * 100)));
 
         return {
           ...v,
@@ -126,9 +115,10 @@ export default function FleetDangerAndStuckTracker({
           dangerSeverity: matchedAlert?.severity || 'High',
           dangerMessage:
             matchedAlert?.message ||
-            `Impending road risk detected along active corridor. Heavy freight convoy subject to single-lane bottleneck.`,
+            `Active disruption flagged on primary route corridor. Heavy vehicle convoy subject to severe bottleneck.`,
           distanceKm,
           etaMins,
+          proximityProgress,
           rawHazard: matchedAlert,
         };
       });
@@ -138,13 +128,11 @@ export default function FleetDangerAndStuckTracker({
   const stuckVehicles = useMemo(() => {
     return vehicles
       .filter((v) => {
-        // Truck must have an active assignment/route or be stopped/delayed with 0 speed
         if (!v.current_route && v.status === 'idle') return false;
         const isStationary = v.status === 'stopped' || v.status === 'delayed' || (Number(v.speed) || 0) === 0;
         return isStationary && Boolean(v.current_route || v.current_trip_id || v.assigned_driver_id || v.is_delayed);
       })
       .map((v) => {
-        // Find matching consignment from deliveries if available
         const matchedConsignment = deliveries.find(
           (d) =>
             d.vehicle_id === v.id ||
@@ -155,7 +143,6 @@ export default function FleetDangerAndStuckTracker({
               String(v.current_route).toLowerCase().includes(d.origin_district_id.toLowerCase()))
         );
 
-        // Derive exact stuck location
         const routeParts = String(v.current_route || 'Guwahati → Silchar (NH-27)').split('→');
         const fromPlace = routeParts[0]?.trim() || 'Guwahati';
         const toPlace = routeParts[1]?.trim() || 'Silchar';
@@ -175,23 +162,22 @@ export default function FleetDangerAndStuckTracker({
             ? `${Math.floor(durationMinutes / 60)}h ${durationMinutes % 60}m`
             : `${durationMinutes}m`;
 
-        // Commodity and impact calculation
         const commodity = matchedConsignment?.commodity_type || (durationMinutes > 80 ? 'medicine' : 'food');
         const weightKg = matchedConsignment?.weight_kg || v.loaded_kg || 4200;
         const consignmentId = matchedConsignment?.id || `CON-2026-${String(v.id).replace(/\D/g, '').padEnd(4, '8').slice(0, 4)}`;
 
-        let cargoLabel = 'Cold-Chain Essential Medicines & Vaccines';
+        let cargoLabel = 'Cold-Chain Essential Medicines';
         let financialExposure = '₹85,000';
         let slaThreat = 'Critical: SLA breached in 22 mins';
         let rippleEffect = `${toPlace} Regional Civil Hospital replenishment at risk; 2 feeder routes delayed.`;
 
         if (commodity === 'food' || commodity === 'agri') {
-          cargoLabel = 'High-Value Perishable Agricultural Produce';
+          cargoLabel = 'High-Value Perishable Agri Produce';
           financialExposure = '₹52,000';
-          slaThreat = 'High Risk: Spoilage threshold in 45 mins';
+          slaThreat = 'High Risk: Spoilage threshold in 45m';
           rippleEffect = `${toPlace} Agri Wholesale Terminal supply chain disruption.`;
         } else if (commodity === 'fuel') {
-          cargoLabel = 'Emergency District Fuel Tanker Supply';
+          cargoLabel = 'Emergency District Fuel Tanker';
           financialExposure = '₹1,20,000';
           slaThreat = 'Severe: Strategic reserve quota penalty';
           rippleEffect = `Emergency power backup fuel delivery stalled.`;
@@ -234,7 +220,6 @@ export default function FleetDangerAndStuckTracker({
         toast.success(`Safe detour transmitted to ${vehicle.id}! Driver navigation updated with alternate route.`);
         if (onRefresh) onRefresh();
       } else {
-        // Fallback to opening modal if direct bypass needs selection
         if (onOpenRerouteModal) onOpenRerouteModal(vehicle.id, reason);
       }
     } catch (err) {
@@ -249,7 +234,6 @@ export default function FleetDangerAndStuckTracker({
   const handleRequestClearance = async (vehicle) => {
     setRequestingClearanceId(vehicle.id);
     try {
-      // Create priority alert record for local administration
       await ApiClient.createTransporterAlert({
         title: `🚨 CLEARANCE PRIORITY: ${vehicle.id} (${vehicle.consignmentId})`,
         type: 'clearance_request',
@@ -259,7 +243,6 @@ export default function FleetDangerAndStuckTracker({
         vehicleId: vehicle.id,
       });
 
-      // Emit to emergency corridor socket
       const socket = getSocket();
       if (socket && socket.connected) {
         socket.emit('emergency:clearance_priority', {
@@ -328,47 +311,54 @@ export default function FleetDangerAndStuckTracker({
   const stuckCount = stuckVehicles.length;
 
   return (
-    <div className="bg-white rounded-2xl border border-slate-200/90 shadow-2xs overflow-hidden transition-all duration-200">
-      {/* Executive Command Header */}
-      <div className="p-4 sm:p-5 border-b border-slate-100 bg-gradient-to-r from-slate-900 via-[#0F243E] to-slate-900 text-white">
-        <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
-          <div className="flex items-center gap-3">
-            <div className="w-10 h-10 rounded-xl bg-amber-500/20 border border-amber-400/30 flex items-center justify-center flex-shrink-0 text-amber-400 shadow-inner">
+    <div className="bg-white rounded-3xl border border-slate-200/90 shadow-sm hover:shadow-md transition-all duration-300 overflow-hidden">
+      {/* Sleek Enterprise Cockpit Header */}
+      <div className="relative px-5 py-4 sm:px-6 sm:py-4.5 bg-gradient-to-r from-[#0B1E36] via-[#102B4E] to-[#0A1B30] text-white overflow-hidden border-b border-slate-800">
+        {/* Subtle decorative background glow */}
+        <div className="absolute -right-16 -top-16 w-56 h-56 bg-rose-500/10 rounded-full blur-3xl pointer-events-none" />
+        <div className="absolute left-1/3 -bottom-16 w-56 h-56 bg-amber-500/10 rounded-full blur-3xl pointer-events-none" />
+
+        <div className="relative z-10 flex flex-col md:flex-row md:items-center justify-between gap-4">
+          {/* Header Title & Subtitle */}
+          <div className="flex items-center gap-3.5">
+            <div className="w-10 h-10 rounded-xl bg-gradient-to-br from-amber-400/20 to-rose-500/20 border border-white/10 flex items-center justify-center flex-shrink-0 text-amber-300 shadow-inner">
               <ShieldAlert className="w-5 h-5 text-amber-400" />
             </div>
             <div>
-              <div className="flex items-center gap-2 flex-wrap">
-                <h2 className="text-base sm:text-lg font-black tracking-tight text-white">
+              <div className="flex items-center gap-2.5 flex-wrap">
+                <h2 className="text-sm sm:text-base font-black tracking-tight text-white flex items-center gap-2">
                   Fleet Disruption & Threat Intervention Command
                 </h2>
-                <span className="text-[10px] font-black uppercase tracking-wider px-2 py-0.5 rounded-full bg-rose-500/20 text-rose-300 border border-rose-500/30 flex items-center gap-1">
+                <span className="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full text-[10px] font-black uppercase tracking-wider bg-rose-500/25 border border-rose-400/40 text-rose-200 shadow-2xs">
                   <span className="w-1.5 h-1.5 rounded-full bg-rose-400 animate-ping" />
-                  Live Threat Interception
+                  Live Interception
                 </span>
               </div>
-              <p className="text-xs text-slate-300 font-medium mt-0.5">
-                Real-time surveillance of fleet vehicles moving towards hazardous corridors or stalled at bottlenecks with critical cargo impact.
+              <p className="text-[11px] sm:text-xs text-slate-300/85 font-medium mt-0.5 leading-snug">
+                Real-time surveillance of fleet vehicles heading toward active hazard zones and stalled bottleneck impact analysis.
               </p>
             </div>
           </div>
 
-          {/* Interactive Mode Tabs */}
-          <div className="flex items-center gap-2 bg-slate-800/80 p-1 rounded-xl border border-slate-700/60 self-start md:self-auto">
+          {/* Premium Segmented Switcher (iOS / Linear style pill) */}
+          <div className="inline-flex items-center p-1 rounded-2xl bg-black/40 backdrop-blur-md border border-white/10 shadow-inner self-start md:self-auto">
             {/* Tab 1: Moving Toward Danger */}
             <button
               type="button"
               onClick={() => setActiveTab('threats')}
-              className={`flex items-center gap-2 px-3.5 py-1.5 rounded-lg text-xs font-bold transition-all cursor-pointer ${
+              className={`relative flex items-center gap-2 px-3.5 py-1.5 rounded-xl text-xs font-bold transition-all duration-200 cursor-pointer ${
                 activeTab === 'threats'
-                  ? 'bg-rose-600 text-white shadow-xs'
-                  : 'text-slate-300 hover:text-white hover:bg-slate-700/50'
+                  ? 'bg-gradient-to-r from-rose-600 to-rose-700 text-white shadow-md'
+                  : 'text-slate-300 hover:text-white hover:bg-white/5'
               }`}
             >
-              <Flame className="w-3.5 h-3.5 text-amber-300" />
+              <Flame className={`w-3.5 h-3.5 ${activeTab === 'threats' ? 'text-amber-200' : 'text-rose-400'}`} />
               <span>Moving Toward Danger</span>
               <span
-                className={`text-[10px] font-black px-1.5 py-0.2 rounded-full ${
-                  activeTab === 'threats' ? 'bg-white text-rose-700' : 'bg-rose-500/30 text-rose-300'
+                className={`text-[10px] font-black px-1.5 py-0.5 rounded-full min-w-[20px] text-center ${
+                  activeTab === 'threats'
+                    ? 'bg-white text-rose-700 shadow-xs'
+                    : 'bg-rose-500/20 text-rose-300 border border-rose-500/30'
                 }`}
               >
                 {threatCount}
@@ -379,17 +369,19 @@ export default function FleetDangerAndStuckTracker({
             <button
               type="button"
               onClick={() => setActiveTab('stuck')}
-              className={`flex items-center gap-2 px-3.5 py-1.5 rounded-lg text-xs font-bold transition-all cursor-pointer ${
+              className={`relative flex items-center gap-2 px-3.5 py-1.5 rounded-xl text-xs font-bold transition-all duration-200 cursor-pointer ${
                 activeTab === 'stuck'
-                  ? 'bg-amber-600 text-white shadow-xs'
-                  : 'text-slate-300 hover:text-white hover:bg-slate-700/50'
+                  ? 'bg-gradient-to-r from-amber-600 to-amber-700 text-white shadow-md'
+                  : 'text-slate-300 hover:text-white hover:bg-white/5'
               }`}
             >
-              <AlertOctagon className="w-3.5 h-3.5 text-amber-300" />
+              <AlertOctagon className={`w-3.5 h-3.5 ${activeTab === 'stuck' ? 'text-amber-200' : 'text-amber-400'}`} />
               <span>Stuck Vehicles & Impact</span>
               <span
-                className={`text-[10px] font-black px-1.5 py-0.2 rounded-full ${
-                  activeTab === 'stuck' ? 'bg-white text-amber-800' : 'bg-amber-500/30 text-amber-300'
+                className={`text-[10px] font-black px-1.5 py-0.5 rounded-full min-w-[20px] text-center ${
+                  activeTab === 'stuck'
+                    ? 'bg-white text-amber-800 shadow-xs'
+                    : 'bg-amber-500/20 text-amber-300 border border-amber-500/30'
                 }`}
               >
                 {stuckCount}
@@ -399,143 +391,172 @@ export default function FleetDangerAndStuckTracker({
         </div>
       </div>
 
-      {/* Main Tab Content */}
-      <div className="p-4 sm:p-5">
+      {/* Main Tab Content Area */}
+      <div className="p-4 sm:p-5 lg:p-6 bg-slate-50/50">
         <AnimatePresence mode="wait">
           {activeTab === 'threats' ? (
             /* TAB 1: MOVING TOWARD DANGER CORRIDORS */
             <motion.div
               key="threats-view"
-              initial={{ opacity: 0, y: 4 }}
+              initial={{ opacity: 0, y: 6 }}
               animate={{ opacity: 1, y: 0 }}
-              exit={{ opacity: 0, y: -4 }}
-              transition={{ duration: 0.15 }}
+              exit={{ opacity: 0, y: -6 }}
+              transition={{ duration: 0.18 }}
               className="space-y-4"
             >
               {movingTowardDanger.length === 0 ? (
-                <div className="p-8 text-center bg-slate-50 rounded-xl border border-dashed border-slate-200">
-                  <CheckCircle2 className="w-8 h-8 text-emerald-600 mx-auto mb-2" />
-                  <h4 className="text-sm font-bold text-slate-800">All Moving Fleet Vehicles on Safe Roads</h4>
+                <div className="py-12 px-6 text-center bg-white rounded-2xl border border-slate-200/80 shadow-2xs">
+                  <div className="w-12 h-12 rounded-2xl bg-emerald-50 border border-emerald-200/80 flex items-center justify-center mx-auto mb-3 text-emerald-600 shadow-xs">
+                    <CheckCircle2 className="w-6 h-6" />
+                  </div>
+                  <h4 className="text-sm font-bold text-slate-800">All Active Fleet Vehicles on Safe Roads</h4>
                   <p className="text-xs text-slate-500 mt-1 max-w-md mx-auto">
                     Zero vehicles currently en route toward known danger or landslide zones. Corridors are clear for safe transit.
                   </p>
                 </div>
               ) : (
-                <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
+                <div className="grid grid-cols-1 lg:grid-cols-2 gap-4.5">
                   {movingTowardDanger.map((v) => (
                     <div
                       key={v.id}
-                      className="bg-white rounded-xl border-2 border-rose-200/90 hover:border-rose-300 p-4 shadow-2xs hover:shadow-xs transition-all flex flex-col justify-between relative overflow-hidden"
+                      className="group bg-white rounded-2xl border border-slate-200/90 hover:border-rose-300/80 shadow-xs hover:shadow-md transition-all duration-200 p-4.5 flex flex-col justify-between relative overflow-hidden"
                     >
-                      {/* Left threat color bar */}
-                      <div className="absolute left-0 top-0 bottom-0 w-1.5 bg-rose-500" />
+                      {/* Subtle elegant top accent border */}
+                      <div className="absolute top-0 left-0 right-0 h-1 bg-gradient-to-r from-rose-500 via-amber-400 to-rose-500" />
 
-                      <div className="space-y-3 pl-1.5">
-                        {/* Top Row: Vehicle ID, Speed, Approaching Hazard Tag */}
-                        <div className="flex items-start justify-between gap-2">
+                      <div className="space-y-3.5">
+                        {/* 1. Header: Truck Plate + Model + Live Telematics Tag */}
+                        <div className="flex items-start justify-between gap-3">
                           <div className="min-w-0">
                             <div className="flex items-center gap-2 flex-wrap">
-                              <span className="text-xs font-black text-slate-900 bg-slate-100 border border-slate-200 px-2 py-0.5 rounded-md flex items-center gap-1.5">
+                              <span className="font-mono text-xs sm:text-sm font-black tracking-tight text-slate-900 bg-slate-100/90 border border-slate-200/90 px-2.5 py-1 rounded-lg flex items-center gap-1.5 shadow-2xs">
                                 <Truck className="w-3.5 h-3.5 text-slate-700" />
                                 {v.id}
                               </span>
-                              <span className="text-[11px] font-bold text-slate-600">
-                                {v.model || 'Heavy Freight Truck'}
+                              <span className="text-xs font-semibold text-slate-600 truncate max-w-[150px]">
+                                {v.model || 'Heavy Freight Carrier'}
                               </span>
-                              <span className="text-[10px] font-black uppercase tracking-wider px-2 py-0.5 rounded-full bg-rose-100 text-rose-800 border border-rose-300">
+                              <span className="text-[10px] font-black uppercase tracking-wider px-2 py-0.5 rounded-full bg-rose-50 text-rose-700 border border-rose-200">
                                 {v.dangerType}
                               </span>
                             </div>
-                            <div className="text-xs text-slate-500 font-medium mt-1 flex items-center gap-1.5">
-                              <span>Driver:</span>
-                              <b className="text-slate-800">{v.driver?.name || 'Driver on Duty'}</b>
+
+                            {/* Driver phone chip */}
+                            <div className="flex items-center gap-2 text-xs text-slate-500 font-medium mt-1.5">
+                              <span>Driver: <strong className="text-slate-800 font-bold">{v.driver?.name || 'Assigned Driver'}</strong></span>
                               {v.driver?.phone && (
                                 <a
                                   href={`tel:${v.driver.phone}`}
-                                  className="text-emerald-700 hover:underline flex items-center gap-0.5 text-[11px] font-bold"
-                                  title="Call Driver"
+                                  className="inline-flex items-center gap-1 px-2 py-0.5 rounded-md bg-emerald-50 hover:bg-emerald-100 text-emerald-800 border border-emerald-200/80 text-[11px] font-bold transition-colors cursor-pointer"
+                                  title="Direct Call Driver"
                                 >
-                                  <PhoneCall className="w-3 h-3" />
-                                  {v.driver.phone}
+                                  <PhoneCall className="w-3 h-3 text-emerald-600" />
+                                  <span>{v.driver.phone}</span>
                                 </a>
                               )}
                             </div>
                           </div>
 
                           {/* Live Speed Badge */}
-                          <div className="text-right flex-shrink-0">
-                            <span className="inline-flex items-center gap-1 text-xs font-black px-2 py-1 rounded-lg bg-slate-900 text-white">
-                              <Gauge className="w-3.5 h-3.5 text-emerald-400" />
-                              {Number(v.speed) || 40} km/h
+                          <div className="flex-shrink-0 text-right">
+                            <div className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-xl bg-slate-900 text-white shadow-2xs">
+                              <span className="w-2 h-2 rounded-full bg-emerald-400 animate-pulse" />
+                              <span className="font-mono text-xs font-black">{Number(v.speed) || 40} km/h</span>
+                            </div>
+                          </div>
+                        </div>
+
+                        {/* 2. Current Corridor Route Banner */}
+                        <div className="flex items-center justify-between gap-2 px-3 py-2 rounded-xl bg-slate-50 border border-slate-200/80 text-xs">
+                          <div className="flex items-center gap-2 min-w-0">
+                            <Navigation className="w-3.5 h-3.5 text-slate-500 flex-shrink-0" />
+                            <span className="text-slate-500 font-medium text-[11px] uppercase tracking-wider">Active Route:</span>
+                            <span className="font-bold text-slate-800 truncate">
+                              {v.current_route || 'North East Highway Network'}
                             </span>
                           </div>
                         </div>
 
-                        {/* Route & Impending Hazard Threat Radar Box */}
-                        <div className="bg-rose-50/70 border border-rose-200 rounded-xl p-3 space-y-2">
-                          <div className="flex items-center justify-between text-xs">
-                            <span className="font-semibold text-rose-950 flex items-center gap-1.5">
-                              <Navigation className="w-3.5 h-3.5 text-rose-600" />
-                              Current Corridor:
-                            </span>
-                            <span className="font-bold text-slate-800 truncate max-w-[210px]">
-                              {v.current_route || 'Assam National Highway'}
-                            </span>
+                        {/* 3. High-Situational Threat Radar Panel */}
+                        <div className="rounded-xl border border-rose-200/90 bg-gradient-to-br from-rose-50/70 to-amber-50/40 p-3.5 space-y-2.5">
+                          <div className="flex items-start justify-between gap-3">
+                            <div className="flex items-start gap-2.5 min-w-0">
+                              <div className="w-8 h-8 rounded-lg bg-rose-100/90 border border-rose-200 flex items-center justify-center flex-shrink-0 text-rose-700 shadow-2xs mt-0.5">
+                                <AlertTriangle className="w-4 h-4 text-rose-600" />
+                              </div>
+                              <div className="min-w-0">
+                                <div className="text-xs font-bold text-rose-950 flex items-center gap-1.5 flex-wrap">
+                                  <span>Approaching Hazard at</span>
+                                  <span className="font-black text-rose-900 underline decoration-rose-300 decoration-2">
+                                    {v.dangerLocation}
+                                  </span>
+                                </div>
+                                <p className="text-[11px] text-rose-800/90 font-medium mt-0.5 line-clamp-2 leading-relaxed">
+                                  {v.dangerMessage}
+                                </p>
+                              </div>
+                            </div>
+
+                            {/* Threat Proximity Metrics */}
+                            <div className="flex flex-col items-end gap-1 flex-shrink-0">
+                              <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-md bg-white border border-rose-200 text-rose-900 font-mono text-[11px] font-black shadow-2xs">
+                                📍 {v.distanceKm} km
+                              </span>
+                              <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-md bg-rose-600 text-white font-mono text-[10px] font-bold shadow-2xs">
+                                <Timer className="w-3 h-3" />
+                                ETA ~{v.etaMins}m
+                              </span>
+                            </div>
                           </div>
 
-                          <div className="flex items-start gap-2 pt-1 border-t border-rose-200/80">
-                            <AlertTriangle className="w-4 h-4 text-rose-600 flex-shrink-0 mt-0.5" />
-                            <div className="text-xs min-w-0">
-                              <div className="flex items-baseline justify-between gap-1 flex-wrap">
-                                <span className="font-bold text-rose-950">
-                                  Approaching Hazard at {v.dangerLocation}:
-                                </span>
-                                <span className="font-black text-rose-700 text-[11px]">
-                                  {v.distanceKm} km away • ETA ~{v.etaMins} mins
-                                </span>
-                              </div>
-                              <p className="text-[11px] text-rose-800/90 font-normal mt-0.5 line-clamp-2">
-                                {v.dangerMessage}
-                              </p>
+                          {/* Visual Proximity Horizon Bar */}
+                          <div className="space-y-1 pt-1 border-t border-rose-200/70">
+                            <div className="flex justify-between text-[10px] font-bold text-rose-900/80">
+                              <span>Distance to Danger Chokepoint</span>
+                              <span className="font-mono">{v.distanceKm} km remaining</span>
+                            </div>
+                            <div className="w-full h-1.5 bg-rose-200/80 rounded-full overflow-hidden">
+                              <div
+                                className="h-full bg-gradient-to-r from-amber-500 to-rose-600 rounded-full transition-all duration-500"
+                                style={{ width: `${v.proximityProgress}%` }}
+                              />
                             </div>
                           </div>
                         </div>
                       </div>
 
-                      {/* Action Command Row (Appropriate Answers) */}
-                      <div className="mt-3.5 pt-3 border-t border-slate-100 flex flex-wrap items-center justify-between gap-2 pl-1.5">
-                        <div className="flex items-center gap-2">
-                          {/* Action 1: 1-Click AI Safe Detour */}
-                          <button
-                            type="button"
-                            onClick={() => handleDirectReroute(v)}
-                            disabled={reroutingId === v.id}
-                            className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-slate-900 hover:bg-slate-800 active:scale-98 text-white text-xs font-bold shadow-xs transition-all cursor-pointer disabled:opacity-75"
-                            title="Recalculate route and send safe bypass to truck"
-                          >
-                            {reroutingId === v.id ? (
-                              <RefreshCw className="w-3.5 h-3.5 animate-spin text-white" />
-                            ) : (
-                              <Zap className="w-3.5 h-3.5 text-amber-400 fill-amber-400" />
-                            )}
-                            <span>{reroutingId === v.id ? 'Recalculating...' : 'Dispatch AI Safe Detour'}</span>
-                          </button>
+                      {/* 4. Unified Action Command Bar (Immediate Answers) */}
+                      <div className="mt-4 pt-3 border-t border-slate-100 grid grid-cols-1 sm:grid-cols-3 gap-2">
+                        {/* Action 1: 1-Click AI Safe Detour */}
+                        <button
+                          type="button"
+                          onClick={() => handleDirectReroute(v)}
+                          disabled={reroutingId === v.id}
+                          className="inline-flex items-center justify-center gap-1.5 px-3 py-2 rounded-xl bg-slate-900 hover:bg-slate-800 active:scale-98 text-white text-xs font-bold shadow-xs hover:shadow-sm transition-all cursor-pointer disabled:opacity-75"
+                          title="Recalculate route and push bypass detour to vehicle"
+                        >
+                          {reroutingId === v.id ? (
+                            <RefreshCw className="w-3.5 h-3.5 animate-spin text-white" />
+                          ) : (
+                            <Zap className="w-3.5 h-3.5 text-amber-400 fill-amber-400" />
+                          )}
+                          <span className="truncate">{reroutingId === v.id ? 'Recalculating...' : 'AI Safe Detour'}</span>
+                        </button>
 
-                          {/* Action 2: In-Cab Broadcast Warning */}
-                          <button
-                            type="button"
-                            onClick={() => {
-                              if (onOpenBroadcastModal) onOpenBroadcastModal(v.id, v.rawHazard);
-                              else handleQuickBroadcast(v);
-                            }}
-                            disabled={broadcastingId === v.id}
-                            className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-rose-50 hover:bg-rose-100 border border-rose-300 text-rose-800 text-xs font-bold transition-all cursor-pointer"
-                            title="Broadcast alert directly to driver device"
-                          >
-                            <Radio className="w-3.5 h-3.5 text-rose-600 animate-pulse" />
-                            <span>Broadcast Warning</span>
-                          </button>
-                        </div>
+                        {/* Action 2: In-Cab Broadcast Warning */}
+                        <button
+                          type="button"
+                          onClick={() => {
+                            if (onOpenBroadcastModal) onOpenBroadcastModal(v.id, v.rawHazard);
+                            else handleQuickBroadcast(v);
+                          }}
+                          disabled={broadcastingId === v.id}
+                          className="inline-flex items-center justify-center gap-1.5 px-3 py-2 rounded-xl bg-rose-50 hover:bg-rose-100 active:scale-98 border border-rose-200/90 text-rose-800 text-xs font-bold transition-all shadow-2xs cursor-pointer"
+                          title="Broadcast alert warning directly to in-cab driver device"
+                        >
+                          <Radio className="w-3.5 h-3.5 text-rose-600 animate-pulse" />
+                          <span className="truncate">Broadcast Alert</span>
+                        </button>
 
                         {/* Action 3: Locate on Live Map */}
                         <button
@@ -543,10 +564,11 @@ export default function FleetDangerAndStuckTracker({
                           onClick={() => {
                             if (onFocusVehicleOnMap) onFocusVehicleOnMap(v.id);
                           }}
-                          className="inline-flex items-center gap-1 text-xs font-bold text-slate-600 hover:text-emerald-700 hover:underline cursor-pointer"
+                          className="inline-flex items-center justify-center gap-1.5 px-3 py-2 rounded-xl bg-slate-100 hover:bg-emerald-50 hover:text-emerald-700 hover:border-emerald-300 border border-slate-200 text-slate-700 text-xs font-bold transition-all cursor-pointer shadow-2xs"
+                          title="Center and highlight this vehicle on the live map"
                         >
                           <MapPin className="w-3.5 h-3.5 text-emerald-600" />
-                          <span>Track on Map</span>
+                          <span className="truncate">Track on Map</span>
                         </button>
                       </div>
                     </div>
@@ -558,171 +580,180 @@ export default function FleetDangerAndStuckTracker({
             /* TAB 2: STUCK VEHICLES & CRITICAL IMPACT ANALYSIS */
             <motion.div
               key="stuck-view"
-              initial={{ opacity: 0, y: 4 }}
+              initial={{ opacity: 0, y: 6 }}
               animate={{ opacity: 1, y: 0 }}
-              exit={{ opacity: 0, y: -4 }}
-              transition={{ duration: 0.15 }}
+              exit={{ opacity: 0, y: -6 }}
+              transition={{ duration: 0.18 }}
               className="space-y-4"
             >
               {stuckVehicles.length === 0 ? (
-                <div className="p-8 text-center bg-slate-50 rounded-xl border border-dashed border-slate-200">
-                  <CheckCircle2 className="w-8 h-8 text-emerald-600 mx-auto mb-2" />
+                <div className="py-12 px-6 text-center bg-white rounded-2xl border border-slate-200/80 shadow-2xs">
+                  <div className="w-12 h-12 rounded-2xl bg-emerald-50 border border-emerald-200/80 flex items-center justify-center mx-auto mb-3 text-emerald-600 shadow-xs">
+                    <CheckCircle2 className="w-6 h-6" />
+                  </div>
                   <h4 className="text-sm font-bold text-slate-800">Zero Fleet Vehicles Stuck or Stalled</h4>
                   <p className="text-xs text-slate-500 mt-1 max-w-md mx-auto">
                     No vehicles are currently immobilized or trapped at highway choke points. Fleet throughput is nominal.
                   </p>
                 </div>
               ) : (
-                <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
+                <div className="grid grid-cols-1 lg:grid-cols-2 gap-4.5">
                   {stuckVehicles.map((v) => {
                     const isPriorityRequested = clearedVehicles.has(v.id);
 
                     return (
                       <div
                         key={v.id}
-                        className="bg-white rounded-xl border-2 border-amber-200/90 hover:border-amber-300 p-4 shadow-2xs hover:shadow-xs transition-all flex flex-col justify-between relative overflow-hidden"
+                        className="group bg-white rounded-2xl border border-slate-200/90 hover:border-amber-300/80 shadow-xs hover:shadow-md transition-all duration-200 p-4.5 flex flex-col justify-between relative overflow-hidden"
                       >
-                        {/* Left stoppage color bar */}
-                        <div className="absolute left-0 top-0 bottom-0 w-1.5 bg-amber-500" />
+                        {/* Subtle elegant top accent border */}
+                        <div className="absolute top-0 left-0 right-0 h-1 bg-gradient-to-r from-amber-500 via-orange-400 to-amber-500" />
 
-                        <div className="space-y-3 pl-1.5">
-                          {/* Top Row: Vehicle ID, Stoppage Duration & Landmark */}
-                          <div className="flex items-start justify-between gap-2">
+                        <div className="space-y-3.5">
+                          {/* 1. Header: Truck Plate + Stoppage Duration Badge */}
+                          <div className="flex items-start justify-between gap-3">
                             <div className="min-w-0">
                               <div className="flex items-center gap-2 flex-wrap">
-                                <span className="text-xs font-black text-slate-900 bg-slate-100 border border-slate-200 px-2 py-0.5 rounded-md flex items-center gap-1.5">
+                                <span className="font-mono text-xs sm:text-sm font-black tracking-tight text-slate-900 bg-slate-100/90 border border-slate-200/90 px-2.5 py-1 rounded-lg flex items-center gap-1.5 shadow-2xs">
                                   <Truck className="w-3.5 h-3.5 text-slate-700" />
                                   {v.id}
                                 </span>
-                                <span className="text-[10px] font-black uppercase tracking-wider px-2 py-0.5 rounded-full bg-amber-100 text-amber-900 border border-amber-300 flex items-center gap-1">
+                                <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-[10px] font-black uppercase tracking-wider bg-amber-50 text-amber-900 border border-amber-300">
                                   <Clock className="w-3 h-3 text-amber-700" />
-                                  Stuck for {v.durationDisplay}
+                                  Stationary for {v.durationDisplay}
                                 </span>
                               </div>
-                              <div className="text-xs text-slate-500 font-medium mt-1 flex items-center gap-1.5">
-                                <span>Driver:</span>
-                                <b className="text-slate-800">{v.driver?.name || 'Driver on Duty'}</b>
+
+                              {/* Driver phone chip */}
+                              <div className="flex items-center gap-2 text-xs text-slate-500 font-medium mt-1.5">
+                                <span>Driver: <strong className="text-slate-800 font-bold">{v.driver?.name || 'Assigned Driver'}</strong></span>
                                 {v.driver?.phone && (
                                   <a
                                     href={`tel:${v.driver.phone}`}
-                                    className="text-emerald-700 hover:underline flex items-center gap-0.5 text-[11px] font-bold"
-                                    title="Call Driver"
+                                    className="inline-flex items-center gap-1 px-2 py-0.5 rounded-md bg-emerald-50 hover:bg-emerald-100 text-emerald-800 border border-emerald-200/80 text-[11px] font-bold transition-colors cursor-pointer"
+                                    title="Direct Call Driver"
                                   >
-                                    <PhoneCall className="w-3 h-3" />
-                                    {v.driver.phone}
+                                    <PhoneCall className="w-3 h-3 text-emerald-600" />
+                                    <span>{v.driver.phone}</span>
                                   </a>
                                 )}
                               </div>
                             </div>
 
-                            {/* Stoppage Badge */}
-                            <span className="inline-flex items-center gap-1 text-[11px] font-black px-2 py-0.5 rounded-md bg-rose-50 text-rose-700 border border-rose-200">
-                              Speed: 0 km/h
-                            </span>
+                            {/* Speed 0 km/h Badge */}
+                            <div className="flex-shrink-0 text-right">
+                              <span className="inline-flex items-center gap-1 text-[11px] font-mono font-black px-2.5 py-1 rounded-xl bg-rose-50 text-rose-700 border border-rose-200 shadow-2xs">
+                                Speed: 0 km/h
+                              </span>
+                            </div>
                           </div>
 
-                          {/* Where It Is Stuck & Obstruction Cause */}
-                          <div className="bg-slate-50 border border-slate-200/90 rounded-xl p-3 space-y-1.5">
+                          {/* 2. Where It Is Stuck & Stoppage Cause Panel */}
+                          <div className="rounded-xl border border-slate-200/90 bg-slate-50/80 p-3 space-y-1.5">
                             <div className="flex items-start gap-1.5 text-xs text-slate-900 font-bold">
                               <MapPin className="w-4 h-4 text-rose-600 flex-shrink-0 mt-0.5" />
-                              <span>Where It Is Stuck:</span>
-                              <span className="text-rose-900 font-extrabold">{v.stuckLocation}</span>
+                              <span className="text-slate-600 font-medium">Stuck Location:</span>
+                              <span className="text-slate-900 font-extrabold">{v.stuckLocation}</span>
                             </div>
-                            <p className="text-[11px] text-slate-600 font-medium pl-5 leading-snug">
+                            <div className="text-[11px] text-slate-600 font-medium pl-5.5 leading-snug">
                               <b className="text-slate-800">Root Obstruction: </b>
                               {v.stoppageCause}
-                            </p>
+                            </div>
                           </div>
 
-                          {/* Critical Business & Cargo Impact Matrix */}
-                          <div className="bg-amber-50/80 border border-amber-200 rounded-xl p-3 space-y-2">
-                            <div className="text-[11px] font-black uppercase tracking-wider text-amber-900 flex items-center gap-1.5 pb-1 border-b border-amber-200/80">
-                              <Package className="w-3.5 h-3.5 text-amber-700" />
-                              Consignment & Impact Analysis
+                          {/* 3. Comprehensive Business & Consignment Impact Matrix */}
+                          <div className="rounded-xl border border-amber-200/90 bg-gradient-to-br from-amber-50/80 to-orange-50/40 p-3.5 space-y-2.5">
+                            <div className="text-[11px] font-black uppercase tracking-wider text-amber-900 flex items-center justify-between pb-1.5 border-b border-amber-200/80">
+                              <span className="flex items-center gap-1.5">
+                                <Package className="w-3.5 h-3.5 text-amber-700" />
+                                Critical Consignment & Business Impact
+                              </span>
+                              <span className="font-mono text-[10px] text-amber-800 bg-amber-100/90 px-2 py-0.5 rounded-md border border-amber-300">
+                                {v.consignmentId}
+                              </span>
                             </div>
 
+                            {/* 2-Column Impact Grid */}
                             <div className="grid grid-cols-2 gap-2 text-xs">
-                              {/* Cargo Info */}
-                              <div className="bg-white/80 p-2 rounded-lg border border-amber-200/60">
+                              {/* Cargo Info Card */}
+                              <div className="bg-white/90 p-2.5 rounded-xl border border-amber-200/70 shadow-2xs">
                                 <span className="text-[10px] font-bold text-slate-500 uppercase tracking-wider block">
                                   Cargo Payload
                                 </span>
-                                <span className="font-extrabold text-slate-900 text-[11px] block truncate" title={v.cargoLabel}>
+                                <span className="font-extrabold text-slate-900 text-[11px] block truncate mt-0.5" title={v.cargoLabel}>
                                   {v.cargoLabel}
                                 </span>
-                                <span className="text-[10px] text-slate-600 font-semibold">
-                                  {v.consignmentId} • {Number(v.weightKg).toLocaleString()} kg
+                                <span className="text-[10px] text-slate-600 font-semibold block mt-0.5">
+                                  Weight: {Number(v.weightKg).toLocaleString()} kg
                                 </span>
                               </div>
 
-                              {/* SLA & Delay Risk */}
-                              <div className="bg-white/80 p-2 rounded-lg border border-amber-200/60">
+                              {/* SLA & Delay Risk Card */}
+                              <div className="bg-white/90 p-2.5 rounded-xl border border-amber-200/70 shadow-2xs">
                                 <span className="text-[10px] font-bold text-slate-500 uppercase tracking-wider block">
                                   SLA & Penalty Exposure
                                 </span>
-                                <span className="font-extrabold text-rose-700 text-[11px] block truncate">
+                                <span className="font-extrabold text-rose-700 text-[11px] block truncate mt-0.5">
                                   {v.slaThreat}
                                 </span>
-                                <span className="text-[10px] text-amber-900 font-black">
-                                  Est. Exposure: {v.financialExposure}
+                                <span className="text-[10px] text-amber-900 font-black block mt-0.5">
+                                  Exposure: {v.financialExposure}
                                 </span>
                               </div>
                             </div>
 
-                            {/* Ripple Effect */}
-                            <div className="text-[11px] text-slate-700 font-medium pt-1">
+                            {/* Ripple Effect Notice */}
+                            <div className="text-[11px] text-slate-700 font-medium pt-1 border-t border-amber-200/60 leading-snug">
                               <b className="text-slate-900 font-bold">Supply Chain Ripple: </b>
                               {v.rippleEffect}
                             </div>
                           </div>
                         </div>
 
-                        {/* Action Command Row (Appropriate Answers for Stuck Vehicles) */}
-                        <div className="mt-3.5 pt-3 border-t border-slate-100 flex flex-wrap items-center justify-between gap-2 pl-1.5">
-                          <div className="flex items-center gap-2">
-                            {/* Action 1: Request Emergency Clearance Priority */}
-                            {isPriorityRequested ? (
-                              <div className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-emerald-50 border border-emerald-300 text-emerald-800 text-xs font-bold">
-                                <CheckCircle2 className="w-3.5 h-3.5 text-emerald-600" />
-                                <span>Priority Clearance Requested</span>
-                              </div>
-                            ) : (
-                              <button
-                                type="button"
-                                onClick={() => handleRequestClearance(v)}
-                                disabled={requestingClearanceId === v.id}
-                                className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-rose-600 hover:bg-rose-700 active:scale-98 text-white text-xs font-bold shadow-xs transition-all cursor-pointer disabled:opacity-75"
-                                title="Alert SDRF and NHAI clearance units to expedite vehicle passage"
-                              >
-                                {requestingClearanceId === v.id ? (
-                                  <RefreshCw className="w-3.5 h-3.5 animate-spin text-white" />
-                                ) : (
-                                  <LifeBuoy className="w-3.5 h-3.5 text-white" />
-                                )}
-                                <span>Request Clearance Priority</span>
-                              </button>
-                            )}
-
-                            {/* Action 2: Authorize Emergency Detour / U-Turn */}
+                        {/* 4. Unified Action Command Bar for Stuck Vehicles */}
+                        <div className="mt-4 pt-3 border-t border-slate-100 grid grid-cols-1 sm:grid-cols-3 gap-2">
+                          {/* Action 1: Request Emergency Clearance Priority */}
+                          {isPriorityRequested ? (
+                            <div className="inline-flex items-center justify-center gap-1.5 px-3 py-2 rounded-xl bg-emerald-50 border border-emerald-300 text-emerald-800 text-xs font-bold shadow-2xs">
+                              <CheckCircle2 className="w-3.5 h-3.5 text-emerald-600" />
+                              <span className="truncate">Clearance Sent</span>
+                            </div>
+                          ) : (
                             <button
                               type="button"
-                              onClick={() => {
-                                if (onOpenRerouteModal) {
-                                  onOpenRerouteModal(
-                                    v.id,
-                                    `Emergency Bypass: Vehicle stuck at ${v.stuckLocation} for ${v.durationDisplay}`
-                                  );
-                                } else {
-                                  handleDirectReroute(v);
-                                }
-                              }}
-                              className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-slate-900 hover:bg-slate-800 text-white text-xs font-bold shadow-xs transition-all cursor-pointer"
-                              title="Calculate immediate safe U-turn or alternate mountain bypass"
+                              onClick={() => handleRequestClearance(v)}
+                              disabled={requestingClearanceId === v.id}
+                              className="inline-flex items-center justify-center gap-1.5 px-3 py-2 rounded-xl bg-rose-600 hover:bg-rose-700 active:scale-98 text-white text-xs font-bold shadow-xs hover:shadow-sm transition-all cursor-pointer disabled:opacity-75"
+                              title="Alert SDRF and NHAI clearance units to prioritize clearing vehicle passage"
                             >
-                              <Zap className="w-3.5 h-3.5 text-amber-400 fill-amber-400" />
-                              <span>Authorize Detour</span>
+                              {requestingClearanceId === v.id ? (
+                                <RefreshCw className="w-3.5 h-3.5 animate-spin text-white" />
+                              ) : (
+                                <LifeBuoy className="w-3.5 h-3.5 text-white" />
+                              )}
+                              <span className="truncate">Clearance Priority</span>
                             </button>
-                          </div>
+                          )}
+
+                          {/* Action 2: Authorize Emergency Detour / U-Turn */}
+                          <button
+                            type="button"
+                            onClick={() => {
+                              if (onOpenRerouteModal) {
+                                onOpenRerouteModal(
+                                  v.id,
+                                  `Emergency Bypass: Vehicle stuck at ${v.stuckLocation} for ${v.durationDisplay}`
+                                );
+                              } else {
+                                handleDirectReroute(v);
+                              }
+                            }}
+                            className="inline-flex items-center justify-center gap-1.5 px-3 py-2 rounded-xl bg-slate-900 hover:bg-slate-800 active:scale-98 text-white text-xs font-bold shadow-xs hover:shadow-sm transition-all cursor-pointer"
+                            title="Calculate immediate safe U-turn or alternate bypass"
+                          >
+                            <Zap className="w-3.5 h-3.5 text-amber-400 fill-amber-400" />
+                            <span className="truncate">Authorize Detour</span>
+                          </button>
 
                           {/* Action 3: Locate Stoppage on Map */}
                           <button
@@ -730,10 +761,11 @@ export default function FleetDangerAndStuckTracker({
                             onClick={() => {
                               if (onFocusVehicleOnMap) onFocusVehicleOnMap(v.id);
                             }}
-                            className="inline-flex items-center gap-1 text-xs font-bold text-slate-600 hover:text-emerald-700 hover:underline cursor-pointer"
+                            className="inline-flex items-center justify-center gap-1.5 px-3 py-2 rounded-xl bg-slate-100 hover:bg-emerald-50 hover:text-emerald-700 hover:border-emerald-300 border border-slate-200 text-slate-700 text-xs font-bold transition-all cursor-pointer shadow-2xs"
+                            title="Locate stalled vehicle on live telematics map"
                           >
                             <MapPin className="w-3.5 h-3.5 text-emerald-600" />
-                            <span>Locate Stoppage</span>
+                            <span className="truncate">Locate Stoppage</span>
                           </button>
                         </div>
                       </div>
