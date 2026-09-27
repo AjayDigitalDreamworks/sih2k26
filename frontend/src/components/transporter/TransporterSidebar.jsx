@@ -14,6 +14,7 @@ import {
   Headphones,
   Crosshair,
   Route,
+  ShieldAlert,
   X,  
 } from 'lucide-react';
 import { Link, useLocation } from 'react-router-dom';
@@ -32,6 +33,8 @@ export default function TransporterSidebar({ isOpen, onClose }) {
     switch (iconName) {
       case 'dashboard':
         return <LayoutDashboard className={iconClass} />;
+      case 'shield-alert':
+        return <ShieldAlert className={iconClass} />;
       case 'package':
         return <Package className={iconClass} />;
       case 'truck':
@@ -67,6 +70,14 @@ export default function TransporterSidebar({ isOpen, onClose }) {
         location.pathname === '/transporter/dashboard' ||
         location.pathname === '/dashboard' ||
         location.pathname === '/admin/dashboard'
+      );
+    }
+    if (id === 'disruptions') {
+      return (
+        location.pathname === '/transporter/disruptions' ||
+        location.pathname === '/transporter/interventions' ||
+        location.pathname === '/disruptions' ||
+        location.pathname === '/interventions'
       );
     }
     if (id === 'consignments') {
@@ -201,7 +212,12 @@ export default function TransporterSidebar({ isOpen, onClose }) {
             >
               <div className="flex items-center gap-3">
                 {getIcon(item.icon, active)}
-                <span className="tracking-tight">{t(`nav.${item.id}`) || item.label}</span>
+                <span className="tracking-tight">
+                  {(() => {
+                    const trans = t(`nav.${item.id}`);
+                    return trans && !trans.startsWith('nav.') ? trans : item.label;
+                  })()}
+                </span>
               </div>
 
               {/* Badges */}

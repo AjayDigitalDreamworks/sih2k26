@@ -127,6 +127,8 @@ export default function App() {
                   <Route path="/route-planning" element={<RoleRouteRedirect adminPath="/admin/route-optimization" transporterPath="/transporter/route-planning" />} />
                   <Route path="/route-optimization" element={<RoleRouteRedirect adminPath="/admin/route-optimization" transporterPath="/transporter/route-optimization" />} />
                   <Route path="/alerts" element={<RoleRouteRedirect adminPath="/admin/alerts" transporterPath="/transporter/alerts" />} />
+                  <Route path="/disruptions" element={<RoleRouteRedirect adminPath="/admin/alerts" transporterPath="/transporter/disruptions" />} />
+                  <Route path="/interventions" element={<RoleRouteRedirect adminPath="/admin/alerts" transporterPath="/transporter/interventions" />} />
                   <Route path="/delivery-history" element={<Navigate to="/transporter/delivery-history" replace />} />
                   <Route path="/history" element={<Navigate to="/transporter/history" replace />} />
                   <Route path="/reports" element={<RoleRouteRedirect adminPath="/admin/field-reports" transporterPath="/transporter/reports" />} />

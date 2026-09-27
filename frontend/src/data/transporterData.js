@@ -3,6 +3,7 @@
 
 export const sidebarNavItems = [
   { id: 'dashboard', label: 'Fleet & Map', icon: 'map-pin', path: '/transporter/dashboard' },
+  { id: 'disruptions', label: 'Disruption & Risk Control', icon: 'shield-alert', path: '/transporter/disruptions' },
   { id: 'tracking', label: 'Vehicle Tracking', icon: 'tracker', path: '/transporter/vehicle-tracking' },
   { id: 'routes', label: 'New Trip / Dispatch', icon: 'route', path: '/transporter/route-planning' },
   { id: 'consignments', label: 'Consignments & Orders', icon: 'package', path: '/transporter/consignments' },

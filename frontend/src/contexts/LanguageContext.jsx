@@ -18,6 +18,7 @@ export const DICT = {
     "nav.emergency": "Emergency Mode",
     "nav.settings": "Settings",
     "nav.consignments": "My Consignments",
+    "nav.disruptions": "Disruption & Risk Control",
     "nav.vehicles": "My Vehicles",
     "nav.tracking": "Live Tracking & GPS",
     "nav.fleet-tracking": "Vehicle Tracking",

@@ -12,12 +12,15 @@ import DeliveryHistoryPage from './DeliveryHistoryPage';
 import ReportsPage from './ReportsPage';
 import SettingsPage from './SettingsPage';
 import HelpSupportPage from './HelpSupportPage';
+import DisruptionsPage from './DisruptionsPage';
 
 export default function TransporterApp() {
   return (
     <Routes>
       <Route path="/" element={<TransporterDashboard />} />
       <Route path="/dashboard" element={<TransporterDashboard />} />
+      <Route path="/disruptions" element={<DisruptionsPage />} />
+      <Route path="/interventions" element={<DisruptionsPage />} />
       <Route path="/consignments" element={<MyConsignments />} />
       <Route path="/vehicles" element={<MyVehicles />} />
       <Route path="/live-tracking" element={<LiveTrackingPage />} />

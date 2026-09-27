@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { Link } from 'react-router-dom';
-import { ChevronRight } from 'lucide-react';
+import { ChevronRight, ShieldAlert } from 'lucide-react';
 import TransporterSidebar from '../../components/transporter/TransporterSidebar';
 import TransporterHeader from '../../components/transporter/TransporterHeader';
 import TransporterOperationsWorkflow from '../../components/transporter/TransporterOperationsWorkflow';
@@ -16,7 +16,6 @@ import TransporterFooter from '../../components/transporter/TransporterFooter';
 import NewConsignmentModal from '../../components/consignments/NewConsignmentModal';
 import AddVehicleModal from '../../components/vehicles/AddVehicleModal';
 import FleetHealthPulseBar from '../../components/transporter/FleetHealthPulseBar';
-import FleetDangerAndStuckTracker from '../../components/transporter/FleetDangerAndStuckTracker';
 import DynamicRerouteModal from '../../components/transporter/DynamicRerouteModal';
 import BroadcastDriverAlertModal from '../../components/transporter/BroadcastDriverAlertModal';
 import ApiClient from '../../lib/api';
@@ -144,23 +143,38 @@ export default function TransporterDashboard() {
             />
           </section>
 
-          {/* Dedicated Fleet Disruption & Threat Intervention Command:
-              1) Vehicles Moving Toward Danger & Risk Roads (with Appropriate Action triggers)
-              2) Stuck Vehicles & Critical Consignment/SLA Impact Analysis */}
+          {/* Executive Route Disruption & Stoppage Notice Banner */}
           <section ref={dangerSectionRef}>
-            <FleetDangerAndStuckTracker
-              vehicles={vehicles}
-              alerts={alerts}
-              deliveries={deliveries}
-              onOpenRerouteModal={handleOpenReroute}
-              onOpenBroadcastModal={handleOpenBroadcast}
-              onFocusVehicleOnMap={handleFocusOnMap}
-              onRefresh={() => {
-                loadVehicles();
-                loadAlerts();
-                loadDeliveries();
-              }}
-            />
+            <div className="bg-white rounded-2xl border border-amber-200/90 p-4 sm:p-4.5 shadow-2xs hover:shadow-xs transition-all flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+              <div className="flex items-start sm:items-center gap-3.5 min-w-0">
+                <div className="w-10 h-10 rounded-xl bg-amber-100/90 border border-amber-300 flex items-center justify-center flex-shrink-0 text-amber-800 shadow-2xs">
+                  <ShieldAlert className="w-5 h-5 text-amber-700" />
+                </div>
+                <div className="min-w-0">
+                  <div className="flex items-center gap-2 flex-wrap">
+                    <span className="text-xs sm:text-sm font-bold text-slate-900">
+                      Active Highway Disruptions & Vehicle Holds
+                    </span>
+                    <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-rose-50 text-rose-700 border border-rose-200 uppercase tracking-wider">
+                      Action Required
+                    </span>
+                  </div>
+                  <p className="text-xs text-slate-600 font-medium mt-0.5 leading-snug">
+                    4 fleet trucks en route to landslide/flood sectors and 2 vehicles stationary at mountain bottlenecks. Estimated SLA exposure: ₹1,37,000.
+                  </p>
+                </div>
+              </div>
+
+              <div className="flex items-center gap-2 flex-shrink-0 self-end sm:self-auto">
+                <Link
+                  to="/transporter/disruptions"
+                  className="inline-flex items-center gap-1.5 px-4 py-2 rounded-xl bg-slate-900 hover:bg-slate-800 active:scale-98 text-white text-xs font-bold transition-all shadow-xs cursor-pointer group"
+                >
+                  <span>Open Disruption Control Tower</span>
+                  <ChevronRight className="w-3.5 h-3.5 text-slate-400 group-hover:translate-x-0.5 transition-transform" />
+                </Link>
+              </div>
+            </div>
           </section>
 
           {/* Top 5 Horizontal KPI Cards */}
