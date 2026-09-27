@@ -41,7 +41,7 @@ export const StatCard = ({
             </span>
           )}
         </div>
-        {period && <div className="stat-subtitle">{t(period)}</div>}
+        <div className="stat-subtitle">{period ? t(period) : '\u00A0'}</div>
       </div>
     </div>
   );

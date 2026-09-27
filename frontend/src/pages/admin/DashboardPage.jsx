@@ -173,7 +173,7 @@ export const DashboardPage = () => {
       </div>
 
       {/* KPI Stat Cards Grid (Clickable for Instant Drilldowns) */}
-      <div className="stat-card-grid">
+      <div className="stat-card-grid stat-card-grid-5">
         <div style={{ cursor: 'pointer' }} onClick={() => setCurrentPage('live-map')} title="Click to view all monitored corridors on map">
           <StatCard
             title={t('dashboard.totalRoutes')}
