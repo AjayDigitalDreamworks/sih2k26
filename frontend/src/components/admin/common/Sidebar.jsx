@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { useNavigate } from 'react-router-dom';
+import { useNavigate, useLocation } from 'react-router-dom';
 import {
   LayoutDashboard,
   MapPin,
@@ -27,6 +27,7 @@ import { useLang } from '@/contexts/LanguageContext';
 
 export const Sidebar = () => {
   const navigate = useNavigate();
+  const location = useLocation();
   const { currentPage, setCurrentPage, sidebarCollapsed, setSidebarCollapsed, openModal, alerts } = useApp();
   const { t } = useLang();
   const [isOnline, setIsOnline] = useState(typeof navigator !== 'undefined' ? navigator.onLine : true);
@@ -147,14 +148,18 @@ export const Sidebar = () => {
               )}
               {sec.items.map((item) => {
                 const Icon = item.icon;
-                const isActive = currentPage === item.id;
+                const urlPage = location.pathname.replace(/^\/admin\/?/, '').split('/')[0] || 'dashboard';
+                const isActive = (currentPage || urlPage) === item.id || urlPage === item.id;
                 const translatedLabel = t(`nav.${item.id}`) || item.label;
                 return (
                   <button
                     key={item.id}
                     onClick={() => {
                       setCurrentPage(item.id);
-                      navigate(item.id === 'dashboard' ? '/admin' : `/admin/${item.id}`);
+                      const target = item.id === 'dashboard' ? '/admin' : `/admin/${item.id}`;
+                      if (location.pathname !== target) {
+                        navigate(target);
+                      }
                       if (typeof window !== 'undefined' && window.innerWidth < 1024) {
                         setSidebarCollapsed(true);
                       }

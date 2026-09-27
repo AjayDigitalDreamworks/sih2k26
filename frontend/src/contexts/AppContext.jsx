@@ -33,13 +33,20 @@ export const mapVehicle = (v) => ({
 });
 
 export const AppProvider = ({ children, scope = 'admin' }) => {
-  const [currentPage, setCurrentPage] = useState(() => {
+  const [currentPage, setCurrentPageState] = useState(() => {
     if (typeof window !== 'undefined' && window.location.pathname.startsWith('/admin')) {
       const seg = window.location.pathname.replace(/^\/admin\/?/, '').split('/')[0];
       if (seg) return seg;
     }
     return 'dashboard';
   });
+
+  const setCurrentPage = useCallback((page) => {
+    setCurrentPageState(page);
+    if (typeof window !== 'undefined') {
+      window.dispatchEvent(new CustomEvent('raahi:navigate', { detail: { page } }));
+    }
+  }, []);
   const [sidebarCollapsed, setSidebarCollapsed] = useState(() => {
     return typeof window !== 'undefined' ? window.innerWidth < 1024 : false;
   });

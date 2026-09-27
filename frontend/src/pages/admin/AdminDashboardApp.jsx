@@ -45,27 +45,18 @@ function AdminContent() {
   const urlPage = location.pathname.replace(/^\/admin\/?/, '').split('/')[0] || 'dashboard';
   const activePage = VALID_PAGES.includes(urlPage) ? urlPage : 'dashboard';
 
-  // 1. Sync from URL path to state (browser back/forward, direct deep-link)
+  // 1. Sync from URL path to state (only when activePage changes from URL)
   useEffect(() => {
     if (currentPage !== activePage) {
       setCurrentPage(activePage);
     }
   }, [activePage, currentPage, setCurrentPage]);
 
-  // 2. Sync from in-component state to URL ONLY if state intentionally diverged from URL
-  useEffect(() => {
-    if (currentPage && VALID_PAGES.includes(currentPage) && currentPage !== activePage) {
-      const targetUrl = currentPage === 'dashboard' ? '/admin' : `/admin/${currentPage}`;
-      navigate(targetUrl, { replace: true });
-    }
-  }, [currentPage, activePage, navigate]);
-
   // Global listener for cross-component navigation dispatch
   useEffect(() => {
     const handleNav = (e) => {
-      if (e.detail?.page && VALID_PAGES.includes(e.detail.page)) {
-        const page = e.detail.page;
-        setCurrentPage(page);
+      const page = e.detail?.page;
+      if (page && VALID_PAGES.includes(page)) {
         const targetUrl = page === 'dashboard' ? '/admin' : `/admin/${page}`;
         if (location.pathname !== targetUrl) {
           navigate(targetUrl);
@@ -74,10 +65,10 @@ function AdminContent() {
     };
     window.addEventListener('raahi:navigate', handleNav);
     return () => window.removeEventListener('raahi:navigate', handleNav);
-  }, [setCurrentPage, navigate, location.pathname]);
+  }, [navigate, location.pathname]);
 
   const renderActivePage = () => {
-    switch (currentPage) {
+    switch (activePage) {
       case 'dashboard':
         return <DashboardPage />;
       case 'live-map':
