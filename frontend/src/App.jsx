@@ -37,6 +37,25 @@ function RoleDashboardRedirect() {
   return <Navigate to="/" replace />;
 }
 
+function RoleRouteRedirect({ adminPath, transporterPath, driverPath = '/driver', officerPath = '/field-officer' }) {
+  const { user, isAuthenticated, isLoading } = useAuth();
+  if (isLoading) return null;
+  if (!isAuthenticated || !user) {
+    return <Navigate to="/login" replace />;
+  }
+  const role = user.backendRole || user.role;
+  if (role === 'admin' || role === 'district_officer') {
+    return <Navigate to={adminPath} replace />;
+  }
+  if (role === 'driver') {
+    return <Navigate to={driverPath} replace />;
+  }
+  if (role === 'field_officer' || role === 'field_officier' || role === 'field_agent') {
+    return <Navigate to={officerPath} replace />;
+  }
+  return <Navigate to={transporterPath} replace />;
+}
+
 export default function App() {
   return (
     <ErrorBoundary>
@@ -99,19 +118,19 @@ export default function App() {
                   <Route path="/officer" element={<Navigate to="/field-officer" replace />} />
                   <Route path="/dashboard" element={<RoleDashboardRedirect />} />
                   <Route path="/consignments" element={<Navigate to="/transporter/consignments" replace />} />
-                  <Route path="/vehicles" element={<Navigate to="/transporter/vehicles" replace />} />
-                  <Route path="/live-tracking" element={<Navigate to="/transporter/live-tracking" replace />} />
-                  <Route path="/tracking" element={<Navigate to="/transporter/tracking" replace />} />
-                  <Route path="/vehicle-tracking" element={<Navigate to="/transporter/vehicle-tracking" replace />} />
-                  <Route path="/fleet-tracking" element={<Navigate to="/transporter/fleet-tracking" replace />} />
-                  <Route path="/routes" element={<Navigate to="/transporter/routes" replace />} />
-                  <Route path="/route-planning" element={<Navigate to="/transporter/route-planning" replace />} />
-                  <Route path="/route-optimization" element={<Navigate to="/transporter/route-optimization" replace />} />
-                  <Route path="/alerts" element={<Navigate to="/transporter/alerts" replace />} />
+                  <Route path="/vehicles" element={<RoleRouteRedirect adminPath="/admin/vehicle-tracking" transporterPath="/transporter/vehicles" />} />
+                  <Route path="/live-tracking" element={<RoleRouteRedirect adminPath="/admin/live-map" transporterPath="/transporter/live-tracking" />} />
+                  <Route path="/tracking" element={<RoleRouteRedirect adminPath="/admin/vehicle-tracking" transporterPath="/transporter/tracking" />} />
+                  <Route path="/vehicle-tracking" element={<RoleRouteRedirect adminPath="/admin/vehicle-tracking" transporterPath="/transporter/vehicle-tracking" />} />
+                  <Route path="/fleet-tracking" element={<RoleRouteRedirect adminPath="/admin/vehicle-tracking" transporterPath="/transporter/fleet-tracking" />} />
+                  <Route path="/routes" element={<RoleRouteRedirect adminPath="/admin/route-optimization" transporterPath="/transporter/routes" />} />
+                  <Route path="/route-planning" element={<RoleRouteRedirect adminPath="/admin/route-optimization" transporterPath="/transporter/route-planning" />} />
+                  <Route path="/route-optimization" element={<RoleRouteRedirect adminPath="/admin/route-optimization" transporterPath="/transporter/route-optimization" />} />
+                  <Route path="/alerts" element={<RoleRouteRedirect adminPath="/admin/alerts" transporterPath="/transporter/alerts" />} />
                   <Route path="/delivery-history" element={<Navigate to="/transporter/delivery-history" replace />} />
                   <Route path="/history" element={<Navigate to="/transporter/history" replace />} />
-                  <Route path="/reports" element={<Navigate to="/transporter/reports" replace />} />
-                  <Route path="/settings" element={<Navigate to="/transporter/settings" replace />} />
+                  <Route path="/reports" element={<RoleRouteRedirect adminPath="/admin/field-reports" transporterPath="/transporter/reports" />} />
+                  <Route path="/settings" element={<RoleRouteRedirect adminPath="/admin/settings" transporterPath="/transporter/settings" />} />
                   <Route path="/driver-app" element={<Navigate to="/driver" replace />} />
                   <Route path="/help" element={<Navigate to="/transporter/help" replace />} />
                   <Route path="/support" element={<Navigate to="/transporter/support" replace />} />

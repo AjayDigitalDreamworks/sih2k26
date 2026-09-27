@@ -22,53 +22,59 @@ import { AnalyticsPage } from './AnalyticsPage';
 import { EmergencyModePage } from './EmergencyModePage';
 import { UsersPage } from './UsersPage';
 
+const VALID_PAGES = [
+  'dashboard',
+  'live-map',
+  'ai-predictions',
+  'route-optimization',
+  'vehicle-tracking',
+  'alerts',
+  'field-reports',
+  'analytics',
+  'users',
+  'emergency',
+  'settings',
+];
+
 function AdminContent() {
   const { currentPage, emergencySos, clearEmergencySos, setCurrentPage, sidebarCollapsed, setSidebarCollapsed } = useApp();
   const location = useLocation();
   const navigate = useNavigate();
 
-  // 1. Sync from URL path to state (e.g. browser back/forward, direct deep-link)
-  useEffect(() => {
-    const rawPath = location.pathname.replace(/^\/admin\/?/, '').split('/')[0] || 'dashboard';
-    const validPages = [
-      'dashboard',
-      'live-map',
-      'ai-predictions',
-      'route-optimization',
-      'vehicle-tracking',
-      'alerts',
-      'field-reports',
-      'analytics',
-      'users',
-      'emergency',
-      'settings',
-    ];
-    if (validPages.includes(rawPath) && rawPath !== currentPage) {
-      setCurrentPage(rawPath);
-    }
-  }, [location.pathname]); // ONLY run when location.pathname changes, never on currentPage change!
+  // Derive current page directly from URL path
+  const urlPage = location.pathname.replace(/^\/admin\/?/, '').split('/')[0] || 'dashboard';
+  const activePage = VALID_PAGES.includes(urlPage) ? urlPage : 'dashboard';
 
-  // 2. Sync from state to URL when currentPage changes
+  // 1. Sync from URL path to state (browser back/forward, direct deep-link)
   useEffect(() => {
-    const currentUrlPath = location.pathname.replace(/^\/admin\/?/, '').split('/')[0] || 'dashboard';
-    if (currentPage && currentPage !== currentUrlPath) {
-      const targetUrl = currentPage === 'dashboard' ? '/admin' : `/admin/${currentPage}`;
-      navigate(targetUrl, { replace: false });
+    if (currentPage !== activePage) {
+      setCurrentPage(activePage);
     }
-  }, [currentPage, navigate]);
+  }, [activePage, currentPage, setCurrentPage]);
+
+  // 2. Sync from in-component state to URL ONLY if state intentionally diverged from URL
+  useEffect(() => {
+    if (currentPage && VALID_PAGES.includes(currentPage) && currentPage !== activePage) {
+      const targetUrl = currentPage === 'dashboard' ? '/admin' : `/admin/${currentPage}`;
+      navigate(targetUrl, { replace: true });
+    }
+  }, [currentPage, activePage, navigate]);
 
   // Global listener for cross-component navigation dispatch
   useEffect(() => {
     const handleNav = (e) => {
-      if (e.detail?.page) {
-        setCurrentPage(e.detail.page);
-        const targetUrl = e.detail.page === 'dashboard' ? '/admin' : `/admin/${e.detail.page}`;
-        navigate(targetUrl);
+      if (e.detail?.page && VALID_PAGES.includes(e.detail.page)) {
+        const page = e.detail.page;
+        setCurrentPage(page);
+        const targetUrl = page === 'dashboard' ? '/admin' : `/admin/${page}`;
+        if (location.pathname !== targetUrl) {
+          navigate(targetUrl);
+        }
       }
     };
     window.addEventListener('raahi:navigate', handleNav);
     return () => window.removeEventListener('raahi:navigate', handleNav);
-  }, [setCurrentPage, navigate]);
+  }, [setCurrentPage, navigate, location.pathname]);
 
   const renderActivePage = () => {
     switch (currentPage) {
