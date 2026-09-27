@@ -294,13 +294,13 @@ export const VehicleTrackingPage = () => {
         <TripSummaryCard vehicleId={selectedVehicleId} />
       </div>
 
-      <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: "24px", marginBottom: "24px" }}>
+      <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(310px, 1fr))", gap: "20px", marginBottom: "24px", alignItems: "stretch" }}>
         <FleetOverviewChart />
         <VehiclesStatusBarChart />
         <AlertsSummaryCard />
       </div>
 
-      <div style={{ display: "grid", gridTemplateColumns: "1.5fr 1fr", gap: "24px", marginBottom: "24px" }}>
+      <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(360px, 1fr))", gap: "20px", marginBottom: "24px", alignItems: "stretch" }}>
         <RecentTripsTable />
         <VehiclePerformanceCard />
       </div>
