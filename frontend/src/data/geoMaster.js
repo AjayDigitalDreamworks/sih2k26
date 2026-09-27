@@ -59,3 +59,54 @@ export const CORRIDORS = [
   { id: 'R-04', name: 'Dimapur → Imphal', originDistrictId: 'dimapur', destDistrictId: 'imphal_west', highway: 'NH-2' },
   { id: 'R-05', name: 'Guwahati → Itanagar', originDistrictId: 'kamrup', destDistrictId: 'papum_pare', highway: 'NH-27 / NH-415' },
 ];
+
+export const parseCorridorDistricts = (corridor) => {
+  if (!corridor) {
+    return {
+      fromId: 'kamrup',
+      toId: 'imphal_west',
+      originName: 'Guwahati',
+      destName: 'Imphal',
+      fromMatch: districtById('kamrup'),
+      toMatch: districtById('imphal_west'),
+      corridorName: 'Guwahati → Imphal',
+    };
+  }
+
+  let fromId = corridor.origin_district_id || corridor.originDistrictId || corridor.rawCorridor?.originDistrictId;
+  let toId = corridor.dest_district_id || corridor.destDistrictId || corridor.rawCorridor?.destDistrictId;
+
+  const raw = corridor.name || corridor.route || corridor.rawCorridor?.from || '';
+  const cleaned = raw.replace(/\([^)]*\)/g, '').trim();
+  const parts = cleaned.split(/→|->|—|–|-/).map((s) => s.trim()).filter(Boolean);
+
+  const partFrom = corridor.rawCorridor?.from || parts[0] || '';
+  const partTo = corridor.rawCorridor?.to || parts[1] || '';
+
+  if (!fromId && partFrom) {
+    const m = findDistrictMatch(partFrom);
+    if (m) fromId = m.id;
+  }
+  if (!toId && partTo) {
+    const m = findDistrictMatch(partTo);
+    if (m) toId = m.id;
+  }
+
+  const fromMatch = districtById(fromId) || findDistrictMatch(partFrom) || districtById('kamrup');
+  const toMatch = districtById(toId) || findDistrictMatch(partTo) || districtById('papum_pare');
+
+  const originName = fromMatch?.city || fromMatch?.name || partFrom || 'Guwahati';
+  const destName = toMatch?.city || toMatch?.name || partTo || 'Destination';
+  const corridorName = corridor.name || `${originName} → ${destName}`;
+
+  return {
+    fromId: fromMatch.id,
+    toId: toMatch.id,
+    fromMatch,
+    toMatch,
+    originName,
+    destName,
+    corridorName,
+  };
+};
+

@@ -16,7 +16,7 @@ import {
 } from 'lucide-react';
 import { Modal } from '../common/Modal';
 import { useApp } from '@/contexts/AppContext';
-import { findDistrictMatch } from '@/data/geoMaster';
+import { DISTRICTS, findDistrictMatch, parseCorridorDistricts } from '@/data/geoMaster';
 import ApiClient from '@/lib/api';
 
 // Geodesic distance formula between two lat/lng points in km
@@ -33,7 +33,7 @@ function calculateHaversineKm(lat1, lon1, lat2, lon2) {
 }
 
 export const SafeBypassModal = ({ isOpen, onClose, corridor }) => {
-  const { vehicles: contextVehicles, setCurrentPage, setRoutePlannerInitialState, addToast } = useApp();
+  const { vehicles: contextVehicles, setVehicles, setCurrentPage, setRoutePlannerInitialState, addToast } = useApp();
   const [dbVehicles, setDbVehicles] = useState([]);
   const [selectedVehicles, setSelectedVehicles] = useState({});
   const [isDispatching, setIsDispatching] = useState(false);
@@ -44,28 +44,9 @@ export const SafeBypassModal = ({ isOpen, onClose, corridor }) => {
   const [routePlan, setRoutePlan] = useState(null);
   const [loadingPlan, setLoadingPlan] = useState(false);
 
-  // Parse corridor origin and destination
+  // Parse corridor origin and destination using robust district matcher
   const { originName, destName, fromMatch, toMatch } = useMemo(() => {
-    if (!corridor) return { originName: 'Origin', destName: 'Destination', fromMatch: null, toMatch: null };
-
-    let from = corridor.rawCorridor?.from || '';
-    let to = corridor.rawCorridor?.to || '';
-
-    if (!from || !to) {
-      const parts = (corridor.route || '').split(/→|->/);
-      from = parts[0]?.trim() || '';
-      to = parts[1]?.trim() || '';
-    }
-
-    const fMatch = findDistrictMatch(from);
-    const tMatch = findDistrictMatch(to);
-
-    return {
-      originName: fMatch?.name || fMatch?.city || from || 'Origin Hub',
-      destName: tMatch?.name || tMatch?.city || to || 'Destination Hub',
-      fromMatch: fMatch,
-      toMatch: tMatch,
-    };
+    return parseCorridorDistricts(corridor);
   }, [corridor]);
 
   // Fetch real vehicles from API if not already in context
@@ -201,6 +182,22 @@ export const SafeBypassModal = ({ isOpen, onClose, corridor }) => {
 
   // Find REAL vehicles relevant to this corridor or in fleet
   const candidateVehicles = useMemo(() => {
+    // 0. Explicit matched vehicles from corridor
+    if (corridor?.matchedVehicles && corridor.matchedVehicles.length > 0) {
+      return corridor.matchedVehicles.map(v => ({
+        id: v.id,
+        rawId: v.rawId || v.id,
+        model: v.model || 'Heavy Freight Carrier',
+        driver: v.driver || v.driver_name || 'Assigned Driver',
+        status: v.status || 'Active',
+        statusClass: (v.status || 'active').toLowerCase(),
+        speed: v.speed ? `${v.speed} km/h` : '42 km/h',
+        route: v.route || v.current_route || '',
+        lat: v.current_lat ?? v.lat,
+        lng: v.current_lng ?? v.lng,
+      }));
+    }
+
     const list = dbVehicles.length > 0 ? dbVehicles : contextVehicles || [];
     if (list.length === 0) return [];
 
@@ -220,7 +217,7 @@ export const SafeBypassModal = ({ isOpen, onClose, corridor }) => {
 
     // 3. Any registered fleet trucks from DB
     return list.slice(0, 3);
-  }, [dbVehicles, contextVehicles, originName, destName]);
+  }, [corridor, dbVehicles, contextVehicles, originName, destName]);
 
   // Initialize selected state
   useEffect(() => {
@@ -247,6 +244,8 @@ export const SafeBypassModal = ({ isOpen, onClose, corridor }) => {
 
     try {
       const selectedList = candidateVehicles.filter((v) => selectedVehicles[v.id]);
+      const avoidIds = [corridor?.id, ...(corridor?.road_ids || [])].filter(Boolean);
+
       for (const v of selectedList) {
         try {
           await ApiClient.rerouteVehicle({
@@ -254,9 +253,22 @@ export const SafeBypassModal = ({ isOpen, onClose, corridor }) => {
             currentLat: v.lat,
             currentLng: v.lng,
             destDistrictId: toMatch?.id || 'imphal_west',
+            avoidCorridors: avoidIds,
             prefer: 'safest',
+            reason: corridor?.hazardReason || `Dynamic bypass avoiding ${originName} → ${destName}`,
           });
         } catch (_) {}
+      }
+
+      if (setVehicles) {
+        setVehicles((prev) =>
+          prev.map((veh) => {
+            if (selectedList.some((s) => s.id === veh.id)) {
+              return { ...veh, is_rerouted: true, rerouted: true, rerouteReason: 'Detour active' };
+            }
+            return veh;
+          })
+        );
       }
 
       setIsDispatched(true);

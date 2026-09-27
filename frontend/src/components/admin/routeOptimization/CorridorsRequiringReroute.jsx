@@ -304,9 +304,15 @@ export const CorridorsRequiringReroute = ({ onLoadCorridor, onOpenSafeBypass }) 
         );
       }
 
+      // Automatically map the most critical corridor so the user immediately sees the bypass on Leaflet!
+      const primaryCorridor = corridorsWithVehicles.find(c => c.status === 'blocked') || corridorsWithVehicles[0];
+      if (primaryCorridor && onLoadCorridor) {
+        onLoadCorridor(primaryCorridor);
+      }
+
       addToast(
         'Batch Reroute Executed',
-        `Dynamic safe detour bypasses pushed to ${targetVehicles.length || totalAffectedVehicles || 'all'} convoys. Real-time telemetry updated.`,
+        `Dynamic safe detour bypasses pushed to all ${targetVehicles.length || totalAffectedVehicles} active convoys. Mapped primary corridor in GIS Planner.`,
         'success'
       );
     } catch (e) {
@@ -326,22 +332,26 @@ export const CorridorsRequiringReroute = ({ onLoadCorridor, onOpenSafeBypass }) 
 
     try {
       const convoyList = corridor.matchedVehicles || [];
+      const avoidIds = [corridor.id, ...(corridor.road_ids || [])].filter(Boolean);
+
       for (const v of convoyList) {
         try {
           await ApiClient.rerouteVehicle(v.id, {
-            reason: corridor.hazardReason || 'Dynamic safe bypass detour',
+            avoidCorridors: avoidIds,
+            reason: corridor.hazardReason || `Dynamic safe bypass avoiding ${corridor.name}`,
             destDistrictId: corridor.dest_district_id,
             prefer: 'safest',
           });
         } catch (_) {}
       }
 
+      const nowTime = new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
       setCorridorRerouteStates((prev) => ({
         ...prev,
         [cId]: {
           isRerouting: false,
           isRerouted: true,
-          timestamp: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
+          timestamp: nowTime,
           bypassName: 'Safe bypass route broadcasted to convoy telemetry',
         },
       }));
@@ -350,16 +360,21 @@ export const CorridorsRequiringReroute = ({ onLoadCorridor, onOpenSafeBypass }) 
         setVehicles((prev) =>
           prev.map((veh) => {
             if (convoyList.some(cv => cv.id === veh.id)) {
-              return { ...veh, is_rerouted: true, rerouted: true };
+              return { ...veh, is_rerouted: true, rerouted: true, rerouteReason: 'Detour active' };
             }
             return veh;
           })
         );
       }
 
+      // Automatically load the calculated safe bypass into the Route Planner Map & scroll to it!
+      if (onLoadCorridor) {
+        onLoadCorridor(corridor);
+      }
+
       addToast(
-        'Corridor Rerouted',
-        `Safe detour active for ${corridor.name}. Drivers notified over telemetry stream.`,
+        'Corridor Rerouted & Mapped',
+        `Safe detour active for ${corridor.name}. Dynamic Dijkstra route loaded on map.`,
         'success'
       );
     } catch (err) {
@@ -377,14 +392,30 @@ export const CorridorsRequiringReroute = ({ onLoadCorridor, onOpenSafeBypass }) 
   const handleRerouteSingleVehicle = async (veh, corridor) => {
     try {
       await ApiClient.rerouteVehicle(veh.id, {
-        reason: corridor.hazardReason || 'Specific vehicle detour from Corridor Hub',
+        avoidCorridors: [corridor.id, ...(corridor.road_ids || [])].filter(Boolean),
+        reason: corridor.hazardReason || `Specific vehicle detour from Corridor Hub for ${veh.id}`,
         destDistrictId: corridor.dest_district_id,
         prefer: 'safest',
       });
-      addToast('Vehicle Rerouted', `Detour pushed directly to vehicle ${veh.id}`, 'success');
+
       if (setVehicles) {
-        setVehicles(prev => prev.map(v => v.id === veh.id ? { ...v, is_rerouted: true, rerouted: true } : v));
+        setVehicles(prev => prev.map(v => v.id === veh.id ? { ...v, is_rerouted: true, rerouted: true, rerouteReason: 'Detour active' } : v));
       }
+
+      setCorridorRerouteStates((prev) => ({
+        ...prev,
+        [corridor.id]: {
+          ...(prev[corridor.id] || {}),
+          isRerouted: true,
+          timestamp: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
+        },
+      }));
+
+      if (onLoadCorridor) {
+        onLoadCorridor(corridor);
+      }
+
+      addToast('Vehicle Rerouted & Mapped', `Detour pushed directly to driver of ${veh.id}. Route plotted on GIS map.`, 'success');
     } catch (_) {
       addToast('Detour Signal Sent', `Reroute instructions sent to driver of ${veh.id}`, 'info');
     }
@@ -799,7 +830,14 @@ export const CorridorsRequiringReroute = ({ onLoadCorridor, onOpenSafeBypass }) 
                         >
                           {isRerouted ? '✓ DETOUR ACTIVE' : isBlocked ? 'SEVERED / BLOCKED' : 'AT RISK'}
                         </span>
-                        <span style={{ fontSize: '13px', fontWeight: 800, color: '#0F172A' }}>
+                        <span
+                          style={{ fontSize: '13px', fontWeight: 800, color: '#0F172A', cursor: 'pointer' }}
+                          onClick={() => {
+                            if (onLoadCorridor) onLoadCorridor(c);
+                            addToast('Corridor Mapped', `Loaded ${c.name} in GIS Route Planner.`, 'info');
+                          }}
+                          title="Click to load corridor in GIS Route Planner"
+                        >
                           {c.name}
                         </span>
                         {(c.road_ids || []).map((rid) => (
@@ -837,6 +875,31 @@ export const CorridorsRequiringReroute = ({ onLoadCorridor, onOpenSafeBypass }) 
                         <span>
                           ⚠️ AI Risk Score: <strong style={{ color: isBlocked ? '#DC2626' : '#D97706' }}>{riskScore}/100</strong>
                         </span>
+
+                        <button
+                          type="button"
+                          onClick={() => {
+                            if (onLoadCorridor) onLoadCorridor(c);
+                            addToast('Corridor Mapped', `Loaded ${c.name} into GIS Route Planner.`, 'info');
+                          }}
+                          style={{
+                            display: 'inline-flex',
+                            alignItems: 'center',
+                            gap: '3px',
+                            fontSize: '11px',
+                            fontWeight: 700,
+                            color: '#059669',
+                            background: '#ECFDF5',
+                            border: '1px solid #A7F3D0',
+                            padding: '2px 8px',
+                            borderRadius: '6px',
+                            cursor: 'pointer',
+                          }}
+                          title="Click to view corridor in GIS Route Planner"
+                        >
+                          <RouteIcon size={11} />
+                          <span>View on Map</span>
+                        </button>
 
                         {/* Interactive Convoy Dropdown Toggle Button */}
                         {convoyList.length > 0 && (

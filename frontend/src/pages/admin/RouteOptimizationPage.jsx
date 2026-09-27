@@ -10,6 +10,7 @@ import { RouteInsightsCard } from '@/components/admin/routeOptimization/RouteIns
 import { CorridorsRequiringReroute } from '@/components/admin/routeOptimization/CorridorsRequiringReroute';
 import { SafeBypassModal } from '@/components/admin/modals/SafeBypassModal';
 import { useApp } from '@/contexts/AppContext';
+import { parseCorridorDistricts } from '@/data/geoMaster';
 
 export const RouteOptimizationPage = ({ onExport }) => {
   const { weather, setRoutePlannerInitialState } = useApp();
@@ -28,21 +29,26 @@ export const RouteOptimizationPage = ({ onExport }) => {
 
   const handleLoadCorridor = useCallback((corridor) => {
     if (!corridor || !setRoutePlannerInitialState) return;
-    const parts = (corridor.name || '').split(/→|->/);
-    const origin = parts[0]?.trim() || '';
-    const dest = parts[1]?.trim() || '';
+    const { fromId, toId, originName, destName, corridorName } = parseCorridorDistricts(corridor);
 
     setRoutePlannerInitialState({
-      fromDistrictId: corridor.origin_district_id,
-      toDistrictId: corridor.dest_district_id,
-      originName: origin,
-      destName: dest,
-      corridorName: corridor.name,
+      fromDistrictId: fromId,
+      toDistrictId: toId,
+      originName,
+      destName,
+      corridorName,
       prefer: 'safest',
+      source: 'corridor_reroute_panel',
+      timestamp: Date.now(),
     });
 
     // Smooth scroll down to Route Planner Map
-    window.scrollTo({ top: 400, behavior: 'smooth' });
+    const mapElement = document.querySelector('.route-planner-map-card') || document.querySelector('.route-planner-wrapper');
+    if (mapElement) {
+      mapElement.scrollIntoView({ behavior: 'smooth', block: 'start' });
+    } else {
+      window.scrollTo({ top: 380, behavior: 'smooth' });
+    }
   }, [setRoutePlannerInitialState]);
 
   return (
